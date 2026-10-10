@@ -9,10 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"github.com/chun/kada-backend/internal/domain"
+	"github.com/chun/kada-backend/internal/metrics"
 	"github.com/chun/kada-backend/internal/mq"
 )
 
@@ -37,6 +39,71 @@ func (f *fakeWriter) WriteClick(_ context.Context, e mq.ClickEvent) error {
 	f.calls++
 	f.events = append(f.events, e)
 	return nil
+}
+
+// panickingPublisher is a publisher that crashes instead of returning an error. It stands for every way that
+// can happen - a driver bug, a nil receiver, a library that panics on unexpected input - because the property
+// being tested belongs to the caller: whatever the publisher does, recording a click must not be able to end
+// the process.
+type panickingPublisher struct{}
+
+func (panickingPublisher) PublishClick(context.Context, mq.ClickEvent) error {
+	panic("the publisher crashed")
+}
+
+// The production failure, in one line: NewKafkaClickPublisher returns a nil *KafkaClickPublisher when no broker
+// is configured, and storing that in the mq.ClickPublisher interface makes the interface non-nil - so the
+// service's `kafka != nil` guard passed and every click called a method on a nil receiver. The panic happened
+// on the goroutine the redirect handler spawns, which Gin's recovery does not cover, so the API died on the
+// first click it served: systemd restarted it and nginx answered 502 in between. The click was lost as well,
+// because the direct-write fallback sits *after* the publish call.
+func TestLogClickSurvivesANilPublisher(t *testing.T) {
+	w := &fakeWriter{}
+	svc := &LinkService{kafka: (*mq.KafkaClickPublisher)(nil), clickWriter: w}
+
+	svc.LogClick(context.Background(), domain.ClickEvent{LinkID: 3, Kind: domain.ClickVisit})
+
+	if w.calls != 1 {
+		t.Fatalf("the click was not written directly after the publisher failed (writes=%d)", w.calls)
+	}
+}
+
+// The same property, one level more general: a publisher that panics must leave the click written and the
+// process alive, not only a nil one.
+func TestLogClickSurvivesAPanickingPublisher(t *testing.T) {
+	before := testutil.ToFloat64(metrics.ClickEvents.WithLabelValues(metrics.ClickPanicked))
+
+	w := &fakeWriter{}
+	svc := &LinkService{kafka: panickingPublisher{}, clickWriter: w}
+
+	svc.LogClick(context.Background(), domain.ClickEvent{LinkID: 3, Kind: domain.ClickVisit})
+
+	if w.calls != 1 {
+		t.Fatalf("a panic lost the click instead of falling back (writes=%d)", w.calls)
+	}
+	if got := testutil.ToFloat64(metrics.ClickEvents.WithLabelValues(metrics.ClickPanicked)) - before; got != 1 {
+		t.Errorf("the panic was not counted (moved by %v)", got)
+	}
+}
+
+// panickingWriter crashes in the store instead. There is no fallback left at that point - the row is the last
+// step - so all that is left to guarantee is that the process survives it: this test fails by dying if the
+// panic escapes, which is exactly what used to happen when a nil publisher escaped instead.
+type panickingWriter struct{}
+
+func (panickingWriter) WriteClick(context.Context, mq.ClickEvent) error {
+	panic("the store crashed")
+}
+
+func TestLogClickSurvivesAPanickingStore(t *testing.T) {
+	before := testutil.ToFloat64(metrics.ClickEvents.WithLabelValues(metrics.ClickPanicked))
+
+	svc := &LinkService{clickWriter: panickingWriter{}}
+	svc.LogClick(context.Background(), domain.ClickEvent{LinkID: 3, Kind: domain.ClickVisit})
+
+	if got := testutil.ToFloat64(metrics.ClickEvents.WithLabelValues(metrics.ClickPanicked)) - before; got != 1 {
+		t.Errorf("the panic was not counted (moved by %v)", got)
+	}
 }
 
 // ========== LogClick: queued, or written directly when the queue is down ==========

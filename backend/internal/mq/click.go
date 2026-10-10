@@ -3,6 +3,7 @@ package mq
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -64,8 +65,17 @@ func NewKafkaClickPublisher(brokers []string, topic string) *KafkaClickPublisher
 	}
 }
 
-// PublishClick serializes a ClickEvent and writes it to the topic
+// PublishClick serializes a ClickEvent and writes it to the topic.
+//
+// The nil check is not decoration. This value travels in an interface, and a nil *KafkaClickPublisher inside
+// a non-nil interface passes every `publisher != nil` guard the caller has - so the alternative to this line
+// is a nil dereference on whatever goroutine called it. It reports an error instead, which the caller
+// already answers by writing the click straight to the database.
 func (p *KafkaClickPublisher) PublishClick(ctx context.Context, e ClickEvent) error {
+	if p == nil {
+		return errors.New("the kafka publisher is not configured")
+	}
+
 	b, err := json.Marshal(e)
 	if err != nil {
 		return err

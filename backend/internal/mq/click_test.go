@@ -3,6 +3,7 @@ package mq
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,6 +44,24 @@ func TestNewKafkaClickPublisher_NoBrokersReturnsNil(t *testing.T) {
 	}
 	if got := NewKafkaClickPublisher([]string{"  ", ""}, "clicks"); got != nil {
 		t.Fatalf("expected nil for blank brokers, got %+v", got)
+	}
+}
+
+// A nil publisher answers with an error rather than dereferencing itself.
+//
+// The constructor above returns nil when no broker is configured, and that value reaches callers inside an
+// interface - where it is not nil any more, so every `publisher != nil` guard passes. This is what the caller
+// then hits, and the difference between an error and a panic is the difference between a click written
+// straight to the database and the API process dying on the goroutine that recorded it.
+func TestKafkaClickPublisher_NilReceiverIsAnErrorNotAPanic(t *testing.T) {
+	var p *KafkaClickPublisher
+
+	err := p.PublishClick(context.Background(), ClickEvent{LinkID: 1})
+	if err == nil {
+		t.Fatal("a nil publisher must report an error")
+	}
+	if !strings.Contains(err.Error(), "not configured") {
+		t.Errorf("the error should say what is wrong, got: %v", err)
 	}
 }
 

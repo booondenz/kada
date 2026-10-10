@@ -51,6 +51,10 @@ const (
 	ClickPublishFailed     = "publish_failed"
 	ClickDirectWrite       = "direct_write"
 	ClickDirectWriteFailed = "direct_write_failed"
+	// ClickPanicked is the click pipeline crashing rather than returning an error. It should never appear:
+	// recording a click runs on its own goroutine, where a panic would end the process instead of failing a
+	// request - so the counter existing at all is a bug report.
+	ClickPanicked = "panicked"
 )
 
 var (

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -615,6 +616,17 @@ func (s *LinkService) ExportCSV(ctx context.Context, userID int64) (string, erro
 // The kind is carried rather than decided here: only the caller knows whether the client was served the
 // guide page (and so may be a prefetch that never confirms) or was sent straight to the target.
 func (s *LinkService) LogClick(ctx context.Context, e domain.ClickEvent) {
+	// Nothing about recording a click may be able to stop the process. This runs on the goroutine the redirect
+	// handler spawns for it - the handler returns its answer without waiting - and Gin's recovery only covers
+	// the goroutine that serves the request, so a panic anywhere below this line would end the API instead of
+	// failing one click. See publishClick for the case that actually happened.
+	defer func() {
+		if r := recover(); r != nil {
+			metrics.ClickEvent(metrics.ClickPanicked)
+			log.Printf("recording a click panicked, the click is lost: %v\n%s", r, debug.Stack())
+		}
+	}()
+
 	// generate an idempotency key: used to deduplicate on Kafka redelivery or degraded direct write
 	event := mq.ClickEvent{
 		EventID:   newEventID(),
@@ -629,7 +641,7 @@ func (s *LinkService) LogClick(ctx context.Context, e domain.ClickEvent) {
 	}
 
 	if s.kafka != nil {
-		if err := s.kafka.PublishClick(ctx, event); err != nil {
+		if err := s.publishClick(ctx, event); err != nil {
 			// Kafka failed -> fall back to direct write
 			metrics.ClickEvent(metrics.ClickPublishFailed)
 			log.Printf("kafka publish failed, falling back to direct write: %v", err)
@@ -646,6 +658,28 @@ func (s *LinkService) LogClick(ctx context.Context, e domain.ClickEvent) {
 			metrics.ClickEvent(metrics.ClickDirectWrite)
 		}
 	}
+}
+
+// publishClick hands the event to the publisher, turning a panic into an error.
+//
+// Nothing about recording a click may be able to stop the process. This runs on the goroutine the redirect
+// handler spawns for the click - the handler returns a 302 without waiting for it - and Gin's recovery only
+// covers the goroutine that serves the request, so a panic here ends the API. That is not a theoretical
+// failure: a nil publisher inside a non-nil interface panicked on every click on a host with Kafka disabled,
+// which killed the process, restarted it under systemd, and answered 502 to whatever arrived in between.
+//
+// Recovering rather than letting it go is what also keeps the click: the error returns to the caller, which
+// already falls back to writing the row directly.
+func (s *LinkService) publishClick(ctx context.Context, event mq.ClickEvent) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			metrics.ClickEvent(metrics.ClickPanicked)
+			log.Printf("publishing a click panicked, falling back to a direct write: %v\n%s", r, debug.Stack())
+			err = fmt.Errorf("the click publisher panicked: %v", r)
+		}
+	}()
+
+	return s.kafka.PublishClick(ctx, event)
 }
 
 // BuildShortURL builds the full short URL

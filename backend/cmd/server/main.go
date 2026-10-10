@@ -80,11 +80,17 @@ func main() {
 	// worse outage than an unreachable one) but it says so in the log, at the top, every time.
 	var smsSender service.SMSSender
 	if cfg.SMSCredentialsConfigured() {
-		smsSender, err = sms.NewAliyunSender(cfg.SMSAccessKeyID, cfg.SMSAccessKeySecret, cfg.SMSSignName, cfg.SMSTemplateCode)
-		if err != nil {
+		sender, senderErr := sms.NewAliyunSender(cfg.SMSAccessKeyID, cfg.SMSAccessKeySecret, cfg.SMSSignName, cfg.SMSTemplateCode)
+		if senderErr != nil {
 			// Not fatal: every other feature still works. But nobody can sign in, and the reason is
 			// printed now rather than deferred to a request that would only report a provider error.
-			log.Printf("SMS service disabled, NOBODY CAN SIGN IN: %v", err)
+			log.Printf("SMS service disabled, NOBODY CAN SIGN IN: %v", senderErr)
+		} else {
+			// Assigned only on success. The constructor returns (nil, error), and a nil *AliyunSender stored
+			// in this interface is not nil: the service's own `sms != nil` guard would pass, and every send
+			// would call a method on a nil receiver instead of using the development fallback that prints
+			// the code to the log.
+			smsSender = sender
 		}
 	} else {
 		// Distinguish "not configured" from "configured with the .env.example placeholders": both end in the
@@ -107,10 +113,18 @@ func main() {
 		cacheSvc = service.NewCacheService(redisClient)
 	}
 
-	// Kafka click event publisher (returns nil when there is no broker = disabled)
-	kafkaPub := mq.NewKafkaClickPublisher(cfg.Brokers(), cfg.KafkaTopic)
-	if kafkaPub != nil {
-		defer kafkaPub.Close()
+	// Kafka click event publisher (returns nil when there is no broker = disabled).
+	//
+	// The variable is the interface, for the same reason as the cache above - and this one is not a
+	// hypothetical. A nil *KafkaClickPublisher stored in a non-nil interface passed the `kafka != nil` guard
+	// in the service, so every click called a method on a nil receiver, panicked on the goroutine the
+	// redirect handler spawns for it (which Gin's recovery does not cover), and took the whole API down:
+	// systemd restarted it, and nginx answered 502 for whatever arrived in the seconds between. It also meant
+	// the direct-write fallback below never ran on a host without Kafka - the clicks were lost, not degraded.
+	var kafkaPub mq.ClickPublisher
+	if pub := mq.NewKafkaClickPublisher(cfg.Brokers(), cfg.KafkaTopic); pub != nil {
+		defer pub.Close()
+		kafkaPub = pub
 	}
 
 	// Initialize the service layer

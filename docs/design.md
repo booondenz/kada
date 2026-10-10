@@ -469,6 +469,20 @@ Kafka is at-least-once, so `event_id` is what makes counting exact. The consumer
 only after a successful write, and a poison message (invalid JSON, foreign-key violation) is dropped
 after three attempts rather than blocking the single-partition consumer group forever.
 
+Recording a click happens on a goroutine of its own: the redirect handler must not wait for Kafka before
+answering, so it spawns the work and returns. That has a consequence the code has to be written around -
+Gin's recovery covers only the goroutine that serves the request, so **anything that panics here ends the
+process**. The publish call is therefore wrapped so that a panic becomes an error and lands in the same
+direct-write fallback as a returned error.
+
+This is not defensive programming for its own sake. With no broker configured, `NewKafkaClickPublisher`
+returns a nil `*KafkaClickPublisher`, and the API used to store that in the `mq.ClickPublisher` interface -
+where it is no longer nil, so the service's own `kafka != nil` guard passed and every click called a method
+on a nil receiver. The API died on the first click it served, systemd restarted it, nginx answered 502 for
+whatever arrived in the seconds between, and the click was lost rather than written directly. Two things
+prevent it now: `cmd/server` builds the publisher into an interface variable that stays nil when Kafka is
+off, and `PublishClick` reports an error instead of dereferencing itself.
+
 #### What counts as a visit
 
 A request to a short link is not evidence that a person opened it. WeChat and QQ fetch a link to build
