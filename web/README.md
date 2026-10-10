@@ -1,4 +1,4 @@
-# Frontend
+# Web
 
 A Vite + React single-page app. It talks to the Go API over HTTP and nothing else: `src/lib/api.ts` is
 the one place that knows the endpoints and attaches the bearer token.
@@ -25,4 +25,4 @@ implementation in `src/lib/theme/bootstrap.ts`: it has to run before the first f
 rendered by React cannot do.
 
 The build is static files, so production has no Node process: nginx serves `dist/` directly. See
-`nginx/nginx-prod.conf` and the deployment section of `docs/design.md`.
+`deploy/nginx/nginx-prod.conf` and the deployment section of `docs/design.md`.

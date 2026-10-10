@@ -25,6 +25,11 @@ linters:
     misspell:
       locale: US
   exclusions:
+    # The web app is a separate npm project that happens to live in the same repository, and node_modules
+    # holds third-party code - including, in a few packages, .go files of their own. It is not this module's
+    # source and must not be linted, whatever a package happens to ship.
+    paths:
+      - ^web/
     rules:
       - path: _test\.go
         linters:

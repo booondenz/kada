@@ -39,14 +39,12 @@ back to a direct database write).
 git clone git@github.com:booondenz/kada.git
 cd kada
 
-# Root environment for Docker Compose (JWT_SECRET and POSTGRES_PASSWORD are required)
+# Environment for the API and for Docker Compose: one file, read from the repository root
+# (JWT_SECRET and POSTGRES_PASSWORD are required)
 cp .env.example .env
 
-# Backend environment when running the API directly on the host
-cp backend/.env.example backend/.env
-
-# Frontend dependencies
-cd frontend && npm ci && cd ..
+# Web dependencies
+cd web && npm ci && cd ..
 ```
 
 Fill in `.env` before starting anything:
@@ -72,7 +70,7 @@ unformatted while CI sees it as clean.
 ### Everything in Docker
 
 ```bash
-docker compose up -d      # nginx :80, API :8080, frontend :3000, PostgreSQL :5432
+docker compose up -d      # nginx :80, PostgreSQL :5432, Kafka :29092
 docker compose logs -f
 docker compose down
 ```
@@ -80,17 +78,17 @@ docker compose down
 The API applies the schema on startup (`DB_AUTO_MIGRATE=true` in Compose), so a fresh volume comes up
 ready to use. Nginx serves the app at `http://localhost`.
 
-### Backend and frontend on the host
+### The API and the web app on the host
 
 ```bash
 docker compose up -d postgres redis   # kafka is optional
-cd backend && go run ./cmd/migrate/   # apply the schema
-cd backend && go run ./cmd/server/main.go   # API on :8080
-cd frontend && npm run dev                  # frontend on :3000
+go run ./cmd/migrate/   # apply the schema
+go run ./cmd/server/main.go   # API on :8080
+cd web && npm run dev         # web app on :3000
 ```
 
-When the frontend runs on the host, keep `VITE_API_URL` pointing at the API
-(`http://localhost:8080`) in `frontend/.env.local`.
+When the web app runs on the host, keep `VITE_API_URL` pointing at the API
+(`http://localhost:8080`) in `web/.env.local`.
 
 ## 4. Everyday commands
 
@@ -99,23 +97,23 @@ two to drift apart.
 
 | Task | Command |
 |---|---|
-| Run the API | `cd backend && go run ./cmd/server/main.go` |
-| Run the frontend | `cd frontend && npm run dev` |
-| Go tests | `cd backend && go test ./... -v` |
-| Frontend tests | `cd frontend && npm test` |
-| Go tests with the race detector (what CI runs) | `cd backend && go test ./... -v -count=1 -race -coverprofile=coverage.out` |
-| `go vet` / ESLint | `cd backend && go vet ./...` / `cd frontend && npm run lint` |
-| `golangci-lint` (what CI runs) | `cd backend && golangci-lint run --timeout=5m ./...` |
-| Apply the schema | `cd backend && go run ./cmd/migrate/` |
-| Destroy the database volume and start over | `docker compose down -v && docker compose up -d postgres redis && cd backend && go run ./cmd/migrate/` |
-| Production builds | `cd backend && CGO_ENABLED=0 go build -o bin/server ./cmd/server/main.go` / `cd frontend && npm run build` |
+| Run the API | `go run ./cmd/server/main.go` |
+| Run the web app | `cd web && npm run dev` |
+| Go tests | `go test ./... -v` |
+| Web tests | `cd web && npm test` |
+| Go tests with the race detector (what CI runs) | `go test ./... -v -count=1 -race -coverprofile=coverage.out` |
+| `go vet` / ESLint | `go vet ./...` / `cd web && npm run lint` |
+| `golangci-lint` (what CI runs) | `golangci-lint run --timeout=5m ./...` |
+| Apply the schema | `go run ./cmd/migrate/` |
+| Destroy the database volume and start over | `docker compose down -v && docker compose up -d postgres redis && go run ./cmd/migrate/` |
+| Production builds | `CGO_ENABLED=0 go build -o bin/server ./cmd/server/main.go` / `cd web && npm run build` |
 | Compose lifecycle | `docker compose up -d` / `docker compose down` / `docker compose logs -f` |
 
 Before opening a pull request, these should all pass:
 
 ```bash
-cd backend && go vet ./... && go test ./... -count=1 -race
-cd frontend && npm run lint && npx tsc --noEmit && npm run build
+go vet ./... && go test ./... -count=1 -race
+cd web && npm run lint && npx tsc --noEmit && npm run build
 ```
 
 ## 5. Making a change
@@ -148,7 +146,7 @@ internal/handler/<res>/handler.go thin HTTP layer + RegisterRoutes
 cmd/server/main.go                build the service and register the routes
 ```
 
-Add the rows to `entity.Models()` if you added a table, then run `cd backend && go run ./cmd/migrate/`.
+Add the rows to `entity.Models()` if you added a table, then run `go run ./cmd/migrate/`.
 
 ### Adding UI text
 
@@ -159,7 +157,7 @@ const t = useT();
 <button>{t("创建链接")}</button>
 ```
 
-Add the English entry to `frontend/src/lib/i18n/dictionary.ts` in the same change. Never hardcode
+Add the English entry to `web/src/lib/i18n/dictionary.ts` in the same change. Never hardcode
 display text in a component, and never leave a key untranslated.
 
 ## 6. Commit messages
@@ -302,15 +300,15 @@ A bug fix without a test that fails before the fix is usually incomplete. Tests 
 database: services take `*gorm.DB`, so a `DryRun` session is enough to assert on generated SQL, and
 handlers take interfaces so they can be tested with fakes.
 
-### Frontend scripts
+### Web scripts
 
-A few checks cannot be expressed as a unit test, so they live in `frontend/scripts/`:
+A few checks cannot be expressed as a unit test, so they live in `web/scripts/` and are run from `web/`:
 
 | Command | Checks |
 |---|---|
 | `node scripts/check-theme-css.mjs` | The theme tokens compile, and brand/status colours are still fixed |
 | `node scripts/check-theme-timing.mjs` | The theme is applied before the first frame, so there is no flash |
-| `node scripts/capture-theme.mjs` | Screenshots every route in both themes into `frontend/.theme-shots/` |
+| `node scripts/capture-theme.mjs` | Screenshots every route in both themes into `web/.theme-shots/` |
 | `node scripts/report-color-usage.mjs` | Inventories colour utilities and flags ones that need a role |
 | `node scripts/migrate-color-tokens.mjs --dry-run` | Shows the shade-to-role rewrite without applying it |
 
@@ -321,14 +319,14 @@ obvious from reading the code.
 
 ## 10. Changing the database schema
 
-The schema is the GORM models in `backend/internal/domain/entity`. There are no SQL migration files.
+The schema is the GORM models in `internal/domain/entity`. There are no SQL migration files.
 
 1. Edit or add the model, with explicit `gorm:"type:..."` tags so column types do not drift.
 2. Add the model to `entity.Models()` if it is a new table, in dependency order (referenced tables
    first).
 3. Update `internal/domain/entity/models_test.go`: expected table name, expected columns, and any new
    unique index or `ON DELETE` rule.
-4. Run `cd backend && go run ./cmd/migrate/` and verify against a real database. The entity tests assert the model's
+4. Run `go run ./cmd/migrate/` and verify against a real database. The entity tests assert the model's
    intent; only a database proves the DDL is accepted.
 
 AutoMigrate is additive, so an existing installation picks up new tables, columns, indexes and

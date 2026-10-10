@@ -69,10 +69,10 @@ Components:
 
 | Component | Process | Responsibility |
 |---|---|---|
-| `cmd/server` | `backend` | HTTP API, short-link redirection, publishes click events |
+| `cmd/server` | `api` | HTTP API, short-link redirection, publishes click events |
 | `cmd/worker` | `kafka-worker` | Consumes the `clicks` topic and persists click rows |
 | `cmd/migrate` | one-off | Applies the database schema (GORM AutoMigrate) |
-| `frontend` | `frontend` | Vite single-page app, served as static files; talks to the API over HTTP only |
+| `web/` | `web` | Vite single-page app, served as static files; talks to the API over HTTP only |
 | `postgres` | `postgres` | Source of truth; also the analytics store |
 | `redis` | `redis` | Short-code cache and rate-limit counters |
 | `kafka` | `kafka` | Durable buffer between request handling and click persistence |
@@ -85,29 +85,42 @@ The frontend never touches PostgreSQL or Redis.
 ## 3. Repository layout
 
 ```text
-backend/
-  cmd/server/          API entry point: wiring, routes, graceful shutdown
-  cmd/worker/          Kafka consumer entry point
-  cmd/migrate/         schema application
-  config/              environment parsing (single source of configuration)
-  internal/
-    domain/            transport models (JSON tags, request validation)
-      entity/          GORM models == the database schema
-    handler/           HTTP layer, one package per resource
-    service/           business logic and persistence
-    infra/             database, redis, SMS, URL safety, link preview, user-agent
-    middleware/        JWT auth, rate limiting, real client IP
-    mq/                Kafka publisher and event payloads
-  db/                  (removed) schema used to live here as SQL migrations
-frontend/
-  src/app/             routes: landing, (auth), dashboard/**, r/[code]
-  src/components/      shared UI components
-  src/lib/             API client, auth storage, i18n, canvas/starfield helpers
-docs/                  this documentation
-deploy/                server bootstrap scripts and systemd units
-nginx/                 reverse proxy configuration
-scripts/               maintenance scripts
+cmd/server/          API entry point: wiring, routes, graceful shutdown
+cmd/worker/          Kafka consumer entry point
+cmd/migrate/         schema application
+config/              environment parsing (single source of configuration)
+internal/
+  domain/            transport models (JSON tags, request validation)
+    entity/          GORM models == the database schema
+  handler/           HTTP layer, one package per resource
+  service/           business logic and persistence
+  infra/             database, redis, SMS, URL safety, link preview, user-agent
+  middleware/        JWT auth, rate limiting, real client IP
+  mq/                Kafka publisher and event payloads
+db/                  (removed) schema used to live here as SQL migrations
+web/
+  src/app/           routes: landing, (auth), dashboard/**, r/[code]
+  src/components/    shared UI components
+  src/lib/           API client, auth storage, i18n, canvas/starfield helpers
+docs/                this documentation
+deploy/              server bootstrap scripts and the env-file writer
+  nginx/             reverse proxy configuration
+scripts/             maintenance scripts
 ```
+
+The Go module is the repository root, so `cmd/`, `config/` and `internal/` are directories at the top
+level rather than a module nested under one. The web app is a repository of its own living beside them,
+with its own `package.json` and `Dockerfile`.
+
+Because it is, `node_modules` sits inside the Go module's file tree and `./...` walks into it: after a
+local `npm ci`, `go test ./...` matches a package under `web/node_modules` (the `flatted` package ships
+Go files of its own). `.golangci.yml` excludes `^web/` for exactly that reason, and CI never sees it
+because the Go jobs do not run `npm ci`.
+
+The host layout is not the repository layout. The API runs from `/opt/kada/backend` (its binaries, its
+`.env` and its backups) and the served bundle lives in `/opt/kada/frontend`, which is bind-mounted into
+the nginx container; renaming either means recreating that container, so the two names are allowed to
+differ. The deploy job is what maps one onto the other (see [10. Deployment](#10-deployment)).
 
 ## 4. Backend
 
@@ -197,7 +210,7 @@ entry, and concurrent misses on one code share a single database read instead of
 ### 4.4 Schema ownership
 
 The schema is defined by the GORM models in `internal/domain/entity` and applied with `AutoMigrate`; the
-migration SQL files are gone. `cmd/migrate` applies the models (`cd backend && go run ./cmd/migrate/`), and
+migration SQL files are gone. `cmd/migrate` applies the models (`go run ./cmd/migrate/`), and
 the API server applies them on startup **only** when `DB_AUTO_MIGRATE=true`, so in production a restart
 cannot change the database as a side effect.
 
@@ -344,7 +357,7 @@ Settings → 外观, with a third option that hands control back to the system.
 - **`gray-50` is the one raw Tailwind neutral remapped for dark mode.** The app uses it purely as a
   neutral surface (`bg-gray-50`, `bg-gray-50/50`, `border-gray-50`, `hover:bg-gray-50`), always under
   `text-*` classes that are themselves themed; left alone it paints white panels and near-white code
-  chips on a near-black page. `frontend/scripts/check-theme-css.mjs` asserts both this and the fact that
+  chips on a near-black page. `web/scripts/check-theme-css.mjs` asserts both this and the fact that
   `indigo-600`/`red-600` are *not* remapped, so the two rules cannot be confused by accident.
 - The sign-in and landing screens are dark in **both** themes. Anything on them that must stay light -
   the selected segment, the language chip - uses literal white rather than a themed surface.
@@ -562,10 +575,11 @@ with it and are half of what a baseline is.
 
 ### 8.1 Configuration
 
-One `Config` struct in `backend/config` is parsed once from the environment; nothing else reads
+One `Config` struct in `config` is parsed once from the environment; nothing else reads
 `os.Getenv`. Missing values fall back to development defaults, except in release mode where weak JWT
-secrets are rejected outright. `backend/.env.example` and the root `.env.example` document every
-variable.
+secrets are rejected outright. `.env.example` at the repository root documents every variable, for the
+process and for `docker compose` alike: the module used to carry a second copy of it, which meant a
+setting could be documented in the half nobody was reading.
 
 ### 8.2 Caching and degradation
 
@@ -679,7 +693,7 @@ deployment that would produce that is better refused. What survives from the epi
 set here or only on the host is invisible until the machine is rebuilt.
 
 The assistant reads these from the same environment as the rest of the API (see
-`backend/.env.example`), and in production the deploy job writes them into `/opt/kada/backend/.env`.
+`.env.example`), and in production the deploy job writes them into `/opt/kada/backend/.env`.
 A missing key does not stop the process: without the chat key every question is answered with a
 configuration message.
 
@@ -736,7 +750,7 @@ separate SMS product (`dysmsapi`). That distinction decides the configuration:
 SMS really did work in production once, and the reason it stopped is on the record:
 
 1. `05eda08 feat: add Alibaba Cloud SMS verification` moved the pair out of the source and recorded the
-   **wrong** values in `backend/.env.example`: signature `kada` and a template code of the form `SMS_…`.
+   **wrong** values in `.env.example`: signature `kada` and a template code of the form `SMS_…`.
    Neither exists in either registry of this account. Nothing appeared to break, because the source still
    held the correct pair as a hardcoded fallback and kept using it.
 2. `8420bd9 refactor: move the backend from pgx to GORM with AutoMigrate` blanked that whole SMS section of
@@ -755,7 +769,7 @@ SMS really did work in production once, and the reason it stopped is on the reco
 The AccessKey pair is **not in the repository and never was** (it is only ever read from the environment; a
 history search for the `LTAI` prefix finds nothing but accidental substrings inside base64 hashes in
 `go.sum`). The signature and template code are account-specific and read from the environment too, and
-`backend/.env.example` deliberately keeps them empty so a copied example file cannot pretend to be
+`.env.example` deliberately keeps them empty so a copied example file cannot pretend to be
 configured. They are named above because they are not secrets - they are visible in the console - and
 because refusing to name them is what turned one wrong assumption into an outage that took a console
 screenshot to end.
@@ -764,7 +778,7 @@ screenshot to end.
 
 Three supported shapes:
 
-1. **Docker Compose** (`docker compose up -d`): nginx, API, worker, frontend, PostgreSQL, Redis and
+1. **Docker Compose** (`docker compose up -d`): nginx, API, worker, web, PostgreSQL, Redis and
    Kafka on one host. Suitable for a single server or local development.
 2. **systemd + released binaries** (`deploy/`): the API and worker run as native processes, with
    PostgreSQL, Redis and Kafka provided separately. This is what the GitHub Actions deploy job uses:
@@ -793,8 +807,8 @@ per-attempt timeout, three attempts, and a size check before anything is unpacke
 runner-to-host link decided - 26 seconds in one run, 8 minutes in another and 27 minutes in a third, with
 the action's own command timeout (10m) not bounding the last one. A stalled transfer is now a failure that
 leaves the host untouched instead of a run held open until it happens to succeed, and the step that
-follows starts from a complete tree under `/tmp/kada-deploy`. The frontend is built **once**: the
-`frontend-build` job already produces the bundle with the deployment's own `VITE_API_URL`, so the
+follows starts from a complete tree under `/tmp/kada-deploy`. The web build happens **once**: the
+`web-build` job already produces the bundle with the deployment's own `VITE_API_URL`, so the
 deploy job receives it as an artifact rather than setting up Node and building the same commit again.
 
 The frontend swap happens **inside** `/opt/kada/frontend`, never by replacing that directory. nginx runs
@@ -842,7 +856,7 @@ Verification happens in two places, which is deliberate:
 The public origin defaults to `https://kada.click`. Override it with the `SITE_URL` **repository
 variable** (Settings → Secrets and variables → Actions → Variables) when a deployment serves a
 different name. It is a variable rather than a secret because the name is already public in the
-certificate transparency logs, the DNS records and `nginx/nginx-prod.conf` - and because a deployment
+certificate transparency logs, the DNS records and `deploy/nginx/nginx-prod.conf` - and because a deployment
 step that requires manual setup is a failure mode of its own.
 
 ## 11. Testing
@@ -856,7 +870,7 @@ step that requires manual setup is a failure mode of its own.
 | Frontend | Vitest for pure helpers (starfield geometry, ophiuchus lines, utilities) |
 | Assistant | A fake model, but the real Eino agent with the real tools and the real bundled documentation: one test drives a model that asks for a tool and asserts which user the tool acted for, another drives a model that never stops asking and asserts the step limit holds |
 
-Run everything with `cd backend && go test ./... -count=1 -race` and `cd frontend && npm test`; CI
+Run everything with `go test ./... -count=1 -race` and `cd web && npm test`; CI
 additionally runs `go vet`, `golangci-lint`,
 `tsc --noEmit` and the production build on every pull request. The assistant is tested where it runs
 rather than as a container: the failure it has to catch - a model call that only breaks when a question

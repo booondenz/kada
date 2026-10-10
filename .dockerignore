@@ -1,0 +1,20 @@
+# The build context is the repository root, because the Go module is the root. Only the module is copied
+# into the builder stage, so everything else is excluded here: the context is what the daemon receives, and
+# the tool caches below are hundreds of megabytes that a COPY cannot be trusted to skip.
+.git
+.github/
+bin/
+.env
+*.md
+coverage.out
+# The web app is a separate npm project, built by its own Dockerfile (see web/Dockerfile).
+web/
+docs/
+scripts/
+deploy/
+docker-compose.yml
+Dockerfile
+.gocache/
+.gomodcache/
+.gopath/
+.golangci-cache/

@@ -1,7 +1,7 @@
 // Dumps the computed styles of specific elements, so a visual defect can be traced to the actual cascade
 // rather than guessed at. Reads the selectors passed as arguments.
 //
-//   node frontend/scripts/inspect-elements.mjs /login "button"
+//   node web/scripts/inspect-elements.mjs /login "button"
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";

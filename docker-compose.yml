@@ -17,7 +17,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    # No host port published: the host already has a local redis on 6379, so this redis is for backend inside the docker network only
+    # No host port published: the host already has a local redis on 6379, so this redis is for the API inside the docker network only
     volumes:
       - redisdata:/data
     healthcheck:
@@ -25,8 +25,10 @@ services:
       interval: 5s
       retries: 5
 
-  backend:
-    build: ./backend
+  # The API: the Go module is the repository root, so the build context is the root and .dockerignore is
+  # what keeps the web app, the documentation and the tool caches out of it.
+  api:
+    build: .
     environment:
       GIN_MODE: release
       DATABASE_URL: postgres://kada:${POSTGRES_PASSWORD:-kada123}@postgres:5432/kada?sslmode=disable
@@ -34,15 +36,15 @@ services:
       KAFKA_BROKERS: kafka:9092
       KAFKA_TOPIC: clicks
       # Requires an explicitly provided strong random secret (copy .env.example to .env and fill it in first);
-      # the backend also rejects weak secrets such as changeme in release mode
+      # the API also rejects weak secrets such as changeme in release mode
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set, for example openssl rand -hex 32; do not use changeme}
       # config.Load reads JWT_EXPIRES_IN / API_BASE_URL, so these must stay in sync or the config is silently ignored
       JWT_EXPIRES_IN: 72h
       API_BASE_URL: http://localhost
       PORT: 8080
-      # The schema is owned by GORM AutoMigrate (models live in backend/internal/domain/entity).
-      # Production normally runs the migration explicitly (backend/cmd/migrate) and starts the API with
-      # this disabled, so a restart can never change the database. In Compose the API applies it first.
+      # The schema is owned by GORM AutoMigrate (models live in internal/domain/entity). Production normally
+      # runs the migration explicitly (cmd/migrate) and starts the API with this disabled, so a restart can
+      # never change the database. In Compose the API applies it first.
       DB_AUTO_MIGRATE: "true"
       # The assistant runs in this process, so its key goes to the API rather than to a second service. An
       # empty value still starts the stack: the AI page reports the configuration problem and the rest of
@@ -53,16 +55,16 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  frontend:
+  web:
     build:
-      context: ./frontend
+      context: ./web
       args:
-        # "same-origin" keeps requests relative: nginx serves the frontend and proxies /api/ to the
-        # backend. This has to be a build argument, not `environment`, because Vite inlines
-        # import.meta.env.VITE_* at build time - a runtime environment variable here would have no effect.
+        # "same-origin" keeps requests relative: nginx serves the web app and proxies /api/ to the API.
+        # This has to be a build argument, not `environment`, because Vite inlines import.meta.env.VITE_*
+        # at build time - a runtime environment variable here would have no effect.
         VITE_API_URL: "same-origin"
     depends_on:
-      - backend
+      - api
     restart: unless-stopped
 
   nginx:
@@ -70,16 +72,16 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - backend
-      - frontend
+      - api
+      - web
     restart: unless-stopped
 
   kafka:
     image: apache/kafka:3.8.0
     ports:
-      # 9092 is for the docker network (backend/worker use kafka:9092) and is not published to the host
+      # 9092 is for the docker network (the API and the worker use kafka:9092) and is not published to the host
       # 29092 is for the host (running server/worker locally uses localhost:29092)
       - "127.0.0.1:29092:29092"
     environment:
@@ -101,7 +103,7 @@ services:
       retries: 10
 
   kafka-worker:
-    build: ./backend
+    build: .
     command: ["/worker"]
     environment:
       DATABASE_URL: postgres://kada:${POSTGRES_PASSWORD:-kada123}@postgres:5432/kada?sslmode=disable

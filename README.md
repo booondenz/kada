@@ -38,8 +38,8 @@ Layered as Handler -> Service -> Infra, using a modular monolith plus a standalo
 
 Click events are persisted asynchronously through Kafka and increment counters; when Kafka is unavailable this degrades to writing directly to the database.
 
-The database schema is defined by the GORM models in `backend/internal/domain/entity` and applied by
-`backend/cmd/migrate` (AutoMigrate). There are no SQL migration files: the structs are the single source
+The database schema is defined by the GORM models in `internal/domain/entity` and applied by
+`cmd/migrate` (AutoMigrate). There are no SQL migration files: the structs are the single source
 of truth, and AutoMigrate only adds missing tables/columns/indexes, so it is safe to re-run.
 
 The AI assistant runs inside the API process: it serves `/api/ai/*` itself, keeps its conversations in
@@ -59,9 +59,9 @@ docker compose up -d
 Local development:
 
 ```bash
-cd backend && go run ./cmd/migrate/         # schema only - the API applies it on startup
-cd backend && go run ./cmd/server/main.go   # 8080
-cd frontend && npm run dev                  # 3000
+go run ./cmd/migrate/         # schema only - the API applies it on startup
+go run ./cmd/server/main.go   # 8080
+cd web && npm run dev         # 3000
 ```
 
 ## Environment variables
@@ -81,10 +81,13 @@ the deploy job; the deployment section of [docs/design.md](docs/design.md) expla
 ## Layout
 
 ```text
-backend/   Go backend (cmd + internal), including the AI assistant
-frontend/  Vite single-page app, built to static files
+cmd/       entry points: the API, the Kafka worker and the migration
+config/    environment parsing (the single source of configuration)
+internal/  the application: domain, handler, service, infra, middleware, mq, metrics, assistant
+web/       Vite single-page app, built to static files and served by nginx
 docs/      Design, contributing and code-style documentation
-nginx/     Reverse proxy configuration
-deploy/    Deployment scripts
+deploy/    Deployment scripts, and deploy/nginx/ with the reverse proxy configuration
+scripts/   Maintenance scripts and the deploy-step test harness
+go.mod     the module is the repository root: there is no backend/ directory to cd into
 docker-compose.yml
 ```

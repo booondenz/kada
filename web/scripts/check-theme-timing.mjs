@@ -2,7 +2,7 @@
 // rather than assume it. A theme that is set only after `DOMContentLoaded` or after first paint means a
 // light flash before the dark paint.
 //
-//   node frontend/scripts/check-theme-timing.mjs
+//   node web/scripts/check-theme-timing.mjs
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";

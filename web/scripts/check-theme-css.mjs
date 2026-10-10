@@ -5,7 +5,7 @@
 //   - the `dark:` variant is attribute-driven, not media-driven
 //   - the dark block actually wins in the cascade
 //
-//   node frontend/scripts/check-theme-css.mjs
+//   node web/scripts/check-theme-css.mjs
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";

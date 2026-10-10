@@ -37,7 +37,7 @@
 
 点击事件经 Kafka 异步落库并累加计数；Kafka 不可用时降级为直接写入数据库。
 
-数据库表结构由 `backend/internal/domain/entity` 下的 GORM 模型定义，由 `backend/cmd/migrate`
+数据库表结构由 `internal/domain/entity` 下的 GORM 模型定义，由 `cmd/migrate`
 （AutoMigrate）应用。仓库里没有 SQL 迁移文件：结构体是唯一事实来源，AutoMigrate 只补齐缺失的
 表 / 列 / 索引，因此可以安全地重复执行。
 
@@ -57,9 +57,9 @@ docker compose up -d
 本地开发：
 
 ```bash
-cd backend && go run ./cmd/migrate/         # 仅应用表结构，API 启动时会自动应用
-cd backend && go run ./cmd/server/main.go   # 8080
-cd frontend && npm run dev                  # 3000
+go run ./cmd/migrate/         # 仅应用表结构，API 启动时会自动应用
+go run ./cmd/server/main.go   # 8080
+cd web && npm run dev         # 3000
 ```
 
 ## 环境变量
@@ -79,10 +79,13 @@ cd frontend && npm run dev                  # 3000
 ## 目录结构
 
 ```text
-backend/   Go 后端（cmd + internal），AI 助手也在其中
-frontend/  Vite 单页应用，构建为静态文件
+cmd/       入口：API、Kafka worker、表结构迁移
+config/    环境变量解析（唯一的配置来源）
+internal/  应用主体：domain、handler、service、infra、middleware、mq、metrics、assistant
+web/       Vite 单页应用，构建为静态文件后由 nginx 提供
 docs/      设计、贡献与代码风格文档
-nginx/     反向代理配置
-deploy/    部署脚本
+deploy/    部署脚本，以及 deploy/nginx/ 下的反向代理配置
+scripts/   维护脚本与部署步骤测试
+go.mod     模块根目录就是仓库根目录：不再需要 cd backend
 docker-compose.yml
 ```

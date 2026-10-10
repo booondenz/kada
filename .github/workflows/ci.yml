@@ -16,7 +16,7 @@ env:
 
 jobs:
   # ----- Go lint -----
-  backend-lint:
+  go-lint:
     name: Go Lint
     runs-on: ubuntu-latest
     steps:
@@ -25,17 +25,17 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache-dependency-path: backend/go.sum
+          # The Go module is the repository root, so the cache key hashes the root go.sum.
+          cache-dependency-path: go.sum
 
       - name: Install golangci-lint
         run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
 
       - name: Run golangci-lint
-        working-directory: backend
         run: golangci-lint run --timeout=5m
 
   # ----- Go tests -----
-  backend-test:
+  go-test:
     name: Go Tests
     runs-on: ubuntu-latest
     services:
@@ -59,18 +59,16 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache-dependency-path: backend/go.sum
+          # The Go module is the repository root, so the cache key hashes the root go.sum.
+          cache-dependency-path: go.sum
 
       - name: Download dependencies
-        working-directory: backend
         run: go mod download
 
       - name: Run vet
-        working-directory: backend
         run: go vet ./...
 
       - name: Run tests
-        working-directory: backend
         env:
           DATABASE_URL: postgres://kada:kada123@localhost:5432/kada_test?sslmode=disable
           JWT_SECRET: test-secret
@@ -80,12 +78,12 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: go-coverage
-          path: backend/coverage.out
+          path: coverage.out
           retention-days: 7
 
-  # ----- Frontend lint -----
-  frontend-lint:
-    name: Frontend Lint
+  # ----- Web lint -----
+  web-lint:
+    name: Web Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -97,21 +95,21 @@ jobs:
       - name: Cache node_modules
         uses: actions/cache@v6
         with:
-          path: frontend/node_modules
-          key: ${{ runner.os }}-npm-${{ hashFiles('frontend/package-lock.json') }}
+          path: web/node_modules
+          key: ${{ runner.os }}-npm-${{ hashFiles('web/package-lock.json') }}
           restore-keys: ${{ runner.os }}-npm-
 
       - name: Install dependencies
-        working-directory: frontend
+        working-directory: web
         run: npm ci
 
       - name: Run ESLint
-        working-directory: frontend
+        working-directory: web
         run: npm run lint
 
-  # ----- Frontend build -----
-  frontend-build:
-    name: Frontend Build
+  # ----- Web build -----
+  web-build:
+    name: Web Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -123,21 +121,21 @@ jobs:
       - name: Cache node_modules
         uses: actions/cache@v6
         with:
-          path: frontend/node_modules
-          key: ${{ runner.os }}-npm-${{ hashFiles('frontend/package-lock.json') }}
+          path: web/node_modules
+          key: ${{ runner.os }}-npm-${{ hashFiles('web/package-lock.json') }}
           restore-keys: ${{ runner.os }}-npm-
 
 
       - name: Install dependencies
-        working-directory: frontend
+        working-directory: web
         run: npm ci
 
       - name: Type check
-        working-directory: frontend
+        working-directory: web
         run: npx tsc --noEmit
 
       - name: Build
-        working-directory: frontend
+        working-directory: web
         env:
           # "same-origin" makes the bundle issue relative requests: nginx serves the frontend and proxies
           # /api/ to the Go backend. The sentinel is used instead of an empty value because the bundler
@@ -147,8 +145,8 @@ jobs:
 
       # Packed here rather than in the deploy job, so the deploy job gets the bundle instead of building
       # the same commit a second time. The bundle is plain files: nginx serves them from a directory.
-      - name: Package the frontend for the host
-        working-directory: frontend
+      - name: Package the web app for the host
+        working-directory: web
         run: |
           mkdir -p ../deploy-pkg
           tar czf ../deploy-pkg/kada-fe.tar.gz -C dist .
@@ -157,7 +155,7 @@ jobs:
       - name: Upload the frontend build
         uses: actions/upload-artifact@v7
         with:
-          name: frontend-deploy-pkg
+          name: web-deploy-pkg
           path: deploy-pkg
           retention-days: 1
 
@@ -165,7 +163,7 @@ jobs:
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: [backend-lint, backend-test, frontend-lint, frontend-build]
+    needs: [go-lint, go-test, web-lint, web-build]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v7
@@ -173,21 +171,21 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache-dependency-path: backend/go.sum
+          # The Go module is the repository root, so the cache key hashes the root go.sum.
+          cache-dependency-path: go.sum
 
       - name: Build Go binaries
-        working-directory: backend
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/server ./cmd/server/
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/migrate ./cmd/migrate/
 
-      # Built by the frontend-build job - same commit, same VITE_API_URL - and handed over as one
+      # Built by the web-build job - same commit, same VITE_API_URL - and handed over as one
       # artifact. Setting up Node and running `npm ci && npm run build` here again cost ~35s of the deploy
       # for a bundle that was already sitting in the workspace next door.
-      - name: Fetch the frontend build
+      - name: Fetch the web build
         uses: actions/download-artifact@v7
         with:
-          name: frontend-deploy-pkg
+          name: web-deploy-pkg
           path: deploy-pkg
 
       - name: Create deploy marker
@@ -227,10 +225,10 @@ jobs:
           REMOTE="$SERVER_USER@$SERVER_HOST"
           BUNDLE="$RUNNER_TEMP/kada-deploy.tar.gz"
 
-          # The file list doubles as an assertion: tar fails on a missing member, which is how a frontend
+          # The file list doubles as an assertion: tar fails on a missing member, which is how a web
           # artifact that never arrived stops the deploy here rather than on the host.
           tar czf "$BUNDLE" \
-            backend/bin/server backend/bin/migrate \
+            bin/server bin/migrate \
             deploy-pkg deploy-version.txt \
             deploy/upsert-env.sh
 
@@ -403,7 +401,7 @@ jobs:
             ls -t "$BACKEND_DIR"/backups/server.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
 
             # 2. Apply the database schema.
-            # The schema is defined by the GORM models in backend/internal/domain/entity and applied by
+            # The schema is defined by the GORM models in internal/domain/entity and applied by
             # cmd/migrate: it reconciles legacy constraint names, then runs AutoMigrate (additive only).
             #
             # DATABASE_URL comes from the repository secret when one is set, and otherwise from the host's
@@ -414,7 +412,7 @@ jobs:
             # The step says which source it used, because "the schema was applied" is not something to
             # infer from a green run.
             echo "Applying the database schema"
-            cp -f "$DEPLOY_DIR/backend/bin/migrate" "$BACKEND_DIR/bin/migrate"
+            cp -f "$DEPLOY_DIR/bin/migrate" "$BACKEND_DIR/bin/migrate"
             chmod +x "$BACKEND_DIR/bin/migrate"
             cd "$BACKEND_DIR"
             # The target is printed without its credentials - scheme and user:password stripped - so the
@@ -435,7 +433,7 @@ jobs:
             # 3. Replace the backend binary.
             echo "Restarting the backend"
             systemctl stop kada-api
-            cp "$DEPLOY_DIR/backend/bin/server" "$BACKEND_DIR/bin/server"
+            cp "$DEPLOY_DIR/bin/server" "$BACKEND_DIR/bin/server"
             chmod +x "$BACKEND_DIR/bin/server"
             systemctl start kada-api
             sleep 2
@@ -451,7 +449,7 @@ jobs:
             # 4. Replace the frontend build.
             #
             #    Static files, so there is no service to restart and no runtime to supervise: nginx serves
-            #    this directory directly (see nginx/nginx-prod.conf).
+            #    this directory directly (see deploy/nginx/nginx-prod.conf).
             #
             #    The bundle is moved INTO the directory rather than replacing it, because that directory
             #    is bind-mounted into the nginx container and a bind mount keeps the inode it resolved
@@ -537,7 +535,7 @@ jobs:
         continue-on-error: true
         env:
           # The public origin is not a secret: it is in the certificate transparency logs, the DNS records
-          # and nginx/nginx-prod.conf, which is where this default comes from. Override the SITE_URL
+          # and deploy/nginx/nginx-prod.conf, which is where this default comes from. Override the SITE_URL
           # repository variable when a deployment serves a different name.
           SITE_ORIGIN: ${{ vars.SITE_URL || 'https://kada.click' }}
         run: |
@@ -674,7 +672,7 @@ jobs:
   pipeline-summary:
     name: Pipeline Summary
     runs-on: ubuntu-latest
-    needs: [backend-lint, backend-test, frontend-lint, frontend-build, deploy]
+    needs: [go-lint, go-test, web-lint, web-build, deploy]
     if: always()
     steps:
       - name: Report status
@@ -684,12 +682,12 @@ jobs:
             echo ""
             echo "| Job | Result |"
             echo "|-----|--------|"
-            for job in backend-lint backend-test frontend-lint frontend-build deploy; do
+            for job in go-lint go-test web-lint web-build deploy; do
               case "$job" in
-                backend-lint) result="${{ needs.backend-lint.result }}" ;;
-                backend-test) result="${{ needs.backend-test.result }}" ;;
-                frontend-lint) result="${{ needs.frontend-lint.result }}" ;;
-                frontend-build) result="${{ needs.frontend-build.result }}" ;;
+                go-lint) result="${{ needs.go-lint.result }}" ;;
+                go-test) result="${{ needs.go-test.result }}" ;;
+                web-lint) result="${{ needs.web-lint.result }}" ;;
+                web-build) result="${{ needs.web-build.result }}" ;;
                deploy) result="${{ needs.deploy.result }}" ;;
               esac
               echo "| $job | $result |"

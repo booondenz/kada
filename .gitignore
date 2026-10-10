@@ -3,21 +3,26 @@ node_modules/
 .pnpm-store/
 
 # Go
-backend/bin/
-backend/tmp/
-# A stray `go build ./cmd/server` run inside backend/ drops the binary next to the source instead of in
-# bin/. One of those was committed and sat in the repository as a 47 MB Linux executable.
-backend/server
+#
+# The repository root is the Go module, so `go build ./cmd/server` drops the binary next to the source
+# instead of in bin/. One of those - a 47 MB Linux executable - was committed once and sat in the
+# repository, which is what this list exists to prevent. The names are the commands under cmd/.
+bin/
+tmp/
+/server
+/worker
+/migrate
+coverage.out
 
-# Scratch files (commit-message drafts) left behind by tooling run inside backend/
-backend/.gitmsg*.txt
-backend/.gm*.txt
+# Scratch files (commit-message drafts) left behind by tooling run at the root
+.gitmsg*.txt
+.gm*.txt
 
 # Go tool caches (agents/tooling sometimes point these inside the repo)
-backend/.gocache/
-backend/.gomodcache/
-backend/.gopath/
-backend/.golangci-cache/
+.gocache/
+.gomodcache/
+.gopath/
+.golangci-cache/
 
 # Environment
 .env
@@ -38,11 +43,11 @@ Thumbs.db
 docker-compose.override.yml
 
 # Build output
-frontend/dist/
-frontend/out/
+web/dist/
+web/out/
 
-# Screenshots and reports from frontend/scripts/capture-theme.mjs
-frontend/.theme-shots/
+# Screenshots and reports from web/scripts/capture-theme.mjs
+web/.theme-shots/
 
 # Logs
 *.log

@@ -5,7 +5,7 @@
 // state and breakpoint variants. Anything already correct under the inverted scales (text-red-600,
 // bg-indigo-50, ...) is left alone, as are black overlays and the neutral-* usages.
 //
-//   node frontend/scripts/migrate-color-tokens.mjs [--dry-run]
+//   node web/scripts/migrate-color-tokens.mjs [--dry-run]
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";

@@ -34,9 +34,9 @@ cd /opt/kada
 # git clone https://github.com/yourusername/kada.git /opt/kada
 
 echo "Upload the code from your dev machine with scp:"
-echo "  scp -r /home/chun/dev/projects/kada/backend \"$DEPLOY_HOST\":/opt/kada/"
-echo "  scp -r /home/chun/dev/projects/kada/docker-compose.yml \"$DEPLOY_HOST\":/opt/kada/"
-echo "  scp -r /home/chun/dev/projects/kada/nginx \"$DEPLOY_HOST\":/opt/kada/"
+echo "  scp -r /home/chun/dev/projects/kada/. \"$DEPLOY_HOST\":/opt/kada/"
+echo "  # One copy carries everything: the Go module is the repository root, and web/, deploy/ and"
+echo "  # docker-compose.yml sit beside it."
 
 # ========== 4. Configure firewall ==========
 echo "[4/6] Configuring the firewall..."

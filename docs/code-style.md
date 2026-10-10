@@ -279,7 +279,7 @@ const t = useT();
 ```
 
 - Every user-facing string goes through `t()`.
-- Add the English entry to `frontend/src/lib/i18n/dictionary.ts` in the same change.
+- Add the English entry to `web/src/lib/i18n/dictionary.ts` in the same change.
 - Never build a sentence by concatenating translated fragments; translate the whole sentence.
 - `zh` is the identity map, so a missing key degrades to Chinese instead of breaking the page. That
   is a safety net, not a licence to skip a translation.
@@ -310,9 +310,9 @@ tests := []struct {
 
 ## 10. Configuration and secrets
 
-- `config.Load()` in `backend/config` is the only place that reads the environment. Adding a setting
-  means: a field on `Config`, a default (or a comment saying why there is none), a row in both
-  `.env.example` files, and a row in the README table.
+- `config.Load()` in `config` is the only place that reads the environment. Adding a setting
+  means: a field on `Config`, a default (or a comment saying why there is none), a row in
+  `.env.example`, and a row in the README table.
 - Never commit a real secret, and never log one. Log a masked value when you must identify it
   (`maskPhone`).
 - A placeholder value in an example file is a trap: it looks configured and fails at runtime. Leave
@@ -346,7 +346,7 @@ const SAME_ORIGIN = "same-origin";   // inlined reliably, unlike ""
 ```
 
 And remember that `VITE_API_URL` is fixed at build time: set it as a build argument
-(`frontend/Dockerfile`, `docker-compose.yml`) or in the build step (`ci.yml`), never as a container
+(`web/Dockerfile`, `docker-compose.yml`) or in the build step (`ci.yml`), never as a container
 runtime environment variable, where it does nothing at all.
 
 ## 11. Formatting quick reference
@@ -364,6 +364,6 @@ runtime environment variable, where it does nothing at all.
 Run before pushing:
 
 ```bash
-cd backend && golangci-lint run --timeout=5m   # gofmt, goimports, govet, staticcheck, gosec, misspell
-cd frontend && npx tsc --noEmit && npm run lint
+golangci-lint run --timeout=5m   # gofmt, goimports, govet, staticcheck, gosec, misspell
+cd web && npx tsc --noEmit && npm run lint
 ```

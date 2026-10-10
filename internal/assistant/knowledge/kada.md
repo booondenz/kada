@@ -110,5 +110,5 @@ AI 助手采用**单会话模式**：每个用户只保留当前一个会话，�
 - 一键启动全部服务（含数据库等）：`docker compose up -d`
 - 数据库表结构由 GORM 模型自动迁移（AutoMigrate），只增不删，可重复执行
 - AI 助手没有独立服务：它随 API 进程一起启动，`/api/ai/*` 由同一个二进制提供
-- AI 说明文档：`backend/internal/assistant/knowledge/` 下的 Markdown 会在编译时嵌入二进制，每次提问时整篇作为参考资料发给模型；改完文档重新编译即可生效，不需要入库、切块或迁移
+- AI 说明文档：`internal/assistant/knowledge/` 下的 Markdown 会在编译时嵌入二进制，每次提问时整篇作为参考资料发给模型；改完文档重新编译即可生效，不需要入库、切块或迁移
 - AI 助手需要配置的环境变量：`DEEPSEEK_API_KEY`（对话模型密钥）；`AI_CHAT_MODEL`、`DEEPSEEK_BASE_URL`、`AI_MAX_TOKENS` 可选

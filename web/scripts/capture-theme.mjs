@@ -5,9 +5,9 @@
 // the page is reloaded - which is exactly the path a returning visitor takes: ThemeScript must apply the
 // theme during parsing or a light flash is visible before the dark paint.
 //
-//   node frontend/scripts/capture-theme.mjs [--port 3000]
+//   node web/scripts/capture-theme.mjs [--port 3000]
 //
-// Writes PNGs into frontend/.theme-shots/.
+// Writes PNGs into web/.theme-shots/.
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -247,7 +247,7 @@ async function main() {
   }
 
   writeFileSync(join(outDir, "observed.json"), JSON.stringify(report, null, 2));
-  console.log(`\n${shots.length} screenshots in frontend/.theme-shots/`);
+  console.log(`\n${shots.length} screenshots in web/.theme-shots/`);
 
   // Fail loudly if a requested theme did not actually take effect.
   const expected = { light: "light", dark: "dark" };

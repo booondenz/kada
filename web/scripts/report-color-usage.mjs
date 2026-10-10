@@ -7,7 +7,7 @@
 //             is always paired with `text-white`, so brightening it for a dark canvas would make the
 //             primary buttons unreadable
 //
-//   node frontend/scripts/report-color-usage.mjs
+//   node web/scripts/report-color-usage.mjs
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";

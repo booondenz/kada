@@ -3,7 +3,7 @@
 //
 // So the script lives here as a string, build-config injects it into <head> (vite.config.ts), and the
 // provider in ./context reads the attribute it set rather than recomputing anything. Keeping it in this
-// module rather than inline in index.html is what lets frontend/scripts/check-theme-timing.mjs look for
+// module rather than inline in index.html is what lets web/scripts/check-theme-timing.mjs look for
 // one implementation.
 export const STORAGE_KEY = "kada.theme";
 export const DARK_QUERY = "(prefers-color-scheme: dark)";

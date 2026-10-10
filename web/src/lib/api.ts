@@ -11,7 +11,7 @@ import { getToken } from "./auth";
 // Why a sentinel and not an empty string: Vite replaces `import.meta.env.VITE_API_URL` with the value the
 // bundle was built with, so "not configured" arrives as undefined and an empty configuration would be
 // indistinguishable from a deliberate one. The sentinel keeps the two apart, and it names the same-origin
-// case at the build site (the CI job and frontend/Dockerfile both pass it).
+// case at the build site (the CI job and web/Dockerfile both pass it).
 const SAME_ORIGIN = "same-origin";
 
 function resolveAPIURL(): string {
