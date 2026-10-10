@@ -252,8 +252,9 @@ jobs:
             else
               # The size is asked for here too, not only on success. "did not finish" on its own cannot tell a
               # link that delivered nothing from one that delivered all but the last megabyte, and those two
-              # want opposite answers: a longer timeout for the second, another route for the first.
-              partial=$("${SSH[@]}" "$REMOTE" 'stat -c%s /tmp/kada-deploy.tar.gz 2>/dev/null || echo 0' || echo unknown)
+              # want opposite answers: a longer timeout for the second, another route for the first. Bounded,
+              # because this runs on a link that has just proved it can stall.
+              partial=$(timeout 30 "${SSH[@]}" "$REMOTE" 'stat -c%s /tmp/kada-deploy.tar.gz 2>/dev/null || echo 0' || echo unknown)
               echo "attempt $attempt did not finish, the host holds $partial of $local_size bytes"
             fi
             sleep "$RETRY_DELAY_SECONDS"

@@ -96,6 +96,11 @@ run_case() {
   : > "$dir/calls"
   export STUB_CALLS="$dir/calls"
 
+  # Every case here is one where the release did reach the host: the smoke test is what is being judged. The
+  # report step reads this to tell "the site was unreachable" apart from "the deploy never happened", and it
+  # treats an unset value as the latter - which is the separate case further down, not this one.
+  export APPLY_OUTCOME=success
+
   # The stub: every call is refused unless the case says otherwise. It records each call so the harness
   # can tell that the stub - and not the real curl - was what ran.
   cat > "$dir/bin/curl" <<'STUB'
@@ -197,6 +202,48 @@ run_case dns       0 failed yes "curl 6: could not fetch"             "DNS does 
 run_case unhealthy 0 failed yes "did not answer with a healthy payload" "reachable but the API is not healthy"
 echo
 
+echo "--- the report step when the release never reached the host ---"
+
+# The failure this exists for: a stalled upload was reported as "the smoke test did not run" next to "the
+# deployment itself was checked on the host and is not affected" - a reassuring sentence about a deployment
+# that never happened, printed at the moment a reader most needs the truth. The step cannot tell the two
+# apart from the files it reads, so it is told which one occurred, and these cases pin what it then says.
+run_no_deploy_case() {
+  mode="$1"; label="$2"
+  dir="$HERE/case-nodeploy-$mode"
+  rm -rf "$dir"; mkdir -p "$dir"
+  : > "$dir/summary.md"
+
+  # No verify-status.txt and no verify-body.txt: the verify step was skipped, exactly as it is when an
+  # earlier step of the job fails.
+  APPLY_OUTCOME="$mode" GITHUB_STEP_SUMMARY="$dir/summary.md" \
+    SITE="https://kada.click" bash "$HERE/step-report.sh" > "$dir/report.out" 2>&1
+  rc=$?
+
+  problems=""
+  [ "$rc" = "0" ] || problems="$problems reportExit=$rc"
+  grep -q 'The release did not reach the host' "$dir/summary.md" || problems="$problems summary-does-not-say-what-happened"
+  # Nothing about the site may be claimed: no smoke test ran, so there is no result to report.
+  grep -q 'Public smoke test did not pass' "$dir/summary.md" && problems="$problems claimed-a-smoke-test-failure"
+  grep -q 'not affected' "$dir/summary.md" && problems="$problems claimed-the-deployment-was-checked"
+  # An error annotation, not a warning: the deployment did not happen.
+  grep -q '::error' "$dir/report.out" || problems="$problems no-error-annotation"
+  grep -q '::warning' "$dir/report.out" && problems="$problems warned-instead-of-erroring"
+
+  if [ -z "$problems" ]; then
+    printf 'ok    %s\n' "$label"
+  else
+    printf 'FAIL  %s\n' "$label"
+    printf '        reason:%s\n' "$problems"
+    fails=$((fails + 1))
+  fi
+  printf '        exit=%s summary: %s\n' "$rc" "$(tail -n 1 "$dir/summary.md")"
+}
+
+run_no_deploy_case skipped "the apply step never ran, because an earlier step failed"
+run_no_deploy_case failure "the apply step itself failed"
+echo
+
 echo "--- the SMS advisory step ---"
 
 # A missing SMS secret must be reported without failing the deploy, and must name every key that is not
@@ -294,8 +341,12 @@ case "$cmd" in
       dead) echo "connection refused" >&2; exit 1 ;;
     esac
     ;;
-  'stat -c%s /tmp/kada-deploy.tar.gz')
-    size=$(wc -c < "$STUB_REMOTE")
+  'stat -c%s /tmp/kada-deploy.tar.gz'|'stat -c%s /tmp/kada-deploy.tar.gz 2>/dev/null || echo 0')
+    # Both forms of the size query: the success path asks once, and the failure path asks again to report how
+    # much of the bundle arrived - which is the number that decides whether the link is slow or dead. The
+    # second form carries the step's "no file yet" fallbacks, so this has to answer 0 rather than fail when
+    # nothing was ever delivered.
+    if [ -f "$STUB_REMOTE" ]; then size=$(wc -c < "$STUB_REMOTE"); else size=0; fi
     if [ "$STUB_MODE" = "truncated" ]; then size=$((size - 1)); fi
     printf '%s\n' "$size"
     ;;
