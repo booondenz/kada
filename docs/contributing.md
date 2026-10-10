@@ -120,15 +120,20 @@ cd frontend && npm run lint && npx tsc --noEmit && npm run build
 
 ## 5. Making a change
 
-1. **Branch off `main`.** Use a short descriptive name: `feat/ai-support`, `fix/sms-signature-error`.
-2. **Keep the change focused.** One topic per branch and per pull request. Unrelated cleanups make a
+1. **Open the issue first.** Before the branch, before the code, before deciding the change is small
+   enough not to need one. [§7](#7-issues) says what goes in it; the point of writing it first is that it
+   is the only step that has to decide what "done" means *before* there is an implementation to argue
+   with. A fix whose issue was written afterwards is a fix nobody can find later: the tracker is the only
+   list of what was wrong with this project, and the commit log is not searchable by symptom.
+2. **Branch off `main`.** Use a short descriptive name: `feat/ai-support`, `fix/sms-signature-error`.
+3. **Keep the change focused.** One topic per branch and per pull request. Unrelated cleanups make a
    change hard to review and hard to revert.
-3. **Follow the existing layering.** New behaviour belongs in a service; the handler stays thin. See
+4. **Follow the existing layering.** New behaviour belongs in a service; the handler stays thin. See
    [design.md §4](design.md#4-backend).
-4. **Keep the layers honest.** Handlers do not run SQL, services do not touch `*gin.Context`,
+5. **Keep the layers honest.** Handlers do not run SQL, services do not touch `*gin.Context`,
    ownership is enforced in the `WHERE` clause.
-5. **Write the tests that would have caught the bug** or that pin the new behaviour.
-6. **Update the documentation** in the same pull request: `docs/design.md` when a decision or a flow
+6. **Write the tests that would have caught the bug** or that pin the new behaviour.
+7. **Update the documentation** in the same pull request: `docs/design.md` when a decision or a flow
    changes, `README.md` when setup or commands change.
 
 ### Adding a backend resource
@@ -231,6 +236,12 @@ wrong.
 - The observable condition that says the problem is gone.
 - The test that will hold it there.
 ```
+
+**It is written before the work, not after it.** The reason is not bookkeeping: the issue is the only
+document that says what "done" means while the implementation is still an opinion, and the only one written
+in terms of the symptom rather than the fix - which is what makes it findable six months later by somebody
+who has the symptom and not the commit. An incident found in production gets one too, with the log line in
+`## Problem`: that is the evidence, and it is the part that is impossible to reconstruct afterwards.
 
 What does not belong: background, alternatives considered, trade-off analysis, and plans for work that
 is not being done now. A design choice that needs that much room belongs in [design.md](design.md); a
