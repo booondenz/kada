@@ -19,6 +19,7 @@ import (
 	"github.com/chun/kada-backend/internal/domain"
 	"github.com/chun/kada-backend/internal/domain/entity"
 	"github.com/chun/kada-backend/internal/infra/urlcheck"
+	"github.com/chun/kada-backend/internal/metrics"
 	"github.com/chun/kada-backend/internal/mq"
 )
 
@@ -161,11 +162,19 @@ func (s *LinkService) GetByID(ctx context.Context, linkID, userID int64) (*domai
 	return info, nil
 }
 
-// GetByCode gets a link by short code (reads from cache first)
+// GetByCode gets a link by short code (reads from cache first).
+//
+// Every way out of the cache is counted, because the hit ratio is the only evidence that the cache is
+// earning its place. Both hit and negative_hit mean the request was answered without PostgreSQL, which is
+// the number worth reporting; a miss is a lookup that reached the database.
 func (s *LinkService) GetByCode(ctx context.Context, shortCode string) (*domain.LinkInfo, error) {
 	// try to read from cache
 	if s.cache != nil {
 		if info, ok := s.cache.GetLink(ctx, shortCode); ok {
+			// Counted before the expiry check: the request was answered from the cache either way, and the
+			// question this counter answers is whether PostgreSQL was needed.
+			metrics.CacheLookup(metrics.CacheHit)
+
 			// check whether it has expired
 			if info.ExpiresAt != nil && info.ExpiresAt.Before(time.Now()) {
 				s.cache.InvalidateLink(ctx, shortCode)
@@ -178,8 +187,11 @@ func (s *LinkService) GetByCode(ctx context.Context, shortCode string) (*domain.
 		// Without this every request for an unknown code - which is what a scanner sends, and what a
 		// link someone deleted leaves behind - is a database query.
 		if s.cache.IsMissing(ctx, shortCode) {
+			metrics.CacheLookup(metrics.CacheNegativeHit)
 			return nil, domain.ErrLinkNotFound
 		}
+
+		metrics.CacheLookup(metrics.CacheMiss)
 	}
 
 	return s.loadLink(ctx, shortCode)
@@ -240,12 +252,16 @@ func (s *LinkService) cacheLink(ctx context.Context, info *domain.LinkInfo) {
 	s.cache.ClearMissing(ctx, info.ShortCode)
 }
 
-// markMissing records that a short code did not resolve to a link
+// markMissing records that a short code did not resolve to a link.
+//
+// Counted here rather than at the call site: this is the write that turns a stream of requests for an
+// absent code into requests the database never sees, so the counter belongs to the act itself.
 func (s *LinkService) markMissing(ctx context.Context, shortCode string) {
 	if s.cache == nil {
 		return
 	}
 	s.cache.MarkMissing(ctx, shortCode)
+	metrics.CacheLookup(metrics.CacheNegativeStored)
 }
 
 // CheckPassword checks the link password
@@ -615,14 +631,19 @@ func (s *LinkService) LogClick(ctx context.Context, e domain.ClickEvent) {
 	if s.kafka != nil {
 		if err := s.kafka.PublishClick(ctx, event); err != nil {
 			// Kafka failed -> fall back to direct write
+			metrics.ClickEvent(metrics.ClickPublishFailed)
 			log.Printf("kafka publish failed, falling back to direct write: %v", err)
 		} else {
+			metrics.ClickEvent(metrics.ClickPublished)
 			return
 		}
 	}
 	if s.clickWriter != nil {
 		if err := s.clickWriter.WriteClick(ctx, event); err != nil {
+			metrics.ClickEvent(metrics.ClickDirectWriteFailed)
 			log.Printf("click direct write failed: %v", err)
+		} else {
+			metrics.ClickEvent(metrics.ClickDirectWrite)
 		}
 	}
 }

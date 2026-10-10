@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	qrcode "github.com/skip2/go-qrcode"
@@ -13,6 +14,7 @@ import (
 	"github.com/chun/kada-backend/internal/domain"
 	"github.com/chun/kada-backend/internal/infra/ua"
 	"github.com/chun/kada-backend/internal/infra/urlcheck"
+	"github.com/chun/kada-backend/internal/metrics"
 	"github.com/chun/kada-backend/internal/middleware"
 )
 
@@ -104,16 +106,26 @@ func (h *Handler) pageEvent(c *gin.Context, linkID int64, kind domain.ClickKind,
 
 // Redirect performs the short-link redirect (with platform detection and password check).
 func (h *Handler) Redirect(c *gin.Context) {
+	// Each branch names the answer it is about to send, and the deferred call records it once with the time
+	// the handler took. Naming the outcome at the branch rather than measuring inside it is what keeps the
+	// counter and the histogram in step: a new branch can only forget to name itself, and that shows up as
+	// an "unknown" series rather than as a missing measurement.
+	outcome := metrics.OutcomeUnknown
+	start := time.Now()
+	defer func() { metrics.Redirect(outcome, time.Since(start)) }()
+
 	code := c.Param("code")
 
 	link, err := h.svc.GetByCode(c.Request.Context(), code)
 	if err != nil {
+		outcome = metrics.OutcomeNotFound
 		c.String(http.StatusNotFound, "link not found or expired")
 		return
 	}
 
 	// Guard against legacy dirty data: the target URL must be http/https so that schemes such as javascript: cannot execute on the guide page (XSS).
 	if !urlcheck.IsSafeTarget(link.OriginalURL) {
+		outcome = metrics.OutcomeUnsafeTarget
 		h.renderUnsafeTargetPage(c)
 		return
 	}
@@ -121,6 +133,7 @@ func (h *Handler) Redirect(c *gin.Context) {
 	// Check whether a password is required. The answer rides along with the link that was just loaded,
 	// so this costs no extra query and cannot disagree with the row GetByCode returned.
 	if link.HasPassword {
+		outcome = metrics.OutcomePasswordPage
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		c.String(http.StatusOK, passwordPageHTML(code))
 		return
@@ -141,11 +154,13 @@ func (h *Handler) Redirect(c *gin.Context) {
 
 	// Check whether an intermediate guide page is needed.
 	if ua.NeedsIntermediatePage(platform) {
+		outcome = metrics.OutcomeGuidePage
 		h.renderIntermediatePage(c, link.OriginalURL, code, platform)
 		return
 	}
 
 	// Regular browsers get a direct 302 redirect.
+	outcome = metrics.OutcomeRedirect
 	c.Redirect(http.StatusFound, link.OriginalURL)
 }
 

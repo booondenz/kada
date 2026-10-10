@@ -483,6 +483,39 @@ The column was added with a default of `visit` because of the rows that already 
 recorded before it did, and they are already counted in `click_count` and in every chart, so `visit` is
 the value that leaves that history alone.
 
+### 7.4 What the redirect path reports
+
+`GET /metrics` serves the Prometheus text format: the redirect handler's outcomes and latency, what the
+short-code cache did with every lookup, what happened to every click on its way to the store, and the Go
+runtime's own series. The vocabulary - names and label values - lives in `internal/metrics` rather than at
+the call sites, because a mistyped label value does not fail: it creates a series that never appears, and
+the only way to notice is to go looking for a graph that is not there.
+
+Two details of the instrumentation are load-bearing:
+
+- **The outcome is named by whichever branch answers**, and recorded once by a deferred call that also
+  times the handler. A branch can therefore forget to name itself, but it cannot record a count without a
+  latency: the two would otherwise drift apart silently. A branch that forgets leaves its request in
+  `outcome="unknown"`, which is a series that should never exist.
+- **The buckets start below a millisecond.** A cache-warm redirect is hundreds of microseconds, so a
+  ladder whose smallest bucket is 10ms would put almost every observation in the first bucket and answer
+  nothing about the path this exists to measure.
+
+The hit ratio this exposes is `(hit + negative_hit) / (hit + negative_hit + miss)`: both of the first two
+are answers served without PostgreSQL, and `miss` is a lookup that reached it. `negative_stored` is the
+write that turns a stream of requests for an absent code into requests the database never sees.
+
+`/metrics` is deliberately not reachable from the internet. nginx proxies `/api/`, `/r/` and `/assets/`
+and serves everything else from the frontend build, so a request for `/metrics` from outside gets
+`index.html`; reaching it means being on the host or holding a tunnel. These series describe traffic and
+cache behaviour, so publishing them is a decision that wants a token or an allowlist in front of it
+rather than a wider bind.
+
+The cost is a dependency: `prometheus/client_golang` and its tree, which also moved `x/net` and
+`google.golang.org/protobuf` forward. Hand-rolling the exposition was rejected because the format is an
+interface other software parses, and because the runtime series (goroutines, GC, resident memory) come
+with it and are half of what a baseline is.
+
 ## 8. Cross-cutting decisions
 
 ### 8.1 Configuration

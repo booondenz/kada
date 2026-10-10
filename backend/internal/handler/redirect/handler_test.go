@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/chun/kada-backend/internal/domain"
+	"github.com/chun/kada-backend/internal/metrics"
 )
 
 // mockLinkService is used for redirect handler tests.
@@ -577,6 +579,66 @@ func TestVerifyPasswordCountsOnlyWhenTheTargetIsSent(t *testing.T) {
 
 			if n := counted(rec.collect(t, 1)); n != tt.want {
 				t.Errorf("the visit was counted %d times, want %d", n, tt.want)
+			}
+		})
+	}
+}
+
+// ========== What the redirect path reports about itself ==========
+
+// Every answer names itself, and the counter moves with it.
+//
+// This is the test for the failure mode metrics have and logs do not: a branch that answers without being
+// measured raises nothing, it just never appears in a series, and the only way to notice is to go looking
+// for a graph that is not there. Starting from OutcomeUnknown and asserting that it did not move turns
+// that silence into a failing test.
+func TestEveryAnswerIsMeasured(t *testing.T) {
+	tests := []struct {
+		name      string
+		userAgent string
+		link      *domain.LinkInfo
+		notFound  bool
+		want      string
+	}{
+		{"a browser is redirected", browserUA, nil, false, metrics.OutcomeRedirect},
+		{"wechat gets the guide page", wechatUA, nil, false, metrics.OutcomeGuidePage},
+		{"a crawler is redirected like anyone else", googlebotUA, nil, false, metrics.OutcomeRedirect},
+		{"a password page is served", browserUA, &domain.LinkInfo{
+			ID: 1, OriginalURL: "https://example.com/target", HasPassword: true,
+		}, false, metrics.OutcomePasswordPage},
+		{"an unsafe target is refused", browserUA, &domain.LinkInfo{
+			ID: 1, OriginalURL: "javascript:alert(1)",
+		}, false, metrics.OutcomeUnsafeTarget},
+		{"an unknown code is a 404", browserUA, nil, true, metrics.OutcomeNotFound},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &mockLinkService{}
+			if tt.link != nil {
+				link := tt.link
+				svc.getByCode = func(context.Context, string) (*domain.LinkInfo, error) { return link, nil }
+			}
+			if tt.notFound {
+				svc.getByCode = func(context.Context, string) (*domain.LinkInfo, error) {
+					return nil, domain.ErrLinkNotFound
+				}
+			}
+
+			gin.SetMode(gin.TestMode)
+			r := gin.New()
+			NewHandler(svc).RegisterRoutes(r, nil, nil)
+
+			before := testutil.ToFloat64(metrics.Redirects.WithLabelValues(tt.want))
+			unnamed := testutil.ToFloat64(metrics.Redirects.WithLabelValues(metrics.OutcomeUnknown))
+
+			do(r, "GET", "/r/abc123", tt.userAgent)
+
+			if got := testutil.ToFloat64(metrics.Redirects.WithLabelValues(tt.want)) - before; got != 1 {
+				t.Errorf("outcome=%q moved by %v, want 1", tt.want, got)
+			}
+			if got := testutil.ToFloat64(metrics.Redirects.WithLabelValues(metrics.OutcomeUnknown)) - unnamed; got != 0 {
+				t.Errorf("an answer did not name its outcome: outcome=%q moved by %v", metrics.OutcomeUnknown, got)
 			}
 		})
 	}

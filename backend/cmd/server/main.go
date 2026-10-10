@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/chun/kada-backend/config"
 	"github.com/chun/kada-backend/internal/assistant"
@@ -194,6 +195,17 @@ func main() {
 			"version": "0.2.0",
 		})
 	})
+
+	// Metrics, in the Prometheus text format. It carries the redirect path's own numbers - what the
+	// handler answered and how long it took, what the short-code cache did, and what happened to each
+	// click - plus the Go runtime's.
+	//
+	// It is deliberately not exposed to the internet. nginx proxies /api/, /r/ and /assets/ and serves
+	// everything else from the frontend build, so a request for /metrics from outside gets index.html;
+	// reaching it means being on the host or holding a tunnel. Making it public is a decision with a
+	// consequence - these series describe traffic and cache behavior - so it wants a token or an
+	// allowlist in front of it, not a wider bind.
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// Short-link redirection (public endpoint, high-traffic rate limit), and the guide page's own reports
 	// under a tighter one of their own: see RegisterRoutes for why the two differ.
