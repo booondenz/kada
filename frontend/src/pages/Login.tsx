@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { Link } from "react-router";
 import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -12,30 +12,46 @@ import { TopBarControls } from "@/components/TopBarControls";
 import { useT } from "@/lib/i18n";
 
 /**
- * Sign-in: phone number + SMS code, and nothing else.
+ * Signing in: a phone number and a password, with the SMS code kept for the two cases that still need it.
  *
- * The email/password tab and the separate sign-up page are gone. A phone number that has never been seen
- * is registered on the spot, so "sign in" and "sign up" are the same action - which is why the page says
- * so instead of hiding it behind a link to a second form.
+ * Registration asks for a code and a password together, so the account is created once and every sign-in
+ * after that costs nothing. Signing in with a code stays reachable - not as a shortcut, but because it is
+ * the only way into an account that has no password: every account created before this flow existed has
+ * none, and a number that has a password but has forgotten it has no other way back in.
  *
- * The graphical challenge is not decoration: the SMS endpoint refuses any request that does not carry a
- * solved one, because an unauthenticated endpoint that makes the server send paid messages is the single
- * most abusable thing in this app.
+ * The graphical challenge protects the one endpoint that spends money. It is only fetched for the modes
+ * that can send a message, so a password sign-in makes no request it does not need.
  */
+type Mode = "login" | "register" | "sms";
+
+const modeTitles: Record<Mode, string> = {
+  login: "登录 Kada",
+  register: "注册 Kada",
+  sms: "用短信验证码登录",
+};
+
 export default function LoginPage() {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const t = useT();
+  // The URL decides which form opens. /register is a shared link, so it has to land on sign-up rather than
+  // on a sign-in form the visitor has to notice is the wrong one.
+  const [mode, setMode] = useState<Mode>(pathname === "/register" ? "register" : "login");
   const [loading, setLoading] = useState(false);
 
   const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [sending, setSending] = useState(false);
 
+  const sendsMessages = mode !== "login";
+
   // The challenge is fetched with SWR rather than from an effect: an effect that calls setState on mount
   // is precisely the cascading render the react-hooks rule warns about, and SWR already expresses "fetch
-  // this once, and let me ask for it again".
+  // this once, and let me ask for it again". A null key skips the fetch entirely, which is what keeps the
+  // password form from asking for a puzzle it has nowhere to show.
   //
   // Revalidation is off on purpose. The challenge is one-time and tied to its id, so the background
   // refresh a window focus would trigger would replace an image the user is halfway through reading with
@@ -44,7 +60,7 @@ export default function LoginPage() {
     data: challenge,
     error: challengeError,
     mutate: refreshCaptcha,
-  } = useSWR("auth-captcha", () => authAPI.captcha(), {
+  } = useSWR(sendsMessages ? "auth-captcha" : null, () => authAPI.captcha(), {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     // One blip must not take the whole form down with it. Deploying restarts kada-api, and nginx can
@@ -85,9 +101,13 @@ export default function LoginPage() {
   const [phoneError, setPhoneError] = useState("");
   const [captchaError, setCaptchaError] = useState("");
   const [codeError, setCodeError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
   const [agreeError, setAgreeError] = useState("");
 
   const phoneValid = phone.length === 11;
+  // The same floor the API enforces. Checking it here as well is not duplication for its own sake: it is
+  // the difference between "that failed" and "that is too short", and the second one is answerable.
+  const passwordValid = password.length >= 8;
 
   // The resend countdown. The timer is cleared on unmount so a page that is gone does not keep one.
   useEffect(() => {
@@ -96,14 +116,31 @@ export default function LoginPage() {
     return () => clearTimeout(timer);
   }, [countdown]);
 
-  const validate = () => {
-    let ok = true;
+  // Switching modes clears what the other mode was complaining about. A stale "the password is too short"
+  // left over the password form, or a captcha error on a form that has no captcha, reads as a bug in the
+  // page rather than as a leftover.
+  const switchTo = (next: Mode) => {
+    setMode(next);
+    setPhoneError("");
+    setCaptchaError("");
+    setCodeError("");
+    setPasswordError("");
+    setAgreeError("");
+  };
+
+  const validatePhone = () => {
     if (!phoneValid) {
       setPhoneError(t("请输入 11 位手机号"));
-      ok = false;
-    } else {
-      setPhoneError("");
+      return false;
     }
+    setPhoneError("");
+    return true;
+  };
+
+  // Registering and signing in both write something the user agreed to; the agree box only exists on the
+  // forms that do.
+  const validateCodeForm = () => {
+    let ok = validatePhone();
     if (!agreed) {
       setAgreeError(t("请先阅读并同意隐私政策"));
       ok = false;
@@ -113,25 +150,22 @@ export default function LoginPage() {
     return ok;
   };
 
-  const handleSendCode = async () => {
-    let ok = true;
-    if (!phoneValid) {
-      setPhoneError(t("请输入 11 位手机号"));
-      ok = false;
-    } else {
-      setPhoneError("");
+  const validatePassword = () => {
+    if (!passwordValid) {
+      setPasswordError(t("密码至少 8 位"));
+      return false;
     }
+    setPasswordError("");
+    return true;
+  };
+
+  const handleSendCode = async () => {
+    let ok = validateCodeForm();
     if (!captcha.trim()) {
       setCaptchaError(t("请输入图形验证码"));
       ok = false;
     } else {
       setCaptchaError("");
-    }
-    if (!agreed) {
-      setAgreeError(t("请先阅读并同意隐私政策"));
-      ok = false;
-    } else {
-      setAgreeError("");
     }
     if (!ok) return;
 
@@ -151,26 +185,50 @@ export default function LoginPage() {
     }
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
+  // One form, three ways out. The two code paths differ only in whether a password is being set.
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    let ok = validate();
+
+    if (mode === "login") {
+      if (!validatePhone() || !validatePassword()) return;
+
+      setLoading(true);
+      try {
+        const data = await authAPI.login(phone, password);
+        setToken(data.token);
+        setUser(data.user);
+        toast.success(t("登录成功"));
+        navigate("/dashboard");
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : t("登录失败"));
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    let ok = validateCodeForm();
     if (code.length !== 6) {
       setCodeError(t("请输入 6 位验证码"));
       ok = false;
     } else {
       setCodeError("");
     }
+    if (mode === "register" && !validatePassword()) ok = false;
     if (!ok) return;
 
     setLoading(true);
     try {
-      const data = await authAPI.loginByPhone(phone, code);
+      const data =
+        mode === "register"
+          ? await authAPI.register(phone, code, password)
+          : await authAPI.loginByPhone(phone, code);
       setToken(data.token);
       setUser(data.user);
-      toast.success(t("登录成功"));
+      toast.success(mode === "register" ? t("注册成功") : t("登录成功"));
       navigate("/dashboard");
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : t("登录失败"));
+      toast.error(e instanceof Error ? e.message : mode === "register" ? t("注册失败") : t("登录失败"));
     } finally {
       setLoading(false);
     }
@@ -182,11 +240,35 @@ export default function LoginPage() {
           cluster and the corner it is pinned to both come from TopBarControls. */}
       <TopBarControls onDark pinned />
       <AuthCard
-        title={t("登录 Kada")}
+        title={t(modeTitles[mode])}
         subtitle={t("智能短链接管理平台")}
-        footer={<>{t("未注册的手机号将自动创建账号")}</>}
+        footer={
+          mode === "login" ? (
+            <>
+              {t("还没有账号？")}
+              <button
+                type="button"
+                onClick={() => switchTo("register")}
+                className="text-indigo-300 underline hover:text-indigo-200"
+              >
+                {t("注册")}
+              </button>
+            </>
+          ) : (
+            <>
+              {t("已有账号？")}
+              <button
+                type="button"
+                onClick={() => switchTo("login")}
+                className="text-indigo-300 underline hover:text-indigo-200"
+              >
+                {t("登录")}
+              </button>
+            </>
+          )
+        }
       >
-        <form onSubmit={handleLogin} className="space-y-4" noValidate>
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <FormField id="phone" label={t("手机号")} error={phoneError}>
             <input
               id="phone"
@@ -200,98 +282,151 @@ export default function LoginPage() {
             />
           </FormField>
 
-          <FormField
-            id="captcha"
-            label={t("图形验证码")}
-            error={captchaError || (challengeError ? t("图形验证码加载失败，请点击刷新") : "")}
-          >
-            <div className="flex gap-3">
+          {mode === "login" && (
+            <FormField id="password" label={t("密码")} error={passwordError}>
               <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={`${inputBase} ${fieldState(!!passwordError)}`}
+                placeholder={t("请输入密码")}
+                autoComplete="current-password"
+                required
+              />
+            </FormField>
+          )}
+
+          {sendsMessages && (
+            <>
+              <FormField
                 id="captcha"
-                type="text"
-                value={captcha}
-                onChange={(e) => setCaptcha(e.target.value.slice(0, 6))}
-                className={`${inputBase} ${fieldState(!!captchaError || !!challengeError)}`}
-                placeholder={t("输入图中字符")}
-                autoComplete="off"
-                required
-              />
-              {/* The image is the refresh control: clicking the picture to get another one is what everyone
-                  tries first, and it keeps the affordance the same size as the challenge itself. */}
-              <button
-                type="button"
-                onClick={() => refreshCaptcha()}
-                title={t("看不清？换一张")}
-                aria-label={t("看不清？换一张")}
-                className="relative h-[42px] w-[120px] shrink-0 overflow-hidden rounded-lg border border-white/20 bg-white/10 transition hover:bg-white/20"
+                label={t("图形验证码")}
+                error={captchaError || (challengeError ? t("图形验证码加载失败，请点击刷新") : "")}
               >
-                {captchaImage ? (
-                  // Painted as a background rather than with <img>: the challenge is an inline SVG data URI
-                  // generated per request, and an <img> is fetched once, and painting it as a background keeps it out of the page resources. A background image needs no lint suppression and no loader.
-                  <span
-                    className="absolute inset-0 bg-contain bg-center bg-no-repeat"
-                    style={{ backgroundImage: `url("${captchaImage}")` }}
+                <div className="flex gap-3">
+                  <input
+                    id="captcha"
+                    type="text"
+                    value={captcha}
+                    onChange={(e) => setCaptcha(e.target.value.slice(0, 6))}
+                    className={`${inputBase} ${fieldState(!!captchaError || !!challengeError)}`}
+                    placeholder={t("输入图中字符")}
+                    autoComplete="off"
+                    required
                   />
-                ) : (
-                  <RefreshCw className="size-4 animate-spin text-indigo-200" />
-                )}
-              </button>
-            </div>
-          </FormField>
+                  {/* The image is the refresh control: clicking the picture to get another one is what everyone
+                      tries first, and it keeps the affordance the same size as the challenge itself. */}
+                  <button
+                    type="button"
+                    onClick={() => refreshCaptcha()}
+                    title={t("看不清？换一张")}
+                    aria-label={t("看不清？换一张")}
+                    className="relative h-[42px] w-[120px] shrink-0 overflow-hidden rounded-lg border border-white/20 bg-white/10 transition hover:bg-white/20"
+                  >
+                    {captchaImage ? (
+                      // Painted as a background rather than with <img>: the challenge is an inline SVG data URI
+                      // generated per request, and an <img> is fetched once, and painting it as a background keeps it out of the page resources. A background image needs no lint suppression and no loader.
+                      <span
+                        className="absolute inset-0 bg-contain bg-center bg-no-repeat"
+                        style={{ backgroundImage: `url("${captchaImage}")` }}
+                      />
+                    ) : (
+                      <RefreshCw className="size-4 animate-spin text-indigo-200" />
+                    )}
+                  </button>
+                </div>
+              </FormField>
 
-          <FormField id="code" label={t("验证码")} error={codeError}>
-            <div className="flex gap-3">
+              <FormField id="code" label={t("验证码")} error={codeError}>
+                <div className="flex gap-3">
+                  <input
+                    id="code"
+                    type="text"
+                    inputMode="numeric"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    className={`${inputBase} ${fieldState(!!codeError)}`}
+                    placeholder={t("6 位验证码")}
+                    autoComplete="one-time-code"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSendCode}
+                    // No challenge, no send: without an id to send back the server would refuse the request
+                    // anyway, and a button that visibly does nothing is worse than a disabled one.
+                    disabled={countdown > 0 || !phoneValid || !captchaId || sending}
+                    className="shrink-0 rounded-lg bg-indigo-500/20 px-4 py-2.5 text-sm font-medium text-indigo-200 transition hover:bg-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {countdown > 0 ? `${countdown}s` : codeSent ? t("重新发送") : t("获取验证码")}
+                  </button>
+                </div>
+              </FormField>
+            </>
+          )}
+
+          {mode === "register" && (
+            <FormField id="new-password" label={t("密码")} error={passwordError}>
               <input
-                id="code"
-                type="text"
-                inputMode="numeric"
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                className={`${inputBase} ${fieldState(!!codeError)}`}
-                placeholder={t("6 位验证码")}
-                autoComplete="one-time-code"
+                id="new-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={`${inputBase} ${fieldState(!!passwordError)}`}
+                placeholder={t("请输入密码")}
+                autoComplete="new-password"
                 required
               />
-              <button
-                type="button"
-                onClick={handleSendCode}
-                // No challenge, no send: without an id to send back the server would refuse the request
-                // anyway, and a button that visibly does nothing is worse than a disabled one.
-                disabled={countdown > 0 || !phoneValid || !captchaId || sending}
-                className="shrink-0 rounded-lg bg-indigo-500/20 px-4 py-2.5 text-sm font-medium text-indigo-200 transition hover:bg-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {countdown > 0 ? `${countdown}s` : codeSent ? t("重新发送") : t("获取验证码")}
-              </button>
-            </div>
-          </FormField>
+              <p className="mt-1 text-xs text-neutral-400">{t("至少 8 位字符")}</p>
+            </FormField>
+          )}
 
-          <div>
-            <label className="flex items-start gap-2 text-xs text-neutral-300">
-              <input
-                type="checkbox"
-                checked={agreed}
-                onChange={(e) => {
-                  setAgreed(e.target.checked);
-                  if (e.target.checked) setAgreeError("");
-                }}
-                className="mt-0.5 size-3.5 shrink-0 cursor-pointer rounded border-white/30 bg-white/10 accent-indigo-500"
-              />
-              <span>
-                {t("我已阅读并同意")}
-                <Link to="/privacy" target="_blank" className="text-indigo-300 underline hover:text-indigo-200">
-                  {t("《隐私政策》")}
-                </Link>
-              </span>
-            </label>
-            {agreeError && <p className="mt-1 text-xs text-red-300">{agreeError}</p>}
-          </div>
+          {sendsMessages && (
+            <div>
+              <label className="flex items-start gap-2 text-xs text-neutral-300">
+                <input
+                  type="checkbox"
+                  checked={agreed}
+                  onChange={(e) => {
+                    setAgreed(e.target.checked);
+                    if (e.target.checked) setAgreeError("");
+                  }}
+                  className="mt-0.5 size-3.5 shrink-0 cursor-pointer rounded border-white/30 bg-white/10 accent-indigo-500"
+                />
+                <span>
+                  {t("我已阅读并同意")}
+                  <Link to="/privacy" target="_blank" className="text-indigo-300 underline hover:text-indigo-200">
+                    {t("《隐私政策》")}
+                  </Link>
+                </span>
+              </label>
+              {agreeError && <p className="mt-1 text-xs text-red-300">{agreeError}</p>}
+            </div>
+          )}
 
           <button
             type="submit"
             disabled={loading}
             className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loading ? t("登录中...") : t("登录 / 注册")}
+            {loading
+              ? mode === "register"
+                ? t("注册中...")
+                : t("登录中...")
+              : mode === "register"
+                ? t("注册")
+                : t("登录")}
+          </button>
+
+          {/* The way into an account that has no password yet, and out of the code flow once it has one.
+              Small and unemphasised: it is not how anyone should sign in, it is how they get unstuck. */}
+          <button
+            type="button"
+            onClick={() => switchTo(mode === "sms" ? "login" : "sms")}
+            className="w-full text-center text-xs text-neutral-400 transition hover:text-neutral-200"
+          >
+            {mode === "sms" ? t("用密码登录") : t("用短信验证码登录")}
           </button>
         </form>
       </AuthCard>

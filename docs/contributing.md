@@ -55,10 +55,11 @@ Fill in `.env` before starting anything:
 - `POSTGRES_PASSWORD` — anything non-default.
 - SMS variables — leave them **empty** in a local setup: real sending is then disabled and verification
   codes are printed to the API log outside release mode. Copying the placeholder value is worse than
-  leaving them empty, because the API starts and then fails on every sign-in. In production they are
-  required for anyone to sign in at all (phone + SMS code is the only method), so the deploy job writes
-  them from repository secrets with `deploy/upsert-env.sh` and refuses to deploy while any of them is
-  missing - checked against the host's `.env`, so a value configured there by hand counts too.
+  leaving them empty, because the API starts and then fails on every registration. In production they are
+  required for anyone to register (a password is chosen with a code, and an account with no password can
+  only be reached through one), so the deploy job writes them from repository secrets with
+  `deploy/upsert-env.sh` and refuses to deploy while any of them is missing - checked against the host's
+  `.env`, so a value configured there by hand counts too.
 
 ### Line endings
 

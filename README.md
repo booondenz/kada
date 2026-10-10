@@ -8,7 +8,8 @@ The backend is written in Go, the frontend is a Vite single-page app served as s
 
 ## Features
 
-- Phone number + SMS code sign-in (JWT), with a graphical challenge and per-phone / per-IP send limits
+- Phone number + password sign-in (JWT), with the SMS code kept for registration, for accounts that have
+  no password yet, and for a forgotten one
 - Create, edit, delete, and bulk-manage short links
 - Custom short codes and custom domains
 - Access passwords and expiry times
@@ -70,7 +71,7 @@ cd frontend && npm run dev                  # 3000
 | JWT_SECRET | Required, a strong random secret |
 | POSTGRES_PASSWORD | Required, must be changed in production |
 | DB_AUTO_MIGRATE | Let the API server apply the schema on startup (default true; set false when using cmd/migrate) |
-| SMS_ACCESS_KEY_ID / SMS_ACCESS_KEY_SECRET | Alibaba Cloud SMS. Required in production: phone + SMS code is the only sign-in method |
+| SMS_ACCESS_KEY_ID / SMS_ACCESS_KEY_SECRET | Alibaba Cloud SMS. Required in production: nobody can register (or recover an account) without it |
 | SMS_SIGN_NAME / SMS_TEMPLATE_CODE | The system-granted SMS signature and template from the Aliyun PNVS console |
 | DEEPSEEK_API_KEY | The assistant's chat model key |
 

@@ -328,6 +328,11 @@ export const zh = {
   "最近更新：2026 年 1 月": "最近更新：2026 年 1 月",
   "返回登录": "返回登录",
   "退出后需要重新用手机号验证码登录。": "退出后需要重新用手机号验证码登录。",
+  "用短信验证码登录": "用短信验证码登录",
+  "用密码登录": "用密码登录",
+  "密码至少 8 位": "密码至少 8 位",
+  "至少 8 位字符": "至少 8 位字符",
+  "注册成功": "注册成功",
 } as const;
 
 export type MessageKey = keyof typeof zh;
@@ -659,4 +664,9 @@ export const en: Messages = {
   "最近更新：2026 年 1 月": "Last updated: January 2026",
   "返回登录": "Back to sign in",
   "退出后需要重新用手机号验证码登录。": "You will need your phone number and a new code to sign in again.",
+  "用短信验证码登录": "Sign in with an SMS code",
+  "用密码登录": "Sign in with a password",
+  "密码至少 8 位": "The password must be at least 8 characters",
+  "至少 8 位字符": "At least 8 characters",
+  "注册成功": "Signed up",
 };

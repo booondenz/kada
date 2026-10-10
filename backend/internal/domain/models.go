@@ -46,6 +46,32 @@ type LoginByPhoneRequest struct {
 	Code  string `json:"code" binding:"required"`
 }
 
+// RegisterRequest creates an account: a verification code that proves the number, and the password that is
+// used to sign in from then on.
+//
+// Sending the code still costs money, which is the whole reason the password exists: one message at
+// registration instead of one at every sign-in.
+type RegisterRequest struct {
+	Phone    string `json:"phone" binding:"required"`
+	Code     string `json:"code" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
+// PasswordLoginRequest signs in with the password chosen at registration.
+type PasswordLoginRequest struct {
+	Phone    string `json:"phone" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
+// ErrInvalidCredentials is returned for every way a password sign-in can fail to match: an unknown number, a
+// wrong password, and an account that has no password yet. They are one error on purpose - telling them
+// apart turns the endpoint into a way to ask which numbers have accounts here.
+var ErrInvalidCredentials = errors.New("the phone number or password is incorrect")
+
+// ErrAlreadyRegistered is returned when a number that already has a password is registered again. It is a
+// distinct error because the caller can act on it: the account exists, so sign in instead.
+var ErrAlreadyRegistered = errors.New("this phone number already has an account, please sign in")
+
 type AuthResponse struct {
 	Token string   `json:"token"`
 	User  UserInfo `json:"user"`

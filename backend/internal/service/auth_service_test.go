@@ -9,7 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/chun/kada-backend/internal/domain"
+	"github.com/chun/kada-backend/internal/domain/entity"
 	"github.com/chun/kada-backend/internal/infra/sms"
 )
 
@@ -176,5 +179,165 @@ func TestStringPtrTreatsEmptyAsAbsent(t *testing.T) {
 	}
 	if got := stringPtr("203.0.113.9"); got == nil || *got != "203.0.113.9" {
 		t.Errorf("stringPtr(\"203.0.113.9\") = %v, want a pointer to that value", got)
+	}
+}
+
+// ========== Passwords ==========
+
+// The floor counts characters and the ceiling counts bytes, because the two limits answer different
+// questions: a password has to be long enough to be worth hashing, and short enough that bcrypt reads all
+// of it. A passphrase of Chinese characters is the case that tells them apart.
+func TestValidatePasswordBounds(t *testing.T) {
+	tests := []struct {
+		name     string
+		password string
+		wantErr  bool
+	}{
+		{"the shortest accepted", "12345678", false},
+		{"one below the floor", "1234567", true},
+		{"empty", "", true},
+		{"eight Chinese characters: eight characters, twenty-four bytes", "智能短链接管理平台", false},
+		{"exactly the byte ceiling", strings.Repeat("a", 72), false},
+		{"one byte past the ceiling", strings.Repeat("a", 73), true},
+		{"twenty-five Chinese characters is over the byte ceiling", strings.Repeat("密", 25), true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePassword(tt.password)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validatePassword(%d characters) = %v, wantErr %v", len([]rune(tt.password)), err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// A password that cannot be the credential it is meant to be is refused before anything is read or written.
+// A nil *gorm.DB is the sharpest way to say so: if the check moved below the first query, this test would
+// panic instead of passing - and the query it would reach costs an SMS code that has already been sent.
+func TestRegisterRejectsAWeakPasswordBeforeTouchingTheDatabase(t *testing.T) {
+	svc := NewAuthService(nil, "secret", "1h", &recordingSender{})
+
+	for _, password := range []string{"", "short", "1234567"} {
+		if _, err := svc.Register(context.Background(), "13800138000", "123456", password); err == nil {
+			t.Errorf("password %q was accepted", password)
+		}
+	}
+	// The number is checked first of all: a malformed one must not reach the password rule either.
+	if _, err := svc.Register(context.Background(), "12345", "123456", "correct-horse"); err == nil {
+		t.Error("a malformed phone number was accepted")
+	}
+}
+
+// withUserRow makes a dry-run handle answer a user lookup with this row.
+//
+// DryRun never executes anything, so a query that is supposed to find an account finds nothing at all.
+// Without this, the only reachable outcome is "no such account", which is exactly the path a password test
+// must not stop at.
+func withUserRow(t *testing.T, row entity.User) *gorm.DB {
+	t.Helper()
+
+	db := newDryRunDB(t)
+	if err := db.Callback().Query().After("gorm:query").Register("test:user_row", func(tx *gorm.DB) {
+		if dest, ok := tx.Statement.Dest.(*entity.User); ok {
+			*dest = row
+		}
+	}); err != nil {
+		t.Fatalf("failed to register the user-row callback: %v", err)
+	}
+	return db
+}
+
+// Every way a password sign-in can fail has to be the same answer: an unknown number, a wrong password, and
+// an account that has no password at all. Anything else turns the endpoint into a way to ask which numbers
+// have accounts here.
+func TestPasswordLoginDoesNotSayWhichWayItFailed(t *testing.T) {
+	hash := hashPassword("correct-horse")
+
+	tests := []struct {
+		name     string
+		row      *entity.User
+		password string
+	}{
+		{"an unknown number", nil, "correct-horse"},
+		{"a wrong password", &entity.User{ID: 7, PasswordHash: &hash}, "wrong-horse"},
+		{"an account with no password yet", &entity.User{ID: 7, PasswordHash: nil}, "correct-horse"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newDryRunDB(t)
+			if tt.row != nil {
+				db = withUserRow(t, *tt.row)
+			}
+			svc := NewAuthService(db, "secret", "1h", nil)
+
+			_, err := svc.LoginWithPassword(context.Background(), "13800138000", tt.password)
+			if !errors.Is(err, domain.ErrInvalidCredentials) {
+				t.Errorf("error = %v, want ErrInvalidCredentials", err)
+			}
+		})
+	}
+}
+
+// The whole point of the change: the right password signs in, and it costs no SMS.
+func TestPasswordLoginIssuesATokenForTheRightPassword(t *testing.T) {
+	hash := hashPassword("correct-horse")
+	phone := "13800138000"
+	svc := NewAuthService(withUserRow(t, entity.User{ID: 42, Phone: &phone, PasswordHash: &hash}), "secret", "1h", nil)
+
+	// The sender records every message that would have cost money; a password sign-in must not reach it.
+	sender := &recordingSender{}
+	svc.sms = sender
+
+	resp, err := svc.LoginWithPassword(context.Background(), phone, "correct-horse")
+	if err != nil {
+		t.Fatalf("LoginWithPassword returned %v", err)
+	}
+	if resp.Token == "" {
+		t.Error("expected a token")
+	}
+	if resp.User.ID != 42 {
+		t.Errorf("token issued for user %d, want 42", resp.User.ID)
+	}
+	if sender.calls != 0 {
+		t.Errorf("signing in with a password sent %d SMS", sender.calls)
+	}
+}
+
+// A password stored by the pre-Go backend is accepted once and upgraded in place. Doing it here is the only
+// chance: the plaintext is in hand for exactly this moment, and the alternative is leaving those accounts on
+// an unsalted digest for good.
+func TestASignInUpgradesALegacyPasswordHash(t *testing.T) {
+	legacy := sha256Hex("correct-horse")
+	phone := "13800138000"
+	db := withUserRow(t, entity.User{ID: 4, Phone: &phone, PasswordHash: &legacy})
+
+	upgraded := false
+	if err := db.Callback().Update().After("gorm:update").Register("test:capture_upgrade", func(tx *gorm.DB) {
+		// The same request also stamps last_login_at, so the column is what tells the two writes apart.
+		if strings.Contains(tx.Statement.SQL.String(), "password_hash") {
+			upgraded = true
+		}
+	}); err != nil {
+		t.Fatalf("failed to register the update capture: %v", err)
+	}
+
+	svc := NewAuthService(db, "secret", "1h", nil)
+	if _, err := svc.LoginWithPassword(context.Background(), phone, "correct-horse"); err != nil {
+		t.Fatalf("LoginWithPassword returned %v", err)
+	}
+	if !upgraded {
+		t.Error("a legacy hash was accepted without being upgraded")
+	}
+}
+
+// A malformed number is rejected before the lookup, so a login attempt cannot be used to probe the database
+// with arbitrary input.
+func TestPasswordLoginRejectsAMalformedPhone(t *testing.T) {
+	svc := NewAuthService(nil, "secret", "1h", nil)
+
+	if _, err := svc.LoginWithPassword(context.Background(), "12345", "correct-horse"); err == nil {
+		t.Fatal("expected an error for a malformed phone number")
 	}
 }

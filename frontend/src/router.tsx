@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate, Outlet } from "react-router";
+import { createBrowserRouter, Outlet } from "react-router";
 
 import { AppLayout } from "@/components/AppLayout";
 import Ai from "@/pages/dashboard/Ai";
@@ -28,9 +28,10 @@ import Redirect from "@/pages/Redirect";
 export const router = createBrowserRouter([
   { path: "/", element: <Landing /> },
   { path: "/login", element: <Login /> },
-  // Sign-up is not a page: a phone number that has never been seen registers on the spot. The old URL was
-  // bookmarked and shared while it existed, so it keeps working instead of dead-ending.
-  { path: "/register", element: <Navigate to="/login" replace /> },
+  // Sign-up is a mode of the sign-in page rather than a page of its own: the two forms share the phone
+  // field, the graphical challenge and the code, and only the password differs. The URL exists because it
+  // was shared while a separate page was here, so it opens that mode instead of dead-ending.
+  { path: "/register", element: <Login /> },
   { path: "/privacy", element: <Privacy /> },
   // The interstitial the backend redirects to when a short link needs a password or a deep-link hop.
   { path: "/r/:code", element: <Redirect /> },

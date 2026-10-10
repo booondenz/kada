@@ -16,6 +16,8 @@ import (
 type AuthService interface {
 	GenerateCaptcha(ctx context.Context, ip string) (*domain.CaptchaResponse, error)
 	SendSMSCode(ctx context.Context, phone, ip, captchaID, captchaAnswer string) error
+	Register(ctx context.Context, phone, code, password string) (*domain.AuthResponse, error)
+	LoginWithPassword(ctx context.Context, phone, password string) (*domain.AuthResponse, error)
 	LoginByPhone(ctx context.Context, phone, code string) (*domain.AuthResponse, error)
 	GetUserByID(ctx context.Context, userID int64) (*domain.UserInfo, error)
 }
@@ -30,21 +32,33 @@ func NewHandler(svc AuthService) *Handler {
 
 // RegisterRoutes wires the auth endpoints.
 //
-// Signing in is phone-only. The email/password and WeChat routes are gone, not merely hidden in the UI:
-// an endpoint nobody uses is still an endpoint that can be attacked, and leaving `/auth/login-by-email`
-// reachable would keep a password path alive that no page links to and no test covers.
+// Signing in is phone plus password, and the password is set once at registration. That split is what keeps
+// the SMS bill bounded: a message is sent to prove the number belongs to the caller, not on every sign-in.
+// Registration writes the code hash and the password hash, and nothing else - the email/password and WeChat
+// routes are gone rather than hidden, because an endpoint nobody uses is still an endpoint that can be
+// attacked.
+//
+// `login-by-phone` stays, and is the only way into an account that has no password yet - which is every
+// account created before this flow existed. It is also how such an account gets one: registering the same
+// number sets the password, since the code proves exactly what the SMS login proved.
 //
 // `PATCH /me` went the same way once the profile became the phone number. A phone cannot be changed
 // without verifying the new one (a flow this app does not have) and there is no other field left to write,
 // so the route would have accepted a body and changed nothing.
 func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc, strictMW ...gin.HandlerFunc) {
 	// Public routes (strict rate limiting can be applied).
+	//
+	// The strict limiter is not decoration on the two password routes: they are the only place where
+	// guessing pays, and twenty attempts a minute per address is what stands between a password and a
+	// script.
 	public := r.Group("")
 	if len(strictMW) > 0 && strictMW[0] != nil {
 		public.Use(strictMW[0])
 	}
 	public.GET("/auth/captcha", h.Captcha)
 	public.POST("/auth/send-sms-code", h.SendSMSCode)
+	public.POST("/auth/register", h.Register)
+	public.POST("/auth/login", h.Login)
 	public.POST("/auth/login-by-phone", h.LoginByPhone)
 
 	// Routes that require authentication.
@@ -105,7 +119,56 @@ func (h *Handler) SendSMSCode(c *gin.Context) {
 	})
 }
 
-// LoginByPhone logs in with phone number + verification code, creating the account on first use.
+// Register creates the account: the verification code proves the number, and the password is what is used
+// to sign in from then on.
+func (h *Handler) Register(c *gin.Context) {
+	var req domain.RegisterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a phone number, the verification code and a password are required"})
+		return
+	}
+
+	resp, err := h.svc.Register(c.Request.Context(), req.Phone, req.Code, req.Password)
+	if err != nil {
+		// The one error worth its own status: the number already has an account with a password, so this is
+		// not a failed registration but a request to sign in instead - and a 400 would say "your input was
+		// wrong" about input that was right.
+		if errors.Is(err, domain.ErrAlreadyRegistered) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"token": resp.Token, "user": resp.User})
+}
+
+// Login signs in with the password chosen at registration.
+func (h *Handler) Login(c *gin.Context) {
+	var req domain.PasswordLoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "phone number and password are required"})
+		return
+	}
+
+	resp, err := h.svc.LoginWithPassword(c.Request.Context(), req.Phone, req.Password)
+	if err != nil {
+		// 401 for "these credentials do not match", 400 for a malformed number or a service failure. The
+		// message is the same whichever way the credentials failed, so the response cannot be used to ask
+		// which numbers have accounts.
+		if errors.Is(err, domain.ErrInvalidCredentials) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"token": resp.Token, "user": resp.User})
+}
+
+// LoginByPhone logs in with phone number + verification code.
 func (h *Handler) LoginByPhone(c *gin.Context) {
 	var req domain.LoginByPhoneRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

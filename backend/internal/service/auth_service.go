@@ -245,15 +245,143 @@ func smsSendError(err error) error {
 	return fmt.Errorf("failed to send SMS: %w", err)
 }
 
-// LoginByPhone logs in with phone number + verification code
+// LoginByPhone logs in with phone number + verification code.
+//
+// It no longer creates the account: registering does, and it asks for a password, so that signing in never
+// has to send a message again. What is left here is the way back in for an account that has no password
+// yet - every account that existed before this flow did - and the way for such an account to be reached at
+// all, since it cannot be signed into with a password it does not have.
 func (s *AuthService) LoginByPhone(ctx context.Context, phone, code string) (*domain.AuthResponse, error) {
 	if !phonePattern.MatchString(phone) {
 		return nil, errors.New("invalid phone number format")
 	}
 
-	// atomically consume the code: a single UPDATE validates "unused, unexpired, attempts under the limit" at once,
-	// eliminating the race condition where concurrent requests consume the same code twice
-	codeHash := sha256Hex(code)
+	if err := s.consumeSMSCode(ctx, phone, code); err != nil {
+		return nil, err
+	}
+
+	user, userErr := s.userByPhone(ctx, phone)
+	if userErr != nil {
+		if !errors.Is(userErr, gorm.ErrRecordNotFound) {
+			// A read error that is not "no such row" (connection loss, ...) must not be reported as a missing
+			// account, which is a message the user can act on and would act on wrongly.
+			log.Printf("lookup user by phone %s failed: %v", phone, userErr)
+			return nil, errors.New("login failed, please try again later")
+		}
+		return nil, errors.New("this phone number has no account yet, please register")
+	}
+
+	return s.startSession(ctx, toUserInfo(*user))
+}
+
+// Register creates an account, or claims one that has no password yet.
+//
+// The second half is what makes this deployable. Every account that exists today was created by the SMS
+// login, which never wrote a password_hash, so "register" is also how those accounts get one - and the code
+// proves possession of the number, exactly as logging in by SMS did, so nothing is granted that the old
+// flow did not already grant. An account that *does* have a password is refused rather than overwritten:
+// otherwise receiving one SMS would be enough to take an account over.
+func (s *AuthService) Register(ctx context.Context, phone, code, password string) (*domain.AuthResponse, error) {
+	if !phonePattern.MatchString(phone) {
+		return nil, errors.New("invalid phone number format")
+	}
+	if err := validatePassword(password); err != nil {
+		return nil, err
+	}
+	if err := s.consumeSMSCode(ctx, phone, code); err != nil {
+		return nil, err
+	}
+
+	hash := hashPassword(password)
+	if hash == "" {
+		// hashPassword degrades to "" when bcrypt itself fails. For a link password that means "no password
+		// required"; here it would mean an account whose password can never match, created by a request that
+		// reported success, so it is refused instead.
+		return nil, errors.New("failed to set the password, please try again")
+	}
+
+	row, err := s.userByPhone(ctx, phone)
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		row = &entity.User{Phone: &phone, PasswordHash: &hash}
+		if createErr := s.db.WithContext(ctx).Create(row).Error; createErr != nil {
+			log.Printf("create user by phone %s failed: %v", phone, createErr)
+			return nil, errors.New("registration failed, please try again later")
+		}
+
+	case err != nil:
+		log.Printf("lookup user by phone %s failed: %v", phone, err)
+		return nil, errors.New("registration failed, please try again later")
+
+	case row.PasswordHash != nil && *row.PasswordHash != "":
+		return nil, domain.ErrAlreadyRegistered
+
+	default:
+		if updateErr := s.db.WithContext(ctx).Model(&entity.User{}).
+			Where("id = ?", row.ID).
+			Update("password_hash", hash).Error; updateErr != nil {
+			log.Printf("set the password of user %d failed: %v", row.ID, updateErr)
+			return nil, errors.New("registration failed, please try again later")
+		}
+		row.PasswordHash = &hash
+	}
+
+	return s.startSession(ctx, toUserInfo(*row))
+}
+
+// LoginWithPassword signs in with the password chosen at registration.
+//
+// Every failure returns the same error, and a number with no account is still verified against a throwaway
+// hash: without that, the endpoint answers "does this number have an account here" faster than it answers
+// "is this the right password", and the timing is the leak.
+func (s *AuthService) LoginWithPassword(ctx context.Context, phone, password string) (*domain.AuthResponse, error) {
+	if !phonePattern.MatchString(phone) {
+		return nil, errors.New("invalid phone number format")
+	}
+
+	row, err := s.userByPhone(ctx, phone)
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		// The same work as a real verification, against a hash nobody knows the password to.
+		_ = checkPasswordHash(password, dummyPasswordHash)
+		return nil, domain.ErrInvalidCredentials
+
+	case err != nil:
+		log.Printf("lookup user by phone %s failed: %v", phone, err)
+		return nil, errors.New("login failed, please try again later")
+
+	case row.PasswordHash == nil || *row.PasswordHash == "":
+		// An account from before passwords, or one created by the SMS login. Same answer as a wrong password:
+		// the caller cannot be told which, and the page offers the code path to everybody anyway.
+		_ = checkPasswordHash(password, dummyPasswordHash)
+		return nil, domain.ErrInvalidCredentials
+
+	case !checkPasswordHash(password, *row.PasswordHash):
+		return nil, domain.ErrInvalidCredentials
+	}
+
+	// A hash written before bcrypt was in use is upgraded the first time the password verifies. Leaving it
+	// alone because that is how it was stored would keep the older accounts on an unsalted digest for good,
+	// and the plaintext is only in hand at this one moment.
+	if isLegacyHash(*row.PasswordHash) {
+		if upgraded := hashPassword(password); upgraded != "" {
+			if err := s.db.WithContext(ctx).Model(&entity.User{}).
+				Where("id = ?", row.ID).
+				Update("password_hash", upgraded).Error; err != nil {
+				log.Printf("upgrade the password hash of user %d failed: %v", row.ID, err)
+			}
+		}
+	}
+
+	return s.startSession(ctx, toUserInfo(*row))
+}
+
+// consumeSMSCode validates a verification code and burns it, in one statement.
+//
+// The UPDATE ... RETURNING is what makes the code single-use even under concurrent requests. The failure
+// path counts the attempt against every pending code for the number: the row used to be located *by* the
+// code, so a wrong code matched no row and the attempts counter never moved.
+func (s *AuthService) consumeSMSCode(ctx context.Context, phone, code string) error {
 	var codeID int64
 	err := s.db.WithContext(ctx).Raw(`
 		UPDATE sms_codes SET used = TRUE
@@ -265,48 +393,60 @@ func (s *AuthService) LoginByPhone(ctx context.Context, phone, code string) (*do
 			LIMIT 1
 		)
 		RETURNING id
-	`, phone, codeHash).Scan(&codeID).Error
+	`, phone, sha256Hex(code)).Scan(&codeID).Error
 	if err != nil || codeID == 0 {
-		// failed-attempt counting: increments every currently unused, unexpired pending code for the phone number.
-		// previously the row was located by code, so a wrong code never matched a row and attempts was useless;
-		// after switching to counting per phone number, 5 consecutive failures invalidate that phone's pending codes.
 		_ = s.db.WithContext(ctx).Exec(`
 			UPDATE sms_codes SET attempts = attempts + 1
 			WHERE phone = ? AND used = FALSE AND expires_at > NOW()
 		`, phone).Error
-		return nil, errors.New("invalid or expired verification code")
+		return errors.New("invalid or expired verification code")
 	}
+	return nil
+}
 
-	// find or create the user
-	user, userErr := s.userByPhone(ctx, phone)
-	if userErr != nil {
-		if !errors.Is(userErr, gorm.ErrRecordNotFound) {
-			// A read error that is not "no such row" (connection loss, ...) must not be mistaken for a new
-			// account, otherwise the INSERT below would fail with a confusing duplicate-key error.
-			log.Printf("lookup user by phone %s failed: %v", phone, userErr)
-			return nil, errors.New("login failed, please try again later")
-		}
-		// new user, register automatically
-		row := entity.User{Phone: &phone}
-		if createErr := s.db.WithContext(ctx).Create(&row).Error; createErr != nil {
-			log.Printf("create user by phone %s failed: %v", phone, createErr)
-			return nil, errors.New("login failed, please try again later")
-		}
-		user = toUserInfo(row)
-	}
-
-	// update last login
-	_ = s.db.WithContext(ctx).Model(&entity.User{}).
+// startSession records the sign-in and issues the token.
+//
+// Both ways in end here, so "last login" and the token cannot drift apart between them - and a missing
+// timestamp is not worth refusing a sign-in that has already been proved.
+func (s *AuthService) startSession(ctx context.Context, user *domain.UserInfo) (*domain.AuthResponse, error) {
+	if err := s.db.WithContext(ctx).Model(&entity.User{}).
 		Where("id = ?", user.ID).
-		Update("last_login_at", time.Now()).Error
+		Update("last_login_at", time.Now()).Error; err != nil {
+		log.Printf("update last login for user %d failed: %v", user.ID, err)
+	}
 
-	// generate JWT
 	token, err := s.generateToken(*user)
 	if err != nil {
 		return nil, err
 	}
 
 	return &domain.AuthResponse{Token: token, User: *user}, nil
+}
+
+// Password policy: a length floor and nothing else. Character-class rules push people towards "Password1!"
+// and a note on the desk, and the ceiling is bcrypt's own limit - it reads only the first 72 bytes, so a
+// longer password is refused rather than quietly cut down to a different one.
+const (
+	passwordMinLength = 8
+	passwordMaxBytes  = 72
+)
+
+// dummyPasswordHash is what a sign-in for a number with no account is verified against, so that "no such
+// account" and "wrong password" take the same time. It is a bcrypt hash of a string nobody is told, and it
+// is deliberately never stored on an account.
+//
+// #nosec G101 -- not a credential: a decoy that exists to be compared against and never to match.
+const dummyPasswordHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+
+// validatePassword rejects a password that cannot be the credential it is meant to be.
+func validatePassword(password string) error {
+	if len([]rune(password)) < passwordMinLength {
+		return fmt.Errorf("the password must be at least %d characters", passwordMinLength)
+	}
+	if len(password) > passwordMaxBytes {
+		return fmt.Errorf("the password must be at most %d bytes", passwordMaxBytes)
+	}
+	return nil
 }
 
 // LoginByEmail and RegisterByEmail used to live here. They are gone: signing in happens by phone number
@@ -322,15 +462,16 @@ func (s *AuthService) GetUserByID(ctx context.Context, userID int64) (*domain.Us
 	return toUserInfo(row), nil
 }
 
-// userByPhone returns the account for a phone number.
-// The caller distinguishes "no such user" (gorm.ErrRecordNotFound -> sign up) from a real read error.
-func (s *AuthService) userByPhone(ctx context.Context, phone string) (*domain.UserInfo, error) {
+// userByPhone returns the account row for a phone number.
+//
+// It returns the row rather than the API model because the password sign-in needs the hash, and the caller
+// has to distinguish "no such user" (gorm.ErrRecordNotFound) from a real read error.
+func (s *AuthService) userByPhone(ctx context.Context, phone string) (*entity.User, error) {
 	var row entity.User
 	if err := s.db.WithContext(ctx).Where("phone = ?", phone).First(&row).Error; err != nil {
 		return nil, err
 	}
-	user := toUserInfo(row)
-	return user, nil
+	return &row, nil
 }
 
 // toUserInfo maps the persistence model onto the API model.

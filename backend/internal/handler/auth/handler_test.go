@@ -18,6 +18,8 @@ import (
 type mockAuthService struct {
 	generateCaptcha func(ctx context.Context, ip string) (*domain.CaptchaResponse, error)
 	sendSMSCode     func(ctx context.Context, phone, ip, captchaID, captchaAnswer string) error
+	register        func(ctx context.Context, phone, code, password string) (*domain.AuthResponse, error)
+	loginWithPass   func(ctx context.Context, phone, password string) (*domain.AuthResponse, error)
 	loginByPhone    func(ctx context.Context, phone, code string) (*domain.AuthResponse, error)
 	getUserByID     func(ctx context.Context, userID int64) (*domain.UserInfo, error)
 }
@@ -34,6 +36,20 @@ func (m *mockAuthService) SendSMSCode(ctx context.Context, phone, ip, captchaID,
 		return m.sendSMSCode(ctx, phone, ip, captchaID, captchaAnswer)
 	}
 	return nil
+}
+
+func (m *mockAuthService) Register(ctx context.Context, phone, code, password string) (*domain.AuthResponse, error) {
+	if m.register != nil {
+		return m.register(ctx, phone, code, password)
+	}
+	return &domain.AuthResponse{Token: "test-token", User: domain.UserInfo{ID: 1}}, nil
+}
+
+func (m *mockAuthService) LoginWithPassword(ctx context.Context, phone, password string) (*domain.AuthResponse, error) {
+	if m.loginWithPass != nil {
+		return m.loginWithPass(ctx, phone, password)
+	}
+	return &domain.AuthResponse{Token: "test-token", User: domain.UserInfo{ID: 1}}, nil
 }
 
 func (m *mockAuthService) LoginByPhone(ctx context.Context, phone, code string) (*domain.AuthResponse, error) {
@@ -304,10 +320,163 @@ func TestLoginByPhone_Success(t *testing.T) {
 	}
 }
 
+// ========== Register and password login ==========
+
+func TestRegister_RequiresEveryField(t *testing.T) {
+	h := NewHandler(&mockAuthService{})
+	r := setupTestRouter(h)
+	r.POST("/auth/register", h.Register)
+
+	tests := []struct {
+		name string
+		body map[string]string
+	}{
+		{"empty body", map[string]string{}},
+		{"missing phone", map[string]string{"code": "123456", "password": "correct-horse"}},
+		{"missing code", map[string]string{"phone": "13800138000", "password": "correct-horse"}},
+		{"missing password", map[string]string{"phone": "13800138000", "code": "123456"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if w := postJSON(t, r, "/auth/register", tt.body); w.Code != http.StatusBadRequest {
+				t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+// A number that already has a password is a 409, not a 400: the request was well formed and the answer is
+// "sign in instead". Reporting it as bad input would send the user back to a form that keeps failing.
+func TestRegister_ErrorMapping(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+	}{
+		{"an account that already has a password", domain.ErrAlreadyRegistered, http.StatusConflict},
+		{"a code that does not match", errors.New("invalid or expired verification code"), http.StatusBadRequest},
+		{"a password below the floor", errors.New("the password must be at least 8 characters"), http.StatusBadRequest},
+		{"a failed write", errors.New("registration failed, please try again later"), http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewHandler(&mockAuthService{
+				register: func(context.Context, string, string, string) (*domain.AuthResponse, error) {
+					return nil, tt.err
+				},
+			})
+			r := setupTestRouter(h)
+			r.POST("/auth/register", h.Register)
+
+			w := postJSON(t, r, "/auth/register",
+				map[string]string{"phone": "13800138000", "code": "123456", "password": "correct-horse"})
+			if w.Code != tt.wantStatus {
+				t.Errorf("expected %d, got %d: %s", tt.wantStatus, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestRegister_Success(t *testing.T) {
+	var gotPhone, gotCode, gotPassword string
+	h := NewHandler(&mockAuthService{
+		register: func(_ context.Context, phone, code, password string) (*domain.AuthResponse, error) {
+			gotPhone, gotCode, gotPassword = phone, code, password
+			return &domain.AuthResponse{Token: "registered-token", User: domain.UserInfo{ID: 9}}, nil
+		},
+	})
+	r := setupTestRouter(h)
+	r.POST("/auth/register", h.Register)
+
+	w := postJSON(t, r, "/auth/register",
+		map[string]string{"phone": "13800138000", "code": "123456", "password": "correct-horse"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp domain.AuthResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
+	if resp.Token != "registered-token" {
+		t.Errorf("token = %q, want the one the service issued", resp.Token)
+	}
+	if gotPhone != "13800138000" || gotCode != "123456" || gotPassword != "correct-horse" {
+		t.Errorf("the service saw phone=%q code=%q password=%q", gotPhone, gotCode, gotPassword)
+	}
+}
+
+// The password reaches the service unmodified: hashing it here would mean the service could only ever
+// compare what it was handed, and the cost of bcrypt would land on the HTTP layer.
+func TestLogin_RequiresBothFields(t *testing.T) {
+	h := NewHandler(&mockAuthService{})
+	r := setupTestRouter(h)
+	r.POST("/auth/login", h.Login)
+
+	for _, body := range []map[string]string{{}, {"phone": "13800138000"}, {"password": "correct-horse"}} {
+		if w := postJSON(t, r, "/auth/login", body); w.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 for %v, got %d", body, w.Code)
+		}
+	}
+}
+
+// One 401 for every way the credentials can fail. A different status or message for "no such number" would
+// turn the endpoint into a way to ask which numbers have accounts here.
+func TestLogin_ErrorMapping(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+	}{
+		{"the credentials do not match", domain.ErrInvalidCredentials, http.StatusUnauthorized},
+		{"a malformed number", errors.New("invalid phone number format"), http.StatusBadRequest},
+		{"a failed read", errors.New("login failed, please try again later"), http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewHandler(&mockAuthService{
+				loginWithPass: func(context.Context, string, string) (*domain.AuthResponse, error) {
+					return nil, tt.err
+				},
+			})
+			r := setupTestRouter(h)
+			r.POST("/auth/login", h.Login)
+
+			if w := postJSON(t, r, "/auth/login",
+				map[string]string{"phone": "13800138000", "password": "correct-horse"}); w.Code != tt.wantStatus {
+				t.Errorf("expected %d, got %d: %s", tt.wantStatus, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestLogin_Success(t *testing.T) {
+	h := NewHandler(&mockAuthService{})
+	r := setupTestRouter(h)
+	r.POST("/auth/login", h.Login)
+
+	w := postJSON(t, r, "/auth/login", map[string]string{"phone": "13800138000", "password": "correct-horse"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp domain.AuthResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
+	if resp.Token == "" {
+		t.Error("expected a token in the response")
+	}
+}
+
 // ========== Routes ==========
 
-// The email routes must be gone, not merely unused: a reachable password endpoint is an attack surface
-// that no page links to and no test would otherwise cover.
+// The email routes must be gone, not merely unused: an endpoint nobody links to is an attack surface with
+// no test that would notice it breaking. The password routes are the opposite case - they are what the
+// sign-in page calls now - so both lists are asserted together.
 func TestRegisterRoutes_EmailRoutesAreGone(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -316,10 +485,16 @@ func TestRegisterRoutes_EmailRoutesAreGone(t *testing.T) {
 
 	for _, path := range []string{"/api/auth/login-by-email", "/api/auth/register-by-email"} {
 		if w := postJSON(t, r, path, map[string]string{"email": "a@b.com", "password": "123456"}); w.Code != http.StatusNotFound {
-			t.Errorf("%s is still routed (status %d); the password path must be removed", path, w.Code)
+			t.Errorf("%s is still routed (status %d); the email path must be removed", path, w.Code)
 		}
 	}
-	for _, path := range []string{"/api/auth/captcha", "/api/auth/send-sms-code", "/api/auth/login-by-phone"} {
+	for _, path := range []string{
+		"/api/auth/captcha",
+		"/api/auth/send-sms-code",
+		"/api/auth/register",
+		"/api/auth/login",
+		"/api/auth/login-by-phone",
+	} {
 		found := false
 		for _, route := range r.Routes() {
 			if route.Path == path {

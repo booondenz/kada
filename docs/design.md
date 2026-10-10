@@ -20,7 +20,7 @@ watch how they are clicked. This document explains how the system is put togethe
 
 | Capability | Notes |
 |---|---|
-| Authentication | Phone + SMS code behind a graphical challenge, JWT bearer token for the API |
+| Authentication | Phone + password behind a graphical challenge at registration, JWT bearer token for the API |
 | Links | Create, edit, disable, expire, password protect, batch delete and batch tag |
 | Organisation | Folders, tags, workspaces |
 | Custom domains | DNS TXT ownership verification before a domain can serve links |
@@ -292,7 +292,7 @@ service, its systemd unit and a whole deployment step with it.
 | Path | Content |
 |---|---|
 | `/` | Landing page with the animated starfield |
-| `/login` | Sign-in: phone number, graphical challenge, SMS code, privacy consent |
+| `/login` | Sign-in: phone number and password; `/register` opens the same page in its sign-up mode |
 | `/register` | Redirects to `/login`: a new phone number is registered on the spot |
 | `/privacy` | Privacy policy, linked from the consent checkbox before sign-in |
 | `/dashboard` | Overview: totals, trend, recent links |
@@ -364,10 +364,12 @@ render disagree, and React discards the tree as a hydration mismatch.
 
 ## 7. Key flows
 
-### 7.1 Sign-in is phone-only
+### 7.1 Signing in is phone plus password
 
-There is one way in: a phone number and an SMS code. A number that has never been seen is registered on
-the spot, so "sign in" and "sign up" are the same request and there is no separate registration flow.
+An account is a phone number and a password. The number is verified once, at registration, with an SMS
+code; from then on the password is what signs in. The split exists for one reason: an SMS costs money and
+an account is signed into far more often than it is created, so a message is spent to prove the number
+belongs to the caller rather than on every visit.
 
 Two other sign-in paths were removed rather than hidden, and the reason is worth recording:
 
@@ -375,14 +377,19 @@ Two other sign-in paths were removed rather than hidden, and the reason is worth
   `WECHAT_APP_ID`/`WECHAT_APP_SECRET`, but no route ever read them. Implementing it needs an approved
   WeChat Open Platform application, and an individual cannot register one, so the columns stay (existing
   data is untouched) and nothing else does.
-- **Email + password.** It duplicated what the phone path already did, added a second credential to
-  police, and after the phone flow was hardened it was the only endpoint left that could be attacked
-  without an SMS cost. `users.email` and `users.password_hash` remain in the schema so old rows keep
-  their data; the API publishes neither, and the route that used to write a name or an email onto the
-  profile (`PATCH /api/me`) went with them - the account is the phone number, so there is nothing left
-  for a caller to edit.
+- **Email + password.** It duplicated what the phone path already did, and the phone number is the
+  identifier an SMS can actually verify - an email address cannot be proved to belong to anyone.
+  `users.email` remains in the schema so old rows keep their data; the API publishes neither it nor the
+  password hash, and the route that used to write a name or an email onto the profile (`PATCH /api/me`)
+  went with it.
 
-### 7.2 Login by phone
+The code path (`login-by-phone`) is kept, and it is not a convenience: an account created before this flow
+existed has no password, so a code is the only way into it - and registering the same number with a code is
+how such an account gets one. It is also the way back in for a password that has been forgotten, since a
+password can be reset only by someone who can receive the message. The sign-in page reaches it by a small
+link rather than presenting it as an equal choice.
+
+### 7.2 Registering, and signing in
 
 ```text
 GET /api/auth/captcha
@@ -399,14 +406,25 @@ POST /api/auth/send-sms-code   { phone, captcha_id, captcha_code }
       provider error → the provider code and message are surfaced (see 8.4)
   → 200
 
-POST /api/auth/login-by-phone
+POST /api/auth/register   { phone, code, password }
+  → phone format and password length are checked first (8 characters, 72 bytes)
   → one UPDATE consumes the pending code atomically (unused, unexpired, attempts < 5)
-      failure → increment attempts for the phone, return 401
-  → find or create the user by phone
+      failure → increment attempts for the phone, return 400
+  → no account for the number      → create it with bcrypt(password)
+  → an account with no password    → set the password (the way off the code path)
+  → an account with a password     → 409, refused rather than overwritten
+  → sign JWT → 200 { token, user }
+
+POST /api/auth/login   { phone, password }
+  → bcrypt compare → 401 on any mismatch, identical for an unknown number and a wrong password
+  → sign JWT → 200 { token, user }
+
+POST /api/auth/login-by-phone   { phone, code }
+  → the same code consumption, then 401 if no account has that number
   → sign JWT → 200 { token, user }
 ```
 
-Three properties of that ordering are deliberate:
+Four properties of that ordering are deliberate:
 
 1. **The captcha is checked first and is burned either way.** An unauthenticated endpoint that makes the
    server send paid messages is the most abusable thing in this app, so no send can happen without a human
@@ -419,6 +437,16 @@ Three properties of that ordering are deliberate:
 3. **A quota is a 429, a wrong captcha is a 400.** Returning 500 for both - which the handler used to do -
    tells a client to retry a request that will keep failing, and tells an operator to look for a server
    fault that does not exist.
+4. **A password sign-in cannot be asked which way it failed.** An unknown number, a wrong password and an
+   account with no password all answer the same 401 with the same message, and the unknown number is still
+   verified against a throwaway bcrypt hash so the three take the same time. Otherwise the endpoint answers
+   "does this number have an account here" - to anyone, at twenty guesses a minute per address, which is
+   what the strict limiter on these routes allows.
+
+The password is hashed with bcrypt, and a hash stored by the pre-Go backend is still accepted and upgraded
+on the next successful sign-in. Both hashes live in `users.password_hash`, so this change needed no
+migration: nothing had ever written that column, which is also why "register" is the endpoint that fills it
+in for accounts that already exist.
 
 ### 7.3 Recording a click
 
@@ -629,12 +657,12 @@ check that looked at `secrets.*` instead would reject a deployment that was goin
 
 The SMS credentials were briefly exempt from that (`--warn`, i.e. report and continue), on the argument
 that the Aliyun signature and template have to be approved in the console before they exist at all and
-blocking every deploy until then would stop unrelated fixes from shipping. That argument lost: phone plus
-SMS code is the only way to sign in, so a host without them serves a site nobody can log into, and in
-release mode the code is never written to the log. A deployment that would produce that is better refused.
-What survives from the episode is a runner-side note (never a failure) saying that CI does not *manage*
-these four values yet - useful because whether they are set here or only on the host is invisible until the
-machine is rebuilt.
+blocking every deploy until then would stop unrelated fixes from shipping. That argument lost: nobody can
+register without them, and an account that has no password can only be reached through a code - so a host
+without them serves a site that works for the people already on it and is closed to everyone else. A
+deployment that would produce that is better refused. What survives from the episode is a runner-side note
+(never a failure) saying that CI does not *manage* these four values yet - useful because whether they are
+set here or only on the host is invisible until the machine is rebuilt.
 
 The assistant reads these from the same environment as the rest of the API (see
 `backend/.env.example`), and in production the deploy job writes them into `/opt/kada/backend/.env`.

@@ -813,18 +813,26 @@ func hashPassword(pwd string) string {
 	return string(hash)
 }
 
-// checkPasswordHash verifies the link access password.
-// new hashes are bcrypt; legacy unsalted SHA-256 hex hashes (64 hex digits) are still supported.
+// checkPasswordHash verifies a password against a stored hash.
+// new hashes are bcrypt; legacy unsalted SHA-256 hex hashes (64 hex digits) are still supported, both for
+// link passwords and for the user passwords the pre-Go backend wrote.
 func checkPasswordHash(password, hash string) bool {
 	if hash == "" {
 		return false
 	}
-	if len(hash) == 64 && isHexString(hash) {
+	if isLegacyHash(hash) {
 		// legacy SHA-256 hash, constant-time comparison
 		legacy := sha256Hex(password)
 		return hmac.Equal([]byte(legacy), []byte(hash))
 	}
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+}
+
+// isLegacyHash reports whether a stored hash is one of those unsalted SHA-256 digests. A user password that
+// verifies against one is re-hashed with bcrypt on the spot, which is the only moment the plaintext is in
+// hand; a link password is not, because nobody types it twice.
+func isLegacyHash(hash string) bool {
+	return len(hash) == 64 && isHexString(hash)
 }
 
 func isHexString(s string) bool {

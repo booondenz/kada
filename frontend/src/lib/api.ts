@@ -103,9 +103,13 @@ export async function fetchCSV(path: string, token: string): Promise<string> {
 
 // ========== Auth API ==========
 //
-// Signing in is phone-only: the email/password and WeChat routes were removed from the API, not just from
-// this client. `captcha` returns a one-time graphical challenge whose `captcha_id` has to travel with the
-// answer on sendSMSCode - without it the request is rejected, which is the whole point of the challenge.
+// Sign-in is a phone number plus the password chosen at registration, and the code is what registers the
+// number - one message per account instead of one per sign-in. `captcha` returns a one-time graphical
+// challenge whose `captcha_id` has to travel with the answer on sendSMSCode: without it the request is
+// rejected, which is the whole point of the challenge, and the SMS bill is what it protects.
+//
+// `loginByPhone` is still here for the accounts that have no password yet - every account created before
+// passwords existed - and for anyone who has forgotten theirs. Registering the same number sets one.
 
 export const authAPI = {
   captcha: (): Promise<{ captcha_id: string; image: string }> =>
@@ -115,6 +119,18 @@ export const authAPI = {
     fetchAPI("/api/auth/send-sms-code", {
       method: "POST",
       body: JSON.stringify({ phone, captcha_id: captchaId, captcha_code: captchaCode }),
+    }),
+
+  register: (phone: string, code: string, password: string) =>
+    fetchAPI("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ phone, code, password }),
+    }),
+
+  login: (phone: string, password: string) =>
+    fetchAPI("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ phone, password }),
     }),
 
   loginByPhone: (phone: string, code: string) =>

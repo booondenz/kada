@@ -21,12 +21,12 @@ func TestDefaultKeyFunc(t *testing.T) {
 	}
 }
 
+// Must not panic even when a nil client is passed, and must keep the nil client rather than substituting
+// one. The field is read directly: a separate `if rl == nil` guard is redundant - the line below already
+// dereferences rl, so a constructor that returned nil would fail this test either way - and staticcheck
+// reads that guard as evidence that the dereference can happen on nil (SA5011).
 func TestNewRateLimiter_NilClient(t *testing.T) {
-	// Must not panic even when a nil client is passed
 	rl := NewRateLimiter(nil)
-	if rl == nil {
-		t.Fatal("NewRateLimiter should not return nil")
-	}
 	if rl.client != nil {
 		t.Error("client should be nil")
 	}
