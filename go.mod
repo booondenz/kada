@@ -1,4 +1,4 @@
-module github.com/chun/kada-backend
+module github.com/booondenz/kada
 
 go 1.26.4
 

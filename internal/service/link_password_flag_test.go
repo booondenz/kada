@@ -3,7 +3,7 @@ package service
 import (
 	"testing"
 
-	"github.com/chun/kada-backend/internal/domain/entity"
+	"github.com/booondenz/kada/internal/domain/entity"
 )
 
 // The redirect path used to read the password column again on every request. It now reads this flag

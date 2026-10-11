@@ -11,11 +11,11 @@ import (
 	"github.com/gin-gonic/gin"
 	qrcode "github.com/skip2/go-qrcode"
 
-	"github.com/chun/kada-backend/internal/domain"
-	"github.com/chun/kada-backend/internal/infra/ua"
-	"github.com/chun/kada-backend/internal/infra/urlcheck"
-	"github.com/chun/kada-backend/internal/metrics"
-	"github.com/chun/kada-backend/internal/middleware"
+	"github.com/booondenz/kada/internal/domain"
+	"github.com/booondenz/kada/internal/infra/ua"
+	"github.com/booondenz/kada/internal/infra/urlcheck"
+	"github.com/booondenz/kada/internal/metrics"
+	"github.com/booondenz/kada/internal/middleware"
 )
 
 // LinkService is the short link service interface (mockable for tests).

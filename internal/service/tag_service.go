@@ -7,8 +7,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/chun/kada-backend/internal/domain"
-	"github.com/chun/kada-backend/internal/domain/entity"
+	"github.com/booondenz/kada/internal/domain"
+	"github.com/booondenz/kada/internal/domain/entity"
 )
 
 const defaultTagColor = "#6366F1"

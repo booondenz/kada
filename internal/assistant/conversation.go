@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/chun/kada-backend/internal/domain/entity"
+	"github.com/booondenz/kada/internal/domain/entity"
 )
 
 // historyLimit is how many turns the model is given. It is the same 50 the Python service used

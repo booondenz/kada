@@ -11,8 +11,8 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"github.com/chun/kada-backend/config"
-	"github.com/chun/kada-backend/internal/infra"
+	"github.com/booondenz/kada/config"
+	"github.com/booondenz/kada/internal/infra"
 )
 
 func main() {

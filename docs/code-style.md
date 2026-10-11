@@ -88,7 +88,7 @@ Section banners are used sparingly in longer files:
 ### Declarations
 
 - Group imports into two blocks separated by a blank line: standard library and third party first,
-  then this module's packages (`github.com/chun/kada-backend/...`). `goimports` with
+  then this module's packages (`github.com/booondenz/kada/...`). `goimports` with
   `local-prefixes` enforces the split.
 - Declare the zero value as the useful default when you can: `var total int64` over an arbitrary
   initialiser.
@@ -357,7 +357,7 @@ runtime environment variable, where it does nothing at all.
 | Line length | ~100 columns in Go, ~100 in TS; comments wrapped at ~80 |
 | Trailing commas | Required in multiline TS literals (Prettier) |
 | Blank line | Between logical blocks, not after `{` or before `}` |
-| Import order | stdlib, third-party, then `github.com/chun/kada-backend/...` |
+| Import order | stdlib, third-party, then `github.com/booondenz/kada/...` |
 | File endings | LF, one trailing newline (enforced by `.gitattributes`) |
 | Commit messages | English, one line, `type: imperative summary` - see [contributing.md §6](contributing.md#6-commit-messages) |
 

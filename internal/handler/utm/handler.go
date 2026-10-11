@@ -6,9 +6,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/chun/kada-backend/internal/domain"
-	"github.com/chun/kada-backend/internal/middleware"
-	"github.com/chun/kada-backend/internal/service"
+	"github.com/booondenz/kada/internal/domain"
+	"github.com/booondenz/kada/internal/middleware"
+	"github.com/booondenz/kada/internal/service"
 )
 
 type Handler struct {

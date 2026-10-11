@@ -17,10 +17,10 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/segmentio/kafka-go"
 
-	"github.com/chun/kada-backend/config"
-	"github.com/chun/kada-backend/internal/infra"
-	"github.com/chun/kada-backend/internal/mq"
-	"github.com/chun/kada-backend/internal/service"
+	"github.com/booondenz/kada/config"
+	"github.com/booondenz/kada/internal/infra"
+	"github.com/booondenz/kada/internal/mq"
+	"github.com/booondenz/kada/internal/service"
 )
 
 // maxDeliveryAttempts is the maximum number of processing attempts for a single message.

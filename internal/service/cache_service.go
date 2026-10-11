@@ -9,7 +9,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/chun/kada-backend/internal/domain"
+	"github.com/booondenz/kada/internal/domain"
 )
 
 // missingTTL is how long a short code that was looked up and did not resolve is remembered. It is far

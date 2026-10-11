@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/chun/kada-backend/internal/domain"
+	"github.com/booondenz/kada/internal/domain"
 )
 
 // statement is one SQL statement a handler rendered, with the values it was going to bind.

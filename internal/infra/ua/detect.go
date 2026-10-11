@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/chun/kada-backend/internal/domain"
+	"github.com/booondenz/kada/internal/domain"
 )
 
 // Detect determines the source platform from the User-Agent

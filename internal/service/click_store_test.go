@@ -13,9 +13,9 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	"github.com/chun/kada-backend/internal/domain"
-	"github.com/chun/kada-backend/internal/metrics"
-	"github.com/chun/kada-backend/internal/mq"
+	"github.com/booondenz/kada/internal/domain"
+	"github.com/booondenz/kada/internal/metrics"
+	"github.com/booondenz/kada/internal/mq"
 )
 
 type fakePublisher struct {

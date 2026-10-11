@@ -10,7 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/chun/kada-backend/internal/assistant"
+	"github.com/booondenz/kada/internal/assistant"
 )
 
 // fakeAuth mimics the real JWT middleware: it stamps the authenticated user id into the context. The AI

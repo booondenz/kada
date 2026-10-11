@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/chun/kada-backend/internal/domain/entity"
+	"github.com/booondenz/kada/internal/domain/entity"
 )
 
 // Ownership is the one thing a chat store must never get wrong: the condition lives in the query, so a

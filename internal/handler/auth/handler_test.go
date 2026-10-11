@@ -11,7 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/chun/kada-backend/internal/domain"
+	"github.com/booondenz/kada/internal/domain"
 )
 
 // mockAuthService is used for handler tests.

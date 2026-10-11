@@ -11,8 +11,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/chun/kada-backend/internal/domain/entity"
-	"github.com/chun/kada-backend/internal/infra/schema"
+	"github.com/booondenz/kada/internal/domain/entity"
+	"github.com/booondenz/kada/internal/infra/schema"
 )
 
 // NewDB opens the PostgreSQL connection pool through GORM and verifies it with a ping.

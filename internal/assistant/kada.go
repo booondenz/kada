@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/chun/kada-backend/internal/domain"
-	"github.com/chun/kada-backend/internal/service"
+	"github.com/booondenz/kada/internal/domain"
+	"github.com/booondenz/kada/internal/service"
 )
 
 // Kada is the assistant's view of this application's own services: the operations the model may perform on

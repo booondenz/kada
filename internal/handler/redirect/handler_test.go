@@ -12,8 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/chun/kada-backend/internal/domain"
-	"github.com/chun/kada-backend/internal/metrics"
+	"github.com/booondenz/kada/internal/domain"
+	"github.com/booondenz/kada/internal/metrics"
 )
 
 // mockLinkService is used for redirect handler tests.

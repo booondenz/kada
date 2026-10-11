@@ -17,11 +17,11 @@ import (
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
-	"github.com/chun/kada-backend/internal/domain"
-	"github.com/chun/kada-backend/internal/domain/entity"
-	"github.com/chun/kada-backend/internal/infra/urlcheck"
-	"github.com/chun/kada-backend/internal/metrics"
-	"github.com/chun/kada-backend/internal/mq"
+	"github.com/booondenz/kada/internal/domain"
+	"github.com/booondenz/kada/internal/domain/entity"
+	"github.com/booondenz/kada/internal/infra/urlcheck"
+	"github.com/booondenz/kada/internal/metrics"
+	"github.com/booondenz/kada/internal/mq"
 )
 
 // shortCodePattern allows only letters, digits, underscores and hyphens in a short code

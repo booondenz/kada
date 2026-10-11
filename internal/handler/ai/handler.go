@@ -18,8 +18,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/chun/kada-backend/internal/assistant"
-	"github.com/chun/kada-backend/internal/middleware"
+	"github.com/booondenz/kada/internal/assistant"
+	"github.com/booondenz/kada/internal/middleware"
 )
 
 // Assistant is the slice of the assistant this handler needs.

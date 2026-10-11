@@ -7,7 +7,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	"github.com/chun/kada-backend/internal/domain/entity"
+	"github.com/booondenz/kada/internal/domain/entity"
 )
 
 // newAnalyticsDryRunDB mirrors the helper the other service tests use: it renders SQL without a server.

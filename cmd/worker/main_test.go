@@ -8,7 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/chun/kada-backend/internal/mq"
+	"github.com/booondenz/kada/internal/mq"
 )
 
 type assertErr string

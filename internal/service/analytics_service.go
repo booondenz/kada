@@ -6,7 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/chun/kada-backend/internal/domain/entity"
+	"github.com/booondenz/kada/internal/domain/entity"
 )
 
 // Overview is a user's totals: how many links they have and how many clicks those links have taken.

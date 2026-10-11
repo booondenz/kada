@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/net/html"
 
-	"github.com/chun/kada-backend/internal/domain"
+	"github.com/booondenz/kada/internal/domain"
 )
 
 // blockedCIDRs lists private/reserved address ranges: blocks SSRF access to localhost, cloud metadata, and internal services

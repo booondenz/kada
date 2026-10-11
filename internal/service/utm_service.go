@@ -7,8 +7,8 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/chun/kada-backend/internal/domain"
-	"github.com/chun/kada-backend/internal/domain/entity"
+	"github.com/booondenz/kada/internal/domain"
+	"github.com/booondenz/kada/internal/domain/entity"
 )
 
 type UTMTemplateService struct {
