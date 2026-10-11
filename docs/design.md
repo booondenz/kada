@@ -106,6 +106,7 @@ docs/                this documentation
 deploy/              server bootstrap scripts and the env-file writer
   nginx/             reverse proxy configuration
 scripts/             maintenance scripts
+.cache/              (ignored) tool caches: go-build, go-mod, golangci-lint
 ```
 
 The Go module is the repository root, so `cmd/`, `config/` and `internal/` are directories at the top
@@ -116,6 +117,10 @@ Because it is, `node_modules` sits inside the Go module's file tree and `./...` 
 local `npm ci`, `go test ./...` matches a package under `web/node_modules` (the `flatted` package ships
 Go files of its own). `.golangci.yml` excludes `^web/` for exactly that reason, and CI never sees it
 because the Go jobs do not run `npm ci`.
+
+`.cache/` is not part of the project either: it is where tooling that may not write outside the workspace
+puts Go's build cache, module cache and linter cache. It is ignored, nothing here reads it, and deleting it
+costs a cold rebuild and a re-download.
 
 The host layout is not the repository layout. The API runs from `/opt/kada/backend` (its binaries, its
 `.env` and its backups) and the served bundle lives in `/opt/kada/frontend`, which is bind-mounted into

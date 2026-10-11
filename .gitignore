@@ -18,11 +18,13 @@ coverage.out
 .gitmsg*.txt
 .gm*.txt
 
-# Go tool caches (agents/tooling sometimes point these inside the repo)
-.gocache/
-.gomodcache/
-.gopath/
-.golangci-cache/
+# Tool caches.
+#
+# Nothing in this repository reads them, and `go env GOCACHE` / `go env GOMODCACHE` resolve outside it:
+# they are here because tooling that is not allowed to write outside the workspace has to point Go
+# somewhere it may write. Deleting this directory is always safe - the cost is a cold rebuild and a
+# re-download of the module cache.
+.cache/
 
 # Environment
 .env

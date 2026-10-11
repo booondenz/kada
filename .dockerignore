@@ -14,7 +14,4 @@ scripts/
 deploy/
 docker-compose.yml
 Dockerfile
-.gocache/
-.gomodcache/
-.gopath/
-.golangci-cache/
+.cache/
