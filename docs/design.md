@@ -864,6 +864,54 @@ different name. It is a variable rather than a secret because the name is alread
 certificate transparency logs, the DNS records and `deploy/nginx/nginx-prod.conf` - and because a deployment
 step that requires manual setup is a failure mode of its own.
 
+### 10.1 The certificate the site serves
+
+The certificate is Let's Encrypt's, issued from this host into certbot's store rather than into this
+repository: `/etc/letsencrypt/live/kada.click/{fullchain.pem,privkey.pem}`, named `kada.click`, covering
+`kada.click` and `www.kada.click`. `deploy/nginx/nginx-prod.conf` reads those two paths, so the name has to
+survive every renewal - which is what `certbot certonly --cert-name kada.click` is for.
+
+The nginx that serves it runs in a container and reads the host's store through a read-only bind mount
+(`/etc/letsencrypt -> /etc/letsencrypt (ro)`), the same arrangement as the frontend directory. That gives
+the step people forget its shape: **nginx holds the certificate it read when the process started**, so
+renewed files on disk change nothing until the process reloads or restarts.
+
+    sudo docker exec kada-nginx nginx -t && sudo docker exec kada-nginx nginx -s reload
+
+**`standalone` cannot renew this certificate on this host, and never could.** It authenticates by binding
+port 80, and `kada-nginx` holds port 80 under `--network host`, so every attempt ends with
+
+    Could not bind TCP port 80 because it is already in use by another process on this system
+
+`certbot.timer` is active and runs twice a day; the certificate still being July's means every attempt since
+mid-September failed, and the only record of that was a mail to root. Stopping the container first does free
+the port, and a restart then serves the new certificate - that is a valid one-off, and it is what the
+renewal issue describes.
+
+**What it should be is DNS-01.** The zone is Aliyun's (`dns23.hichina.com`, `dns24.hichina.com`), and DNS-01
+validates through a TXT record: no port, no downtime, and - the property that matters while the domain
+carries no records for an ICP filing - no need for the name to resolve at all. HTTP-01, webroot and
+TLS-ALPN-01 all need the name to point here, so they are unavailable for exactly as long as a filing runs.
+
+**Verify from the visitor's side, not from certbot.** `certbot certificates` reads the files on disk and
+says nothing about what is being served; `openssl s_client` against the public name says nothing either,
+because a host reaching its own address is at the mercy of hairpin NAT. The authoritative local check sends
+SNI to the loopback address:
+
+    echo | openssl s_client -connect 127.0.0.1:443 -servername kada.click 2>/dev/null | openssl x509 -noout -subject -dates
+
+**Nothing else watches the expiry**, which is how it reached a day from it. The deploy's own TLS check
+passes an expired certificate by design (it passes `-k`, because it asserts which files are being served,
+not that they are trusted), and the runner-side smoke test is advisory and cannot reach the site at all
+while the name does not resolve. `.github/workflows/certificate.yml` fills that gap: daily, it reads the
+expiry **from the host** over the same SSH connection the deploy uses - authoritative, and independent of
+DNS and the edge - and opens an issue when less than 14 days remain, commenting on the one that is open
+instead of opening a second. It deliberately does not fail the run: a scheduled job that stays red for weeks
+is the alarm people stop reading, and the issue is the durable channel. It does fail when it cannot read the
+certificate, because a check that checks nothing must not look like a check that passes.
+`scripts/verify-certificate-check.test.js` runs both of its steps against a stubbed `ssh` and `gh` to keep
+those rules honest.
+
 ## 11. Testing
 
 | Layer | Style |
