@@ -42,6 +42,13 @@ const wiring = [
   ["the date is handed over", /\$\{\{\s*steps\.read\.outputs\.not_after\s*\}\}/],
   ["the reason is handed over", /\$\{\{\s*steps\.read\.outputs\.reason\s*\}\}/],
   ["the certificate path is named once", /CERT_PATH: \/etc\/letsencrypt\/live\/kada\.click\/fullchain\.pem/],
+  // `gh` works out which repository it is talking about through git, so a job without a checkout dies with
+  // "failed to run git: fatal: not a git repository". That is how this workflow failed the first time it
+  // ran on a schedule, after it had already read the certificate correctly.
+  ["the repository is checked out for gh", /uses: actions\/checkout@/],
+  // The known-hosts notice would otherwise arrive first and, for a certificate that cannot be read, become
+  // the reason quoted into the issue.
+  ["the ssh notices are silenced", /-o LogLevel=ERROR/],
 ];
 
 let wiringFails = 0;
@@ -89,13 +96,16 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 fails=0
 
-# run_case slug mode want_exit want_create want_comment want_grep want_existing label
+# run_case slug mode want_exit want_create want_comment want_ghcalls want_grep want_existing label
+#
+# want_ghcalls is how many times gh may be called at all, which is what makes "says nothing" mean nothing:
+# a case that expects no issue and no comment but still lets gh be called is a case that proves very little.
 #
 # want_grep is matched against the reporting step's output and against the arguments the stubbed gh was
 # called with, so one pattern can assert either what was printed or what was filed.
 run_case() {
   slug="$1"; mode="$2"; want_exit="$3"; want_create="$4"; want_comment="$5"
-  want_grep="$6"; want_existing="$7"; label="$8"
+  want_ghcalls="$6"; want_grep="$7"; want_existing="$8"; label="$9"
 
   dir="$HERE/case-$slug"
   rm -rf "$dir"; mkdir -p "$dir/bin"
@@ -109,6 +119,7 @@ echo "ssh $*" >> "$STUB_CALLS"
 case "$STUB_MODE" in
   ok)         printf 'notAfter=Jan 11 01:53:31 2027 GMT\nstatus=ok\n' ;;
   expiring)   printf 'notAfter=Oct 13 01:53:31 2026 GMT\nstatus=expiring\n' ;;
+  gh-broken)  printf 'notAfter=Oct 13 01:53:31 2026 GMT\nstatus=expiring\n' ;;
   unreadable) printf 'status=unreadable\n' ;;
   refused)    echo "ssh: connect to host example.invalid port 22: Connection refused" >&2; exit 255 ;;
   *)          echo "unknown STUB_MODE: $STUB_MODE" >&2; exit 99 ;;
@@ -120,6 +131,11 @@ STUB
   cat > "$dir/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 echo "gh $*" >> "$STUB_CALLS"
+# What the CLI does in a job that never checked anything out, and the reason this failure has to be loud.
+if [ "$STUB_GH_FAILS" = "yes" ]; then
+  echo "failed to run git: fatal: not a git repository (or any of the parent directories): .git" >&2
+  exit 1
+fi
 if [ "$1" = "issue" ] && [ "$2" = "list" ]; then
   [ -n "$STUB_EXISTING" ] && printf '%s\n' "$STUB_EXISTING"
   exit 0
@@ -128,7 +144,9 @@ echo "https://example.invalid/issues/1"
 STUB
   chmod +x "$dir/bin/gh"
 
-  export STUB_MODE="$mode" STUB_CALLS="$dir/calls" STUB_EXISTING="$want_existing"
+  STUB_GH_FAILS=no
+  [ "$mode" = "gh-broken" ] && STUB_GH_FAILS=yes
+  export STUB_GH_FAILS STUB_MODE="$mode" STUB_CALLS="$dir/calls" STUB_EXISTING="$want_existing"
   export GITHUB_OUTPUT="$dir/gh_output"
   export SSH_KEY="not-a-real-key" SERVER_HOST="example.invalid" SERVER_USER="kada"
   export RUNNER_TEMP="$dir"
@@ -164,10 +182,9 @@ STUB
   [ -n "$STATUS" ] || problems="$problems the read step produced no status"
   [ "$created" = "$want_create" ] || problems="$problems create=$created(want $want_create)"
   [ "$commented" = "$want_comment" ] || problems="$problems comment=$commented(want $want_comment)"
-  # Silence has to mean silence: a run that neither creates nor comments must not call gh at all.
-  if [ "$want_create" = "no" ] && [ "$want_comment" = "no" ] && [ "$gh_calls" != "0" ]; then
-    problems="$problems gh was called $gh_calls time(s) when it should not have been"
-  fi
+  # Silence has to mean silence: the case says how many times gh may be called at all, so a run that is
+  # supposed to say nothing cannot quietly call gh anyway.
+  [ "$gh_calls" = "$want_ghcalls" ] || problems="$problems ghCalls=$gh_calls(want $want_ghcalls)"
   if [ "$want_grep" != "-" ]; then
     grep -q "$want_grep" "$dir/report.out" "$dir/calls" \
       || problems="$problems neither the output nor the filed issue contains: $want_grep"
@@ -190,11 +207,12 @@ bash -n "$HERE/step-report.sh" && echo "step-report.sh parses"
 echo
 
 echo "--- cases ---"
-run_case far        ok         0 no  no  "-"                                    ""  "far from expiry: says nothing and opens nothing"
-run_case near       expiring   0 yes no  "Oct 13 01:53:31 2026 GMT"              ""  "inside the warning window: opens an issue naming the date"
-run_case near-open  expiring   0 no  yes "kada:certificate-expiry"               "7" "an issue is already open: comments on it instead of opening another"
-run_case unreadable unreadable 1 yes no  "kada:certificate-unreadable"           ""  "cannot read the certificate: opens an issue and fails the run"
-run_case refused    refused    1 yes no  "Connection refused"                    ""  "SSH refused: reported as unreadable rather than as nothing to report"
+run_case far        ok         0 no  no  0 "-"                          ""  "far from expiry: says nothing and opens nothing"
+run_case near       expiring   0 yes no  2 "Oct 13 01:53:31 2026 GMT"    ""  "inside the warning window: opens an issue naming the date"
+run_case near-open  expiring   0 no  yes 2 "kada:certificate-expiry"     "7" "an issue is already open: comments on it instead of opening another"
+run_case unreadable unreadable 1 yes no  2 "kada:certificate-unreadable" ""  "cannot read the certificate: opens an issue and fails the run"
+run_case refused    refused    1 yes no  2 "Connection refused"          ""  "SSH refused: reported as unreadable rather than as nothing to report"
+run_case gh-broken  gh-broken  1 no  no  1 "not a git repository"        ""  "gh cannot report at all: fails the run and says why"
 echo
 
 if [ "$fails" = "0" ]; then

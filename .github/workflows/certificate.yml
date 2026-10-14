@@ -45,8 +45,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      # No checkout: this needs the host and `gh`, both of which the runner already has, not the files in
-      # this repository.
+      # `gh` works out which repository it is talking about through git, so a job without a checkout fails
+      # with "failed to run git: fatal: not a git repository" - which is how the first version of this
+      # workflow failed, at 08:40 on 2026-10-14, after it had already read the certificate correctly. The
+      # check does not need the files; `gh` needs the repository.
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
       - name: Read the certificate from the host
         id: read
         env:
@@ -61,7 +66,10 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$KEY"
           chmod 600 "$KEY"
 
-          SSH=(ssh -i "$KEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new
+          # LogLevel=ERROR silences the "Permanently added ... to the list of known hosts" notice, which
+          # otherwise arrives before anything else and - for a certificate that cannot be read - becomes
+          # the reason quoted into the issue.
+          SSH=(ssh -i "$KEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR
                -o UserKnownHostsFile="$RUNNER_TEMP/kada_cert_known_hosts" -o ConnectTimeout=15
                -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
 
@@ -111,19 +119,34 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Every gh call goes through this. `set -e` alone turns a refused API call into "Process completed
+          # with exit code 1" and nothing else, and a check that cannot report looks exactly like a check
+          # that had nothing to report - which is the failure this workflow exists to prevent, one level up.
+          #
+          # The message goes to stderr because the callers use this in a command substitution: on stdout it
+          # would be captured into the variable it was meant to fill, and the reason would vanish - which is
+          # what "The certificate check could not report:" printing nothing looked like the first time.
+          gh_or_fail() {
+            if ! out=$(gh "$@" 2>&1); then
+              echo "::error title=The certificate check could not report::$out" >&2
+              exit 1
+            fi
+            printf '%s\n' "$out"
+          }
+
           # One issue per condition, found by a marker in the body rather than by its title: the title has
           # to stay fixed for a reader, the body carries the date, and a search index lags a new issue.
           # Commenting on the issue that exists is what keeps a daily job from opening a daily issue.
           report() {
             title="$1"; marker="$2"; body="$3"
             expr=".[] | select((.body // \"\") | contains(\"$marker\")) | .number"
-            existing=$(gh issue list --state open --limit 200 --json number,body --jq "$expr" | head -1)
+            existing=$(gh_or_fail issue list --state open --limit 200 --json number,body --jq "$expr" | head -1)
             if [ -n "$existing" ]; then
               echo "reporting on the open issue #$existing"
-              gh issue comment "$existing" --body "$body"
+              gh_or_fail issue comment "$existing" --body "$body" > /dev/null
             else
               echo "opening an issue"
-              gh issue create --title "$title" --body "$body"
+              gh_or_fail issue create --title "$title" --body "$body" > /dev/null
             fi
           }
 
