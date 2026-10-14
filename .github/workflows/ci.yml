@@ -230,7 +230,7 @@ jobs:
           tar czf "$BUNDLE" \
             bin/server bin/migrate \
             deploy-pkg deploy-version.txt \
-            deploy/upsert-env.sh
+            deploy/upsert-env.sh deploy/nginx/nginx-prod.conf
 
           local_size=$(stat -c%s "$BUNDLE")
           echo "the deploy bundle is $local_size bytes"
@@ -361,6 +361,8 @@ jobs:
             DEPLOY_DIR=/tmp/kada-deploy
             BACKEND_DIR=/opt/kada/backend
             FRONTEND_DIR=/opt/kada/frontend
+            # The file the nginx container has bind-mounted as its /etc/nginx/nginx.conf.
+            NGINX_CONF=/opt/kada/nginx-prod.conf
 
             echo "Deploying $(head -1 "$DEPLOY_DIR/deploy-version.txt")"
 
@@ -480,7 +482,78 @@ jobs:
             rm -rf "$FRONTEND_DIR.new"
             echo "the frontend is deployed"
 
-            # 5. Verify on the host itself. This is the authoritative check: it does not depend on DNS,
+            # 5. Replace the nginx configuration.
+            #
+            #    /opt/kada/nginx-prod.conf is bind-mounted as the container's /etc/nginx/nginx.conf, and a
+            #    FILE bind mount keeps the inode it resolved when the container started - the same trap as
+            #    the frontend directory, one level down. Replacing the file (mv, or rm followed by cp)
+            #    would leave the container reading the old inode: the deploy would report success, `nginx
+            #    -t` would validate the old file, and nothing would have changed. The new content is
+            #    therefore written INTO the existing file, never over it, and the hash check below is what
+            #    proves the container is reading what was deployed.
+            #
+            #    The previous file is backed up and the change printed as a diff first, so an edit made on
+            #    the host by hand is visible in the log rather than silently overwritten. `nginx -t` is the
+            #    gate: a configuration nginx refuses is restored in place and fails the deploy, while the
+            #    site keeps serving the previous one.
+            echo "Deploying the nginx configuration"
+            shipped="$DEPLOY_DIR/deploy/nginx/nginx-prod.conf"
+            if [ ! -f "$shipped" ]; then
+              echo "the bundle does not carry $shipped"
+              exit 1
+            fi
+            if [ ! -w "$NGINX_CONF" ] && [ ! -w "$(dirname "$NGINX_CONF")" ]; then
+              # Named explicitly, because this step fails on a permission rather than on anything about the
+              # release, and the reason has to be readable from the log alone.
+              echo "cannot write $NGINX_CONF as $(id -un); that is the file the container has mounted"
+              exit 1
+            fi
+
+            mkdir -p "$BACKEND_DIR/backups"
+            previous="$BACKEND_DIR/backups/nginx-prod.conf.$(date +%Y%m%d%H%M%S)"
+            cp -a "$NGINX_CONF" "$previous" 2>/dev/null || true
+
+            if cmp -s "$shipped" "$NGINX_CONF"; then
+              echo "the served configuration already matches the repository"
+            else
+              echo "the served configuration differs, and this is the change being deployed:"
+              if [ -f "$previous" ]; then
+                echo "the previous configuration is kept at $previous"
+              fi
+              diff -u "$NGINX_CONF" "$shipped" || true
+
+              cat "$shipped" > "$NGINX_CONF"
+
+              if ! docker exec kada-nginx nginx -t; then
+                echo "the deployed configuration is not valid, restoring the previous one"
+                if [ -f "$previous" ]; then
+                  cat "$previous" > "$NGINX_CONF"
+                  docker exec kada-nginx nginx -t || true
+                fi
+                exit 1
+              fi
+
+              docker exec kada-nginx nginx -s reload
+              echo "the configuration is deployed and nginx has reloaded it"
+            fi
+
+            # What the container reads is what is being served. A write that replaced the inode would show
+            # up here as a mismatch, because the mount would still resolve the file the container started
+            # with - which is the whole reason the content is written in place above.
+            if ! served=$(docker exec kada-nginx cat /etc/nginx/nginx.conf | sha256sum | awk '{print $1}'); then
+              echo "the container could not be asked which configuration it is reading"
+              exit 1
+            fi
+            wanted=$(sha256sum "$shipped" | awk '{print $1}')
+            if [ "$served" != "$wanted" ]; then
+              echo "the container is reading a different configuration than the one deployed"
+              echo "  the container reads: $served"
+              echo "  the bundle carried:  $wanted"
+              exit 1
+            fi
+            echo "the container is serving the deployed configuration"
+
+            # 6. Verify on the host itself. This is the authoritative check: it does not depend on DNS,
             #    TLS or the public network, only on the API answering and nginx serving. The public check
             #    further below runs on the runner and then proves DNS and TLS are fine too.
             echo "Checking the API on the host"
@@ -513,7 +586,18 @@ jobs:
             fi
             echo "the site answered on the host"
 
-            # 6. Clean up.
+            # A behaviour the configuration itself provides, so that "deployed and valid" is not the same
+            # as "deployed and doing what it says": the port-80 server block answers 301 to HTTPS. A
+            # configuration with valid syntax and no redirect now fails the deploy here rather than being
+            # discovered by a visitor.
+            if ! curl -sS -o /dev/null -w '%{http_code}' --resolve "$SITE_HOST:80:127.0.0.1" \
+                 "http://$SITE_HOST/" | grep -q 301; then
+              echo "the plain-HTTP entry point is not redirecting to HTTPS"
+              exit 1
+            fi
+            echo "the plain-HTTP entry point redirected"
+
+            # 7. Clean up.
             rm -rf "$DEPLOY_DIR"
             echo "Deploy finished at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 

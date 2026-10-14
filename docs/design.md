@@ -826,17 +826,42 @@ names are content hashes and are never reused); files the new build does not con
 that switch. `scripts/verify-deploy-step.test.js` runs that block against a stand-in directory and asserts
 the inode does not change, which is the property the mount depends on.
 
-The container itself needs `-v /opt/kada/frontend:/opt/kada/frontend:ro` and `--network host`, the
-latter because the config proxies to `127.0.0.1:8080`, which means this host only under host
-networking. Both live in the host's `/opt/kada/docker-compose.yml`: a container created by hand from
-`docker run` looks identical until the next `docker compose up -d` discards it, mount and all.
+The container has three read-only bind mounts into the host, which `docker inspect kada-nginx` shows:
+
+    /opt/kada/nginx-prod.conf  ->  /etc/nginx/nginx.conf   (ro)
+    /opt/kada/frontend         ->  /opt/kada/frontend      (ro)
+    /etc/letsencrypt           ->  /etc/letsencrypt        (ro)
+
+and it runs with `--network host`, because the configuration proxies to `127.0.0.1:8080`, which means this
+host only under host networking. All of it lives in the host's `/opt/kada/docker-compose.yml`: a container
+created by hand from `docker run` looks identical until the next `docker compose up -d` discards it, mount
+and all.
+
+**The configuration in that first mount is deployed from this repository.** It did not use to be: the file
+was created on the host by hand and the copy here was documentation that no deployment could apply, so
+editing it and deploying changed nothing - silently, because the `nginx -t` the deploy ran validated the
+file that was running and reported it fine. Each part of the fix is load-bearing:
+
+- The file is a member of the deploy bundle, so what the host is given is what the repository holds.
+- The new content is written **into** the existing file and never over it. A FILE bind mount keeps the
+  inode it resolved when the container started, so `mv`, or `rm` followed by `cp`, would leave nginx
+  reading the old one while every check passed - the directory trap above, one level down.
+- The previous file is backed up and the difference printed before the new one is applied, so an edit
+  someone made on the host shows up in the deploy log instead of being overwritten in silence.
+- `nginx -t` gates the reload, and a configuration nginx refuses is restored in place and fails the deploy
+  while the site keeps serving the previous one. Nothing here assumes the file that was shipped is the file
+  that is running: the deploy compares the hash of what the container reads with the hash of what it
+  carried, and the on-host check then asks nginx over the network for the page and for the port-80 redirect
+  the configuration is supposed to provide. `scripts/verify-deploy-step.test.js` sources that block against
+  a stand-in file and asserts the inode, the gate order and the rollback.
 
 Verification happens in two places, which is deliberate:
 
-- **On the host**, during the deploy step: `curl http://127.0.0.1:8080/api/health`, and then the site
-  itself through nginx, with `--resolve` so no DNS is involved and `grep 'id="root"'`. Both are
-  authoritative and both can fail the deploy, because neither depends on anything but this host, and
-  neither can be failed by a third party. The API check alone is not enough: a frontend that is not
+- **On the host**, during the deploy step: `curl http://127.0.0.1:8080/api/health`, then the site itself
+  through nginx (`--resolve`, so no DNS is involved, and `grep 'id="root"'`), then the port-80 entry point,
+  asserted to answer 301 - a behaviour the configuration provides, rather than a file that was merely
+  installed. All three are authoritative and all three can fail the deploy, because none depends on
+  anything but this host, and none can be failed by a third party. The API check alone is not enough: a frontend that is not
   being served - no bind mount, a stale one, a config still proxying to a dead port - leaves the API
   perfectly healthy while every page is a 500.
 - **From the runner**, afterwards: a smoke test of the public origin over HTTPS, its `/api/health`,

@@ -26,6 +26,11 @@
 // one - every page a 500, while the API behind its own location blocks answers 200 and every other check
 // passes. That is what happened, which is why the case asserts the inode and not only the file contents.
 //
+// The configuration cases pin the same property one level down, for the file nginx reads as its own
+// configuration: /opt/kada/nginx-prod.conf is a FILE bind mount, so the deploy has to write into it rather
+// than replace it, `nginx -t` has to come before the reload, and a configuration nginx refuses has to be
+// restored in place with the reload skipped.
+//
 // Generates scripts/.verify-deploy-out/ and runs it with bash. Git Bash cannot run under the default
 // sandbox (it needs a signal pipe), so this looks for WSL bash first and falls back to Git Bash.
 
@@ -74,12 +79,27 @@ function extractFrontendSwap() {
     .join("\n");
 }
 
+// The nginx configuration is the other thing nginx has bind-mounted, as a FILE rather than a directory, so
+// the deploy has to write into it instead of replacing it - see the configuration cases in the harness.
+function extractConfigSwap() {
+  const lines = workflow.split(/\r?\n/);
+  const start = lines.findIndex((l) => l.includes('echo "Deploying the nginx configuration"'));
+  if (start < 0) throw new Error("the nginx configuration swap was not found in the workflow");
+  const end = lines.findIndex((l, i) => i > start && l.includes('echo "the container is serving the deployed configuration"'));
+  if (end < 0) throw new Error("the nginx configuration swap has no end marker");
+  return lines
+    .slice(start, end + 1)
+    .map((l) => l.replace(/^\s{12}/, ""))
+    .join("\n");
+}
+
 const write = (name, content) => fs.writeFileSync(path.join(outDir, name), content.replace(/\r\n/g, "\n"), "utf8");
 write("step-verify.sh", extractRun("Verify deployment"));
 write("step-report.sh", extractRun("Report the smoke test result"));
 write("step-check-sms.sh", extractRun("Check the SMS credentials"));
 write("step-upload-bundle.sh", extractRun("Upload the deploy bundle"));
 write("frontend-swap.sh", extractFrontendSwap());
+write("config-swap.sh", extractConfigSwap());
 
 // --- the harness that decides whether each case behaved -------------------------------------------------
 const HARNESS = String.raw`#!/usr/bin/env bash
@@ -312,14 +332,14 @@ echo "--- the deploy bundle upload step ---"
 run_upload_case() {
   mode="$1"; want_exit="$2"; want_attempts="$3"; want_unpacked="$4"; label="$5"
   dir="$HERE/case-upload-$mode"
-  rm -rf "$dir"; mkdir -p "$dir/bin" "$dir/deploy-pkg" "$dir/deploy"
+  rm -rf "$dir"; mkdir -p "$dir/bin" "$dir/deploy-pkg" "$dir/deploy/nginx"
   : > "$dir/calls"
 
   # The files the step tars. Their names are the contract with the deploy step that follows, so the
   # assertions below also check the received tar carries every one of them.
   for f in bin/server bin/migrate deploy-pkg/kada-fe.tar.gz \
            deploy-version.txt \
-           deploy/upsert-env.sh; do
+           deploy/upsert-env.sh deploy/nginx/nginx-prod.conf; do
     echo "fixture" > "$dir/$f"
   done
 
@@ -401,7 +421,7 @@ STUB
     tar tzf "$dir/remote.tar.gz" > "$dir/members" 2>/dev/null || problems="$problems the host did not receive a tar"
     for member in bin/server bin/migrate deploy-pkg/kada-fe.tar.gz \
                   deploy-version.txt \
-                  deploy/upsert-env.sh; do
+                  deploy/upsert-env.sh deploy/nginx/nginx-prod.conf; do
       grep -qx "$member" "$dir/members" || problems="$problems the bundle is missing $member"
     done
   fi
@@ -475,6 +495,94 @@ run_swap_case() {
 }
 
 run_swap_case
+echo
+
+# The nginx configuration swap, sourced from the workflow itself. /opt/kada/nginx-prod.conf is a FILE bind
+# mount, so the property under test is that the deploy writes into that file rather than replacing it: a
+# replacing write leaves the container reading the inode it started with, while nginx -t validates that
+# same old file and the deploy reports success. A bind mount cannot be modelled here, and the inode is what
+# a replacing write would break, so the inode is what this asserts; the docker stub stands in for the
+# container, which is why the hash query is answered from the host file.
+run_config_case() {
+  mode="$1"; want_exit="$2"; want_reload="$3"; want_content="$4"; label="$5"
+  dir="$HERE/case-config-$mode"
+  rm -rf "$dir"; mkdir -p "$dir/bin" "$dir/deploy/nginx" "$dir/backend"
+  : > "$dir/calls"
+
+  # What the host is running, and - for two of the three cases - something else in the repository.
+  printf '# the configuration the host was running\nserver { listen 80; }\n' > "$dir/nginx-prod.conf"
+  if [ "$mode" = "same" ]; then
+    cp "$dir/nginx-prod.conf" "$dir/deploy/nginx/nginx-prod.conf"
+  else
+    printf '# the configuration the repository holds\nserver { listen 80; }\n' > "$dir/deploy/nginx/nginx-prod.conf"
+  fi
+  inode_before=$(stat -c %i "$dir/nginx-prod.conf")
+
+  cat > "$dir/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$STUB_CALLS"
+case "$*" in
+  *"nginx -t"*)
+    if [ "$STUB_INVALID" = "yes" ]; then
+      echo "nginx: [emerg] unknown directive in /etc/nginx/nginx.conf" >&2
+      exit 1
+    fi
+    echo "nginx: configuration file /etc/nginx/nginx.conf test is successful" ;;
+  *"nginx -s reload"*) echo "2026/10/11 06:00:00 [notice] 1#1: signal process started" ;;
+  *"cat /etc/nginx/nginx.conf"*) cat "$STUB_NGINX_CONF" ;;
+  *) : ;;
+esac
+STUB
+  chmod +x "$dir/bin/docker"
+
+  STUB_INVALID=no
+  [ "$mode" = "invalid" ] && STUB_INVALID=yes
+  export STUB_INVALID STUB_CALLS="$dir/calls" STUB_NGINX_CONF="$dir/nginx-prod.conf"
+  # cygpath keeps the stub ahead of any real docker; a Windows-style PATH would not.
+  export PATH="$(cygpath -u "$dir/bin"):$PATH"
+
+  ( set -euo pipefail; DEPLOY_DIR="$dir" BACKEND_DIR="$dir/backend" NGINX_CONF="$dir/nginx-prod.conf"; \
+      . "$HERE/config-swap.sh" ) > "$dir/swap.out" 2>&1
+  swap_exit=$?
+
+  reloaded=no; grep -q 'nginx -s reload' "$dir/calls" && reloaded=yes
+
+  problems=""
+  [ "$swap_exit" = "$want_exit" ] || problems="$problems exit=$swap_exit(want $want_exit)"
+  [ "$reloaded" = "$want_reload" ] || problems="$problems reload=$reloaded(want $want_reload)"
+  case "$want_content" in
+    shipped)  grep -q 'the repository holds' "$dir/nginx-prod.conf" || problems="$problems the file does not hold the shipped configuration" ;;
+    original) grep -q 'the host was running' "$dir/nginx-prod.conf" || problems="$problems the previous configuration is not what the file holds" ;;
+  esac
+  # The mount: a write that replaced the file would leave the container on the inode it started with.
+  [ "$(stat -c %i "$dir/nginx-prod.conf")" = "$inode_before" ] \
+    || problems="$problems the file was replaced, so the container would still read the one it started with"
+  # The previous file has to be kept, or a rollback has nothing to restore.
+  grep -q 'the host was running' "$dir"/backend/backups/nginx-prod.conf.* 2>/dev/null \
+    || problems="$problems no backup of the previous configuration"
+  # nginx -t is the gate, so whenever there is a reload it has to have come first.
+  if [ "$reloaded" = "yes" ]; then
+    t_line=$(grep -n 'nginx -t' "$dir/calls" | head -1 | cut -d: -f1)
+    r_line=$(grep -n 'nginx -s reload' "$dir/calls" | head -1 | cut -d: -f1)
+    if [ -z "$t_line" ] || [ "$t_line" -gt "$r_line" ]; then
+      problems="$problems the reload happened before nginx -t"
+    fi
+  fi
+
+  if [ -z "$problems" ]; then
+    printf 'ok    %s\n' "$label"
+  else
+    printf 'FAIL  %s\n' "$label"
+    printf '        reason:%s\n' "$problems"
+    fails=$((fails + 1))
+  fi
+  printf '        mode=%s exit=%s reload=%s inode %s before, %s after\n' \
+    "$mode" "$swap_exit" "$reloaded" "$inode_before" "$(stat -c %i "$dir/nginx-prod.conf" 2>/dev/null || echo gone)"
+}
+
+run_config_case install 0 yes shipped  "a differing configuration is written into the mounted file, then reloaded"
+run_config_case same    0 no  original "an identical configuration reloads nothing"
+run_config_case invalid 1 no  original "nginx refuses the configuration: restored in place, no reload"
 echo
 
 if [ "$fails" = "0" ]; then
