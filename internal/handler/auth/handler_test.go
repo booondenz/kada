@@ -453,6 +453,44 @@ func TestLogin_ErrorMapping(t *testing.T) {
 	}
 }
 
+// A number that has failed too often is a wait, not a mistake in the request: 429 with Retry-After, and the
+// same answer for a number with an account and one without - a different status or message here would let the
+// bound be used to ask which numbers are registered.
+func TestLogin_TooManyAttempts(t *testing.T) {
+	h := NewHandler(&mockAuthService{
+		loginWithPass: func(context.Context, string, string) (*domain.AuthResponse, error) {
+			return nil, &domain.RateLimitError{
+				Message:           "too many failed sign-ins for this phone number, please try again later",
+				RetryAfterSeconds: 600,
+			}
+		},
+	})
+	r := setupTestRouter(h)
+	r.POST("/auth/login", h.Login)
+
+	w := postJSON(t, r, "/auth/login", map[string]string{"phone": "13800138000", "password": "wrong-horse"})
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Retry-After"); got != "600" {
+		t.Errorf("Retry-After = %q, want %q", got, "600")
+	}
+
+	var body struct {
+		Error             string `json:"error"`
+		RetryAfterSeconds int    `json:"retry_after_seconds"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("the body is not JSON: %v", err)
+	}
+	if body.RetryAfterSeconds != 600 {
+		t.Errorf("retry_after_seconds = %d, want 600: the client counts this down", body.RetryAfterSeconds)
+	}
+	if body.Error == "" {
+		t.Error("the refusal carries no message")
+	}
+}
+
 func TestLogin_Success(t *testing.T) {
 	h := NewHandler(&mockAuthService{})
 	r := setupTestRouter(h)

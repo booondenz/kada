@@ -61,11 +61,20 @@ type AuthService struct {
 	jwtSecret string
 	jwtExpire time.Duration
 	sms       SMSSender // SMS sender
+	// throttle bounds password guessing per phone number: the half of that job the per-address limiter cannot
+	// see, and the only half that holds against a caller with a pool of addresses.
+	throttle loginThrottle
 }
 
 func NewAuthService(db *gorm.DB, jwtSecret, jwtExpire string, sms SMSSender) *AuthService {
 	d, _ := time.ParseDuration(jwtExpire)
-	return &AuthService{db: db, jwtSecret: jwtSecret, jwtExpire: d, sms: sms}
+	return &AuthService{
+		db:        db,
+		jwtSecret: jwtSecret,
+		jwtExpire: d,
+		sms:       sms,
+		throttle:  &loginFailureStore{db: db},
+	}
 }
 
 // phonePattern matches mainland China mobile numbers: leading 1 + 3-9 + 9 digits
@@ -334,9 +343,28 @@ func (s *AuthService) Register(ctx context.Context, phone, code, password string
 // Every failure returns the same error, and a number with no account is still verified against a throwaway
 // hash: without that, the endpoint answers "does this number have an account here" faster than it answers
 // "is this the right password", and the timing is the leak.
+//
+// The failure count is per phone number and is checked before the password is looked at, so it holds against a
+// caller who moves between addresses - which the per-IP limiter cannot see, and a pool of addresses is exactly
+// how one account gets guessed at length. It applies to numbers with no account too, which is why it counts the
+// number that was tried rather than the account: a bound that only existed for real accounts would answer the
+// question above through its own 429.
 func (s *AuthService) LoginWithPassword(ctx context.Context, phone, password string) (*domain.AuthResponse, error) {
 	if !phonePattern.MatchString(phone) {
 		return nil, errors.New("invalid phone number format")
+	}
+
+	if retryAfter, err := s.throttle.retryAfter(ctx, phone); err != nil {
+		// Fail open, and say so. The account lookup below runs against the same database, so a counter that
+		// cannot be read is not a state in which this sign-in would have worked; turning it into a refusal
+		// would make a database blip look like a security decision, and the number would stay locked after the
+		// database recovered.
+		log.Printf("count failed sign-ins for %s failed: %v", phone, err)
+	} else if retryAfter > 0 {
+		return nil, &domain.RateLimitError{
+			Message:           "too many failed sign-ins for this phone number, please try again later",
+			RetryAfterSeconds: retryAfter,
+		}
 	}
 
 	row, err := s.userByPhone(ctx, phone)
@@ -344,9 +372,11 @@ func (s *AuthService) LoginWithPassword(ctx context.Context, phone, password str
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		// The same work as a real verification, against a hash nobody knows the password to.
 		_ = checkPasswordHash(password, dummyPasswordHash)
-		return nil, domain.ErrInvalidCredentials
+		return nil, s.rejectPassword(ctx, phone)
 
 	case err != nil:
+		// Not a failed guess, so it is not counted: otherwise a database problem would lock numbers out on
+		// its own, one unreadable account at a time.
 		log.Printf("lookup user by phone %s failed: %v", phone, err)
 		return nil, errors.New("login failed, please try again later")
 
@@ -354,10 +384,17 @@ func (s *AuthService) LoginWithPassword(ctx context.Context, phone, password str
 		// An account from before passwords, or one created by the SMS login. Same answer as a wrong password:
 		// the caller cannot be told which, and the page offers the code path to everybody anyway.
 		_ = checkPasswordHash(password, dummyPasswordHash)
-		return nil, domain.ErrInvalidCredentials
+		return nil, s.rejectPassword(ctx, phone)
 
 	case !checkPasswordHash(password, *row.PasswordHash):
-		return nil, domain.ErrInvalidCredentials
+		return nil, s.rejectPassword(ctx, phone)
+	}
+
+	// The record is cleared before the session is issued, and a failure to clear it is logged rather than
+	// raised: the password has been proved, and refusing a proved sign-in over a housekeeping statement would
+	// be an outage of its own.
+	if err := s.throttle.clear(ctx, phone); err != nil {
+		log.Printf("clear failed sign-ins for %s failed: %v", phone, err)
 	}
 
 	// A hash written before bcrypt was in use is upgraded the first time the password verifies. Leaving it
@@ -374,6 +411,19 @@ func (s *AuthService) LoginWithPassword(ctx context.Context, phone, password str
 	}
 
 	return s.startSession(ctx, toUserInfo(*row))
+}
+
+// rejectPassword counts one failed guess and answers with the error every credential mismatch gets.
+//
+// The count belongs to the number rather than to the account, so it is recorded before anything knows whether
+// an account exists - that is what keeps the bound from becoming a way to ask. A failure to record it is
+// logged rather than raised: the caller gets the same answer either way, and the alternatives are a 500 for a
+// wrong password or a hole nobody would notice.
+func (s *AuthService) rejectPassword(ctx context.Context, phone string) error {
+	if err := s.throttle.record(ctx, phone); err != nil {
+		log.Printf("record failed sign-in for %s failed: %v", phone, err)
+	}
+	return domain.ErrInvalidCredentials
 }
 
 // consumeSMSCode validates a verification code and burns it, in one statement.

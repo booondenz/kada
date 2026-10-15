@@ -248,6 +248,150 @@ func withUserRow(t *testing.T, row entity.User) *gorm.DB {
 	return db
 }
 
+// fakeThrottle counts what the service asks of the failure counter, without a database.
+//
+// The store's statements are asserted in login_throttle_test.go; what is under test here is the service's half
+// of the bargain - that a failure is recorded, that a success clears the record, that a malformed number
+// reaches neither, and that a locked number is refused before the password is compared.
+type fakeThrottle struct {
+	lockedFor int
+	err       error
+	recorded  []string
+	cleared   []string
+}
+
+func (f *fakeThrottle) retryAfter(context.Context, string) (int, error) { return f.lockedFor, f.err }
+
+func (f *fakeThrottle) record(_ context.Context, phone string) error {
+	f.recorded = append(f.recorded, phone)
+	return nil
+}
+
+func (f *fakeThrottle) clear(_ context.Context, phone string) error {
+	f.cleared = append(f.cleared, phone)
+	return nil
+}
+
+// The property the bound exists for, asserted from the outside: it is reached by failures and not by
+// successes. Five wrong passwords count five times, the right one clears the record and is not itself counted,
+// and a request that never reached the password - a malformed number - counts for nothing.
+func TestTheBoundIsReachedByFailuresNotBySuccesses(t *testing.T) {
+	phone := "13800138000"
+	hash := hashPassword("correct-horse")
+	ctx := context.Background()
+
+	throttle := &fakeThrottle{}
+	svc := NewAuthService(withUserRow(t, entity.User{ID: 42, Phone: &phone, PasswordHash: &hash}), "secret", "1h", nil)
+	svc.throttle = throttle
+
+	for i := 1; i <= loginMaxFailures; i++ {
+		if _, err := svc.LoginWithPassword(ctx, phone, "wrong-horse"); !errors.Is(err, domain.ErrInvalidCredentials) {
+			t.Fatalf("failure %d returned %v, want ErrInvalidCredentials", i, err)
+		}
+	}
+	if len(throttle.recorded) != loginMaxFailures {
+		t.Fatalf("%d failures recorded, want %d", len(throttle.recorded), loginMaxFailures)
+	}
+	if len(throttle.cleared) != 0 {
+		t.Errorf("a failed sign-in cleared the record %d time(s)", len(throttle.cleared))
+	}
+
+	if _, err := svc.LoginWithPassword(ctx, phone, "correct-horse"); err != nil {
+		t.Fatalf("the right password was refused: %v", err)
+	}
+	if len(throttle.cleared) != 1 {
+		t.Errorf("the successful sign-in cleared the record %d time(s), want 1", len(throttle.cleared))
+	}
+	if len(throttle.recorded) != loginMaxFailures {
+		t.Errorf("the successful sign-in was counted as a failure: %d recorded, want %d",
+			len(throttle.recorded), loginMaxFailures)
+	}
+
+	throttle.recorded = nil
+	if _, err := svc.LoginWithPassword(ctx, "not-a-number", "wrong-horse"); err == nil {
+		t.Fatal("a malformed number was accepted")
+	}
+	if len(throttle.recorded) != 0 {
+		t.Errorf("a malformed number recorded %d failures", len(throttle.recorded))
+	}
+}
+
+// A number that is locked is refused before the password is compared, and the answer is the same whether or not
+// it has an account - it answers "may I try", not "is this number registered here". The right password is used
+// on purpose: if the check sat after the comparison, this request would succeed.
+func TestALockedNumberNeverReachesThePassword(t *testing.T) {
+	phone := "13800138000"
+	hash := hashPassword("correct-horse")
+
+	tests := []struct {
+		name string
+		with bool
+	}{
+		{"an account exists", true},
+		{"no account at all", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newDryRunDB(t)
+			if tt.with {
+				db = withUserRow(t, entity.User{ID: 42, Phone: &phone, PasswordHash: &hash})
+			}
+
+			throttle := &fakeThrottle{lockedFor: 600}
+			svc := NewAuthService(db, "secret", "1h", nil)
+			svc.throttle = throttle
+
+			_, err := svc.LoginWithPassword(context.Background(), phone, "correct-horse")
+
+			var limited *domain.RateLimitError
+			if !errors.As(err, &limited) {
+				t.Fatalf("error = %v, want a quota refusal", err)
+			}
+			if limited.RetryAfterSeconds != 600 {
+				t.Errorf("retry after %d, want 600", limited.RetryAfterSeconds)
+			}
+			if len(throttle.recorded) != 0 {
+				t.Errorf("the refusal recorded %d more failures", len(throttle.recorded))
+			}
+		})
+	}
+}
+
+// An unknown number is counted exactly like a wrong password, because that is what it is: any difference here
+// would let the counter answer whether the number has an account.
+func TestAnUnknownNumberIsCountedLikeAWrongPassword(t *testing.T) {
+	throttle := &fakeThrottle{}
+	svc := NewAuthService(newDryRunDB(t), "secret", "1h", nil)
+	svc.throttle = throttle
+
+	if _, err := svc.LoginWithPassword(context.Background(), "13800138000", "anything"); !errors.Is(err, domain.ErrInvalidCredentials) {
+		t.Fatalf("error = %v, want ErrInvalidCredentials", err)
+	}
+	if len(throttle.recorded) != 1 {
+		t.Errorf("an unknown number recorded %d failures, want 1", len(throttle.recorded))
+	}
+}
+
+// A counter that cannot be read must not become a lockout. The account lookup runs against the same database,
+// so a database that cannot answer this query cannot answer that one either - and a number held locked after
+// the database recovered would be an outage making a security decision.
+func TestAnUnreadableCounterDoesNotLockAnyoneOut(t *testing.T) {
+	phone := "13800138000"
+	hash := hashPassword("correct-horse")
+
+	throttle := &fakeThrottle{err: errors.New("connection reset by peer")}
+	svc := NewAuthService(withUserRow(t, entity.User{ID: 42, Phone: &phone, PasswordHash: &hash}), "secret", "1h", nil)
+	svc.throttle = throttle
+
+	if _, err := svc.LoginWithPassword(context.Background(), phone, "correct-horse"); err != nil {
+		t.Fatalf("a counter error refused a correct password: %v", err)
+	}
+	if len(throttle.cleared) != 1 {
+		t.Errorf("the record was cleared %d time(s), want 1", len(throttle.cleared))
+	}
+}
+
 // Every way a password sign-in can fail has to be the same answer: an unknown number, a wrong password, and
 // an account that has no password at all. Anything else turns the endpoint into a way to ask which numbers
 // have accounts here.

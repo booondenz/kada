@@ -130,6 +130,26 @@ type LoginCaptcha struct {
 
 func (LoginCaptcha) TableName() string { return "login_captchas" }
 
+// LoginAttempt is one failed password sign-in, recorded against the number that was tried.
+//
+// One row per failure rather than a counter on the account, deliberately. The bound has to apply to a number
+// that has no account at all: if only real accounts could be locked, then "was that refused?" would answer
+// "does this number have an account here" - the one question the sign-in response is built not to answer
+// (domain.ErrInvalidCredentials for every mismatch, and a decoy hash so the timing does not answer it either).
+//
+// The rows are only ever read as a count over a window, so nothing here is state: what is left of the window
+// is the retry-after, and a successful sign-in deletes them.
+type LoginAttempt struct {
+	ID int64 `gorm:"primaryKey" json:"id"`
+	// Indexed together with created_at because every read is "how many failures for this number, recently".
+	Phone string `gorm:"type:varchar(20);not null;index:idx_login_attempts_phone,priority:1" json:"phone"`
+	// Also indexed on its own: the housekeeping DELETE filters on this column alone, and a composite index
+	// that leads with phone cannot serve that.
+	CreatedAt time.Time `gorm:"index:idx_login_attempts_phone,priority:2;index:idx_login_attempts_created" json:"created_at"`
+}
+
+func (LoginAttempt) TableName() string { return "login_attempts" }
+
 // User is an account.
 //
 // Accounts are created and signed in by phone number plus an SMS code, and nothing else: email/password
@@ -293,6 +313,7 @@ func Models() []any {
 		&ClickLog{},
 		&SMSVerificationCode{},
 		&LoginCaptcha{},
+		&LoginAttempt{},
 		&Domain{},
 		&UTMTemplate{},
 		&APIToken{},

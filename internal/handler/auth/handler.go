@@ -83,6 +83,22 @@ func (h *Handler) Captcha(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"captcha_id": challenge.ID, "image": challenge.Image})
 }
 
+// rateLimited answers a quota refusal: 429 with the wait, which is what turns "come back later" into something
+// a client can count down.
+//
+// Both the SMS quotas and the password bound are answered here, so the two cannot drift into different shapes.
+// Reporting a quota as 500 - which this handler used to do - tells a client to retry a request that will keep
+// failing, and tells the operator to look for a server fault that does not exist.
+func rateLimited(c *gin.Context, limited *domain.RateLimitError) {
+	if limited.RetryAfterSeconds > 0 {
+		c.Header("Retry-After", strconv.Itoa(limited.RetryAfterSeconds))
+	}
+	c.JSON(http.StatusTooManyRequests, gin.H{
+		"error":               limited.Message,
+		"retry_after_seconds": limited.RetryAfterSeconds,
+	})
+}
+
 // SendSMSCode sends an SMS verification code.
 func (h *Handler) SendSMSCode(c *gin.Context) {
 	var req domain.SendSMSRequest
@@ -95,18 +111,10 @@ func (h *Handler) SendSMSCode(c *gin.Context) {
 	// $remote_addr. Reading X-Forwarded-For here instead would let a caller choose which quota bucket to
 	// be counted in by sending a header of their own.
 	if err := h.svc.SendSMSCode(c.Request.Context(), req.Phone, middleware.RealIP(c), req.CaptchaID, req.CaptchaCode); err != nil {
-		// A quota refusal is 429 with a wait time; a wrong captcha or a malformed number is 400. Reporting
-		// "too many requests" as 500 - which this handler used to do - tells a client to retry a request
-		// that will keep failing, and tells the operator to look for a server fault that does not exist.
+		// A quota refusal is 429 with a wait time; a wrong captcha or a malformed number is 400.
 		var limited *domain.RateLimitError
 		if errors.As(err, &limited) {
-			if limited.RetryAfterSeconds > 0 {
-				c.Header("Retry-After", strconv.Itoa(limited.RetryAfterSeconds))
-			}
-			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error":               limited.Message,
-				"retry_after_seconds": limited.RetryAfterSeconds,
-			})
+			rateLimited(c, limited)
 			return
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -154,7 +162,14 @@ func (h *Handler) Login(c *gin.Context) {
 
 	resp, err := h.svc.LoginWithPassword(c.Request.Context(), req.Phone, req.Password)
 	if err != nil {
-		// 401 for "these credentials do not match", 400 for a malformed number or a service failure. The
+		// 429 first, because a number that has failed too often gets the same answer whatever address it is
+		// tried from and whether or not it has an account - which is the point of counting the number.
+		var limited *domain.RateLimitError
+		if errors.As(err, &limited) {
+			rateLimited(c, limited)
+			return
+		}
+		// Then 401 for "these credentials do not match", 400 for a malformed number or a service failure. The
 		// message is the same whichever way the credentials failed, so the response cannot be used to ask
 		// which numbers have accounts.
 		if errors.Is(err, domain.ErrInvalidCredentials) {
