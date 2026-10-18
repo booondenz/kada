@@ -64,6 +64,41 @@ go run ./cmd/server/main.go   # 8080
 cd web && npm run dev         # 3000
 ```
 
+## Measured baseline
+
+`cmd/loadgen` drives the redirect path of a running instance and reads the cache counters back from
+`/metrics`: a cache hit is invisible to the client, so the server's own counters are the only witness. It
+seeds its own links and runs two scenarios - a working set of codes that exist, and a stream of codes that
+do not.
+
+```bash
+go run ./cmd/migrate           # schema only; the API applies it on startup too
+KAFKA_BROKERS= go run ./cmd/server   # PostgreSQL and Redis, no broker: clicks take the direct write
+
+# in another shell
+go run ./cmd/loadgen -codes 200 -absent 2000 -requests 20000 -clients 4000 -concurrency 50
+```
+
+| scenario | requests | throughput | p50 | p99 | cache hit ratio |
+|---|---|---|---|---|---|
+| working set: 200 codes that exist | 20,000 | 1,610 req/s | 20.9 ms | 124 ms | 100% |
+| absent codes: 2,000 that do not exist | 20,000 | 5,105 req/s | 6.5 ms | 56.7 ms | 90% |
+
+Measured on one laptop (12 logical CPUs, Windows), the API, PostgreSQL 16 and Redis 7 on the same machine,
+50 concurrent clients spread over 4,000 synthetic addresses (sent as `X-Real-IP`, so that the per-address
+rate limiter does not shape the result), and 2,000 warm-up requests before the working set is measured. The
+numbers are from one run: throughput reproduces within a few percent, the tail moves by tens of milliseconds.
+
+Two things in that table are not about the cache:
+
+- **The two rows differ by the click write.** A 302 records a click; an absent code records nothing, because
+  there is no link to attach it to. This stack has no Kafka, so every click takes the degraded direct write -
+  an insert and a counter update in one transaction - at roughly 1,600-1,800 a second, and that is what the
+  working set is limited by. In production the API publishes to Kafka and the worker does the writing.
+- **Neither the cache nor the working set is the limit.** Raising the working set to 2,000 codes moved
+  throughput from 1,610 to 1,776 req/s. The 90% in the second row is the first pass, in which 2,000 codes
+  reach PostgreSQL once each; every request after that was a hit.
+
 ## Environment variables
 
 | Variable | Description |
@@ -81,7 +116,7 @@ the deploy job; the deployment section of [docs/design.md](docs/design.md) expla
 ## Layout
 
 ```text
-cmd/       entry points: the API, the Kafka worker and the migration
+cmd/       entry points: the API, the Kafka worker, the migration and the load generator
 config/    environment parsing (the single source of configuration)
 internal/  the application: domain, handler, service, infra, middleware, mq, metrics, assistant
 web/       Vite single-page app, built to static files and served by nginx

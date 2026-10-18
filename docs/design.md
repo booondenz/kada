@@ -576,6 +576,22 @@ The cost is a dependency: `prometheus/client_golang` and its tree, which also mo
 interface other software parses, and because the runtime series (goroutines, GC, resident memory) come
 with it and are half of what a baseline is.
 
+### 7.5 What the numbers turned out to be
+
+`cmd/loadgen` seeds its own links, drives the two scenarios, and reads the counters above before and after
+each one: a hit cannot be inferred from the client - a 302 looks the same either way - and the issue asked
+for the ratio rather than for a claim about the code. Every request carries an `X-Real-IP` from a pool,
+because the limiter keys on the client address: without that, a run from one machine would be answered with
+429 after 120 requests and would have measured the limiter.
+
+The first measurement answered a question the code could not. At 50 concurrent clients the working set ran
+at 1,610 requests a second and the stream of absent codes at 5,105. The difference is the click write: an
+absent code records nothing, because there is no link to attach the click to, so that path is Redis and
+HTTP; a 302 runs the publisher, and in a stack without Kafka that is the degraded direct write, two
+statements in one transaction per click. Raising the working set from 200 to 2,000 codes moved throughput
+to 1,776, which rules the cache and the size of the working set out as the constraint and leaves the write
+volume - the thing Kafka exists to move off the request path.
+
 ## 8. Cross-cutting decisions
 
 ### 8.1 Configuration

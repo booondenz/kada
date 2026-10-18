@@ -62,6 +62,37 @@ go run ./cmd/server/main.go   # 8080
 cd web && npm run dev         # 3000
 ```
 
+## 实测基线
+
+`cmd/loadgen` 对运行中的实例压测跳转路径，并从 `/metrics` 读回缓存计数：缓存命中对客户端是不可见的，
+只有服务端自己的计数器能作证。它会自己写入测试链接，跑两个场景 —— 一个是有意义的工作集，一个是一串
+不存在的短码。
+
+```bash
+go run ./cmd/migrate           # 仅应用表结构，API 启动时也会应用
+KAFKA_BROKERS= go run ./cmd/server   # PostgreSQL 与 Redis，不接 broker：点击走直写
+
+# 另开一个终端
+go run ./cmd/loadgen -codes 200 -absent 2000 -requests 20000 -clients 4000 -concurrency 50
+```
+
+| 场景 | 请求数 | 吞吐 | p50 | p99 | 缓存命中率 |
+|---|---|---|---|---|---|
+| 工作集：200 个存在的短码 | 20,000 | 1,610 req/s | 20.9 ms | 124 ms | 100% |
+| 不存在的短码：2,000 个 | 20,000 | 5,105 req/s | 6.5 ms | 56.7 ms | 90% |
+
+在一台笔记本上测得（12 逻辑核，Windows），API、PostgreSQL 16 与 Redis 7 在同一台机器上，50 并发，
+请求分摊到 4,000 个合成地址（用 `X-Real-IP` 发送，避免按地址的限流影响结果），工作集测量前先跑
+2,000 次预热。数字来自单次运行：吞吐的可复现性在几个百分点内，尾延迟会在几十毫秒范围内浮动。
+
+表里有两件事与缓存无关：
+
+- **两行的差别是点击写入。** 302 会记录一次点击，不存在的短码不记录，因为没有链接可以挂。这套栈里没有
+  Kafka，所以每次点击都走降级的直写 —— 一个事务里的插入加一次计数更新 —— 大约每秒 1,600–1,800 次，
+  工作集那行就是被它限制的。生产上 API 投递到 Kafka，由 worker 落库。
+- **瓶颈既不是缓存，也不是工作集大小。** 把工作集换成 2,000 个短码，吞吐从 1,610 升到 1,776 req/s。
+  第二行的 90% 来自首轮：2,000 个短码各访问一次数据库；之后每个请求都命中。
+
 ## 环境变量
 
 | 变量 | 说明 |
@@ -79,7 +110,7 @@ cd web && npm run dev         # 3000
 ## 目录结构
 
 ```text
-cmd/       入口：API、Kafka worker、表结构迁移
+cmd/       入口：API、Kafka worker、表结构迁移、压测工具
 config/    环境变量解析（唯一的配置来源）
 internal/  应用主体：domain、handler、service、infra、middleware、mq、metrics、assistant
 web/       Vite 单页应用，构建为静态文件后由 nginx 提供
