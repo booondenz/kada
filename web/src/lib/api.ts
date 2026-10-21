@@ -1,23 +1,26 @@
 // Resolves the API base URL.
 import { getToken, type User } from "./auth";
 //
-// The three cases are deliberately distinct, because an empty value cannot express them:
+// The three cases:
 //
-//   unset        -> the local Go API. This is the development default.
-//   "same-origin" -> relative requests, served by whatever hosts the page: production runs nginx in front
-//                    of both the frontend and the API, so /api/ is proxied by the same origin.
-//   a URL        -> that URL, used whenever the API lives somewhere else.
+//   unset         -> same origin, which is what both environments are: the Vite dev server proxies /api to
+//                    the Go API (see vite.config.ts) and nginx proxies it in production, so a relative URL
+//                    reaches the API in both.
+//   "same-origin" -> the same thing, named. CI and web/Dockerfile pass it so the intent is explicit in the
+//                    build that ships.
+//   a URL         -> that URL, for an API that lives somewhere else.
 //
-// Why a sentinel and not an empty string: Vite replaces `import.meta.env.VITE_API_URL` with the value the
-// bundle was built with, so "not configured" arrives as undefined and an empty configuration would be
-// indistinguishable from a deliberate one. The sentinel keeps the two apart, and it names the same-origin
-// case at the build site (the CI job and web/Dockerfile both pass it).
+// Unset used to mean http://localhost:8080, and that made every development request cross-origin. A JSON
+// body or a bearer token makes a request non-simple, so the browser sent a preflight; the API has no CORS
+// middleware (it does not need one when everything shares an origin), so the preflight was answered 404 and
+// the request behind it never left the page. The comment in vite.config.ts already said the frontend never
+// deals with a second origin - the fallback here was the thing that disagreed with it.
 const SAME_ORIGIN = "same-origin";
 
 function resolveAPIURL(): string {
   const configured = import.meta.env.VITE_API_URL;
-  if (!configured) return "http://localhost:8080";
-  return configured === SAME_ORIGIN ? "" : configured;
+  if (!configured || configured === SAME_ORIGIN) return "";
+  return configured;
 }
 
 const API_URL = resolveAPIURL();

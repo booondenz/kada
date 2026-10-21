@@ -23,6 +23,21 @@ const themeBootstrap = {
   },
 };
 
+/**
+ * The API proxy, one definition for the two servers that need it.
+ *
+ * Development serves /api from the same origin, the way nginx does in production, so the frontend never
+ * deals with a second origin - which is also why the API has no CORS middleware of its own. `preview` gets
+ * the same proxy because `npm run build && npm run preview` is how the production bundle is looked at
+ * locally, and a preview server without it would be the one place where /api quietly stops existing.
+ */
+const apiProxy = {
+  "/api": {
+    target: "http://localhost:8080",
+    changeOrigin: true,
+  },
+};
+
 export default defineConfig({
   plugins: [react(), tailwindcss(), themeBootstrap],
   resolve: {
@@ -41,14 +56,10 @@ export default defineConfig({
     watch: {
       ignored: [/\.(tmpdir|tmp)([\\/]|$)/],
     },
-    // Development serves /api from the same origin, the way nginx does in production, so the frontend never
-    // deals with a second origin. This replaces the rewrites next.config.ts used to declare.
-    proxy: {
-      "/api": {
-        target: "http://localhost:8080",
-        changeOrigin: true,
-      },
-    },
+    proxy: apiProxy,
+  },
+  preview: {
+    proxy: apiProxy,
   },
   build: {
     outDir: "dist",
