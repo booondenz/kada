@@ -166,14 +166,13 @@ export default function DashboardPage() {
           ))}
         </div>
       ) : links.length === 0 ? (
-        // An empty list is the toolbar and nothing else: it already reads "0 条链接" and already carries
-        // the create action, so the 64px tile, the heading and the second button that stood here repeated
-        // both at the size of a landing page. A search that matched nothing is the one case that still
-        // needs a sentence - the toolbar looks identical either way, and silence would read as a broken
-        // filter.
-        search ? (
-          <p className="py-10 text-center text-sm text-muted">{t("没有匹配的链接")}</p>
-        ) : null
+        // One line, like every other empty list. The toolbar above already carries the count and the create
+        // action, so the 64px tile, the heading and the second button that used to stand here said both a
+        // second time - but a blank panel below the toolbar reads as "still loading", which is worse than
+        // either. Two sentences share the line: nothing created yet, and nothing matched the search.
+        <p className="py-10 text-center text-sm text-muted">
+          {search ? t("没有匹配的链接") : t("还没有链接")}
+        </p>
       ) : (
         <div className="space-y-2">
           {/* Select all bar */}

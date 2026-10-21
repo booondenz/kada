@@ -411,11 +411,12 @@ stat tiles, and the two shared nothing but a colour. What the pages are held to 
 - **An empty state is a line of text.** The first page a visitor saw used to be a 64px icon tile, a
   heading, a marketing line and a second create button, centred where a list should be - on a page whose
   toolbar already said `0 条链接` and already carried the action. "Nothing here yet" is one sentence, set
-  at the size of a sentence; the only case that still earns a sentence apart from the empty list is a
-  search that matched nothing, because the toolbar looks identical either way. The other five lists say
-  one line each - 还没有文件夹, 还没有标签, 还没有 UTM 模板, 还没有自定义域名, 开始对话 - because the control
+  at the size of a sentence: every list says it, and the link list says two things with the same line,
+  because a search that matched nothing and a list with nothing in it are different sentences. The other
+  five lists say 还没有文件夹, 还没有标签, 还没有 UTM 模板, 还没有自定义域名 and 开始对话, because the control
   that creates the first item is already on the page above them; the icon tile, the heading and the
-  instruction that pointed at that control were all the same sentence said three times.
+  instruction that pointed at that control were all the same sentence said three times. A blank panel is
+  the one thing an empty list must not be: it is indistinguishable from a page that is still loading.
 - **So is a failed one.** A request that did not arrive is one sentence and a reload, not an emoji in a
   rounded box above a heading and a paragraph. Five list pages carried that block; it took the height of
   the list it was standing in for, to say that the list was not there.
