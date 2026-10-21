@@ -14,6 +14,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import { IcpNotice } from "@/components/IcpNotice";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 
@@ -128,7 +129,9 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
         ))}
       </nav>
 
-      {/* Bottom: Settings + version */}
+      {/* Bottom: Settings, then the footer a filing requires. The number sits in the shell because there is
+          no public page left to put it on: the app opens on the dashboard. `/privacy` is linked from the
+          same block so the policy stays reachable without being hunted for. */}
       <div className="border-t border-line px-3 py-3 space-y-2">
         <Link
           to="/dashboard/settings"
@@ -143,7 +146,15 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
           <Settings className={cn("size-4 shrink-0", pathname === "/dashboard/settings" && "text-brand-ink")} />
           <span>{t("设置")}</span>
         </Link>
-        <p className="px-3 text-xs text-faint">Kada v0.2</p>
+        <div className="space-y-1 px-3 pt-1">
+          <p className="text-xs text-faint">Kada v0.2</p>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-faint">
+            <IcpNotice className="transition-colors hover:text-muted" />
+            <Link to="/privacy" className="transition-colors hover:text-muted">
+              {t("隐私政策")}
+            </Link>
+          </div>
+        </div>
       </div>
     </aside>
   );

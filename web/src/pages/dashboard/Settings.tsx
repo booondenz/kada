@@ -1,29 +1,19 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
-import { User, Phone, LogOut, Key, Copy, Trash2, Plus, Building2, Globe, Monitor, Moon, Sun } from "lucide-react";
+import { User, Phone, Key, Copy, Trash2, Plus, Building2, Globe, Monitor, Moon, Sun } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { tokensAPI, workspacesAPI } from "@/lib/api";
-import { getToken, getUser, removeToken } from "@/lib/auth";
+import { getToken, getUser } from "@/lib/auth";
 import { useT, useI18n } from "@/lib/i18n";
 import { useTheme } from "@/lib/theme";
 
 export default function SettingsPage() {
-  const navigate = useNavigate();
   const token = getToken();
   const savedUser = getUser();
   const t = useT();
   const { locale } = useI18n();
   const localeTag = locale === "en" ? "en-US" : "zh-CN";
   const { theme, followsSystem, setTheme, useSystemTheme } = useTheme();
-
-  // Signing out is here rather than in the top bar: with phone-only sign-in there is no profile to hang a
-  // menu on, and the menu that used to hold this button had no other entry to justify itself.
-  const handleLogout = () => {
-    removeToken();
-    toast.success(t("已退出"));
-    navigate("/login");
-  };
 
   // API Tokens
   const { data: tokenData, mutate: mutateTokens } = useSWR(
@@ -106,10 +96,12 @@ export default function SettingsPage() {
         <p className="text-sm text-muted mt-1">{t("管理你的个人信息")}</p>
       </div>
 
-      {/* Profile Card. The phone number and nothing else: it is the account - the sign-in method, the
-          unique key, and the only field the API still publishes. The name, the email and the avatar that
-          stood here were editable fields nothing reads any more (PATCH /me went with them), and a field
-          that can be edited but changes nothing is worse than no field at all. */}
+      {/* Profile Card. The phone number and nothing else: it is the account's identity, and it is empty
+          until the visitor claims the guest account they are using. "未绑定" is therefore the normal state
+          here rather than an error - the row is where the claim step will be offered, and where the
+          payment flow will need an answer. The name, the email and the avatar that stood here were
+          editable fields nothing reads any more (PATCH /me went with them), and a field that can be edited
+          but changes nothing is worse than no field at all. */}
       <div className="rounded-xl border border-line bg-canvas shadow-sm overflow-hidden">
         <div className="border-b border-line px-6 py-4">
           <div className="flex items-center gap-2">
@@ -312,27 +304,11 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Sign-out Card. It replaced the account-information card, whose two rows said nothing worth a
-          card: "registered at" was never sent by the API (the field is not in the payload, so it always
-          rendered a dash) and "sign-in method" is the same sentence for every account on this page. */}
-      <div className="rounded-xl border border-line bg-canvas shadow-sm overflow-hidden">
-        <div className="border-b border-line px-6 py-4">
-          <div className="flex items-center gap-2">
-            <LogOut className="size-4 text-muted" />
-            <h2 className="font-semibold text-strong">{t("退出登录")}</h2>
-          </div>
-        </div>
-        <div className="px-6 py-5 space-y-3">
-          <p className="text-sm text-muted">{t("退出后需要重新用手机号验证码登录。")}</p>
-          <button
-            onClick={handleLogout}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-100"
-          >
-            <LogOut className="size-3.5" />
-            {t("退出登录")}
-          </button>
-        </div>
-      </div>
+      {/* There is no sign-out card any more. The account this page is about is a guest one - it exists
+          because the browser opened the app, not because somebody signed in - so "sign out" would mean
+          "throw this browser's links away", which is not an action to put one click away from the theme
+          switch. It comes back, with the claim step that gives the account a phone number, and with the
+          payment flow that needs one. */}
     </div>
   );
 }

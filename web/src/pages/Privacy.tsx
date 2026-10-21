@@ -23,11 +23,11 @@ export default function PrivacyPage() {
     <div className="min-h-dvh bg-subtle px-4 py-10">
       <div className="mx-auto max-w-3xl">
         <Link
-          to="/login"
+          to="/dashboard"
           className="inline-flex items-center gap-1.5 text-sm text-brand-ink hover:text-brand"
         >
           <ArrowLeft className="size-4" />
-          {t("返回登录")}
+          {t("返回首页")}
         </Link>
 
         <article className="mt-6 rounded-xl border border-line bg-canvas p-6 shadow-sm sm:p-8">

@@ -310,9 +310,8 @@ service, its systemd unit and a whole deployment step with it.
 
 | Path | Content |
 |---|---|
-| `/` | No page of its own: redirects to `/dashboard`, which sends a visitor without a session to `/login` |
-| `/login` | Sign-in: phone number and password; `/register` opens the same page in its sign-up mode |
-| `/register` | Redirects to `/login`: a new phone number is registered on the spot |
+| `/` | Redirects to `/dashboard` |
+| `/login`, `/register` | Redirects to `/dashboard`: there is no sign-in page (see [6.4](#64-there-is-no-sign-in-page)) |
 | `/privacy` | Privacy policy, linked from the consent checkbox before sign-in |
 | `/dashboard` | Overview: totals, trend, recent links |
 | `/dashboard/links`, `/new`, `/[id]` | Link list, creation form, detail/edit |
@@ -326,13 +325,11 @@ declared and where the bearer token is attached. Components never call `fetch` d
 State that must survive a reload (session token, profile, locale) lives in `localStorage` behind
 helpers in `src/lib/auth.ts` and `src/lib/i18n`.
 
-The two pages a visitor can reach without an account - `/login` and `/privacy` - carry the ICP filing
-number at the bottom, linked to the filing office's query page, which is what operating a site under a
-filing requires. The sign-in shell is one of them because it is the page the site now opens on: `/` has no
-landing page (see [6.3](#63-a-restrained-visual-language)), and the filing number has to be on a page a
-spot check reaches without an account. The number is one constant in `web/src/components/IcpNotice.tsx` and
-not a translated string: the filing office checks the characters, and a second copy of them could only ever
-disagree with the first.
+The ICP filing number sits in the app shell's sidebar, next to the link to `/privacy`, because there is no
+page a visitor reaches without a session any more: the app opens on the dashboard with a guest session (see
+[6.4](#64-there-is-no-sign-in-page)) and a spot check lands there. `/privacy` carries it too. The number is
+one constant in `web/src/components/IcpNotice.tsx` and not a translated string: the filing office checks the
+characters, and a second copy of them could only ever disagree with the first.
 
 ### 6.1 Internationalisation
 
@@ -413,15 +410,45 @@ stat tiles, and the two shared nothing but a colour. What the pages are held to 
   twelve dashboard pages each writing their own card is how the drift started. `ui/ui.test.tsx` asserts
   the rules above - no shadow on a card, the one radius, heights rather than padding - so a later "make
   this pop" has to break a test to land.
-- **There is no landing page.** The front page was one heading, one sentence and one button, and it is
-  gone: `/` redirects to the dashboard, which sends a visitor without a session to the sign-in form. A
-  page like that is not free either - `router.tsx` imports every page statically, so the three.js scene
-  that used to sit behind it was in the **initial** bundle of every route, and a visitor to `/login`
-  downloaded a 3D engine to look at a form. Removing the page removed the engine, a route, and the one
-  screen that existed to say the product's name to someone already on their way in.
+- **There is no landing page and no sign-in page.** `/` redirects to the dashboard, whose shell opens a
+  guest session and renders the app (see [6.4](#64-there-is-no-sign-in-page)). Neither page was free:
+  `router.tsx` imports every page statically, so the three.js scene that used to sit behind the front page
+  was in the **initial** bundle of every route, and a visitor to `/login` downloaded a 3D engine to look at
+  a form. Removing them removed the engine, two routes, and the screens that existed to describe the
+  product instead of being it.
 
 The dashboard pages are being moved onto these primitives one at a time; until a page is moved it still
 carries its own markup, which is the drift the list above exists to end.
+
+### 6.4 There is no sign-in page
+
+Opening the app is enough to use it. The first page load calls `POST /api/auth/guest`, which writes an
+ordinary `users` row with every identity column NULL and returns the same kind of JWT a sign-in would have.
+The front end keeps it in `localStorage` behind `ensureSession()`, and every request after that is
+authenticated exactly as before - no page had to learn that its user has not signed up. The endpoint sits
+under the strict limiter, because each call is a row and it is the cheapest thing here to abuse.
+
+- **A guest is a real account, not a demo mode.** `phone`, `password_hash` and the OAuth columns are all
+  nullable and unique, and PostgreSQL allows any number of NULLs in a unique index, so "no identity yet"
+  is a state the schema already had. The links a visitor creates have an owner, and that owner can be
+  *claimed* later by writing a phone number onto the same row - which is what the payment flow will need,
+  since a top-up has to be about an account.
+- **One request in flight.** Two components opening a session at once would create two accounts and keep
+  whichever token was written last, so `ensureSession()` shares one promise per page.
+- **An expired token is replaced, not reused.** The client reads the token's own `exp` claim - unsigned,
+  and used only to decide whether to reuse it, never to authorise anything - and opens a new session once
+  it has passed. Without that, the app would send a dead token on every request and 401 on every page with
+  no sign-in form to recover through.
+- **A session that cannot be opened is said out loud.** The shell prints the reason to the console and puts
+  a retry button on the screen; a failed first request is otherwise a blank page.
+- **Nothing signs out.** There is nothing to sign out of, so the sign-out card went with the sign-in page.
+  It comes back with the claim step that would need it.
+
+What this costs, stated plainly: the account lives in one browser's `localStorage`. Clearing site data
+loses it, another device is another account, and an expiring token starts a new one. That is the price of
+not asking for a phone number first, and the claim step is what turns the account into one that survives.
+The phone flows in [7.1](#71-signing-in-is-phone-plus-password) are still registered, still tested, and
+still the only way into an account that has one - they are just not the door any more.
 
 ## 7. Key flows
 
@@ -431,6 +458,11 @@ An account is a phone number and a password. The number is verified once, at reg
 code; from then on the password is what signs in. The split exists for one reason: an SMS costs money and
 an account is signed into far more often than it is created, so a message is spent to prove the number
 belongs to the caller rather than on every visit.
+
+None of this is the way in any more: the app opens as a guest ([6.4](#64-there-is-no-sign-in-page)) and
+this is the identity a guest account can be given. It is written down here because the routes are what the
+claim step will speak, and because the password bound below is a security decision that does not depend on
+which screen calls it.
 
 Two other sign-in paths were removed rather than hidden, and the reason is worth recording:
 
@@ -447,7 +479,7 @@ Two other sign-in paths were removed rather than hidden, and the reason is worth
 The code path (`login-by-phone`) is kept, and it is not a convenience: an account created before this flow
 existed has no password, so a code is the only way into it - and registering the same number with a code is
 how such an account gets one. It is also the way back in for a password that has been forgotten, since a
-password can be reset only by someone who can receive the message. The sign-in page reaches it by a small
+password can be reset only by someone who can receive the message. The claim step will reach it by a small
 link rather than presenting it as an equal choice.
 
 ### 7.2 Registering, and signing in
@@ -1042,3 +1074,8 @@ These are deliberate trade-offs, not oversights:
   links but do not grant access to other users.
 - **Rate-limit state is per-Redis-instance**, so a multi-instance deployment needs a shared Redis
   (which is the intended topology).
+- **An account starts as a guest and stays one until it is claimed.** Its token lives in one browser's
+  storage, so a cleared browser or an expired token means a new account and the old one's links are
+  unreachable without the phone number that would identify it - which is exactly the gap the claim step
+  fills. Anonymous creation is also an open write path: `POST /api/auth/guest` is behind the strict
+  limiter, and there is no per-account quota on the links a guest may create yet.

@@ -80,7 +80,9 @@ export default function CreateLinkPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token) { navigate("/login"); return; }
+    // A narrowing, not a flow: the shell opens a session before this page renders, so the token exists by
+    // the time a form can be submitted. There is no sign-in page to send anyone to any more.
+    if (!token) return;
     setLoading(true);
     try {
       await linksAPI.create(token, {

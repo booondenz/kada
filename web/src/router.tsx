@@ -13,7 +13,6 @@ import Links from "@/pages/dashboard/Links";
 import Settings from "@/pages/dashboard/Settings";
 import Tags from "@/pages/dashboard/Tags";
 import Utm from "@/pages/dashboard/Utm";
-import Login from "@/pages/Login";
 import Privacy from "@/pages/Privacy";
 import Redirect from "@/pages/Redirect";
 
@@ -25,16 +24,14 @@ import Redirect from "@/pages/Redirect";
  * read to answer "what URLs does this site serve".
  */
 export const router = createBrowserRouter([
-  // There is no landing page. It was one heading, one sentence and one button, and the only thing it said
-  // was the product's name, which the tab already says; a visitor who matters is on their way to sign in.
-  // `/` therefore means "wherever you belong": the dashboard guard sends anyone without a session to
-  // /login, and a visitor who has one lands on their links instead of being asked to sign in again.
+  // There is no landing page and no sign-in page: `/` goes to the dashboard, whose shell opens a guest
+  // session and renders the app. The two URLs below are not routes any more, they are redirects - they were
+  // shared, bookmarked and linked (the privacy policy's own "back" pointed at one of them), and a link that
+  // dead-ends is a worse answer than one that lands where the visitor was going.
   { path: "/", element: <Navigate to="/dashboard" replace /> },
-  { path: "/login", element: <Login /> },
-  // Sign-up is a mode of the sign-in page rather than a page of its own: the two forms share the phone
-  // field, the graphical challenge and the code, and only the password differs. The URL exists because it
-  // was shared while a separate page was here, so it opens that mode instead of dead-ending.
-  { path: "/register", element: <Login /> },
+  { path: "/login", element: <Navigate to="/dashboard" replace /> },
+  { path: "/register", element: <Navigate to="/dashboard" replace /> },
+  { path: "/privacy", element: <Privacy /> },
   { path: "/privacy", element: <Privacy /> },
   // The interstitial the backend redirects to when a short link needs a password or a deep-link hop.
   { path: "/r/:code", element: <Redirect /> },

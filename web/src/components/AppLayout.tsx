@@ -1,32 +1,57 @@
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useLocation } from "react-router";
 import { Menu } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { TopBarControls } from "./TopBarControls";
 import { TOP_BAR_GUTTER, TOP_BAR_HEIGHT } from "./topBar";
-import { getToken } from "@/lib/auth";
+import { buttonClass } from "./ui/Button";
 import { useT } from "@/lib/i18n";
+import { ensureSession } from "@/lib/session";
 import { useHydrated } from "@/lib/useHydrated";
 
+/**
+ * The shell: sidebar, top bar, and the session every page inside it runs on.
+ *
+ * This used to guard the door - no token, no dashboard, off to /login you go. There is no door any more:
+ * the shell opens a guest session on the first load (see `lib/session.ts`) and renders the app once it has
+ * one, so a visitor is inside the product before they have told it anything about themselves. A shell that
+ * cannot open a session says so and offers a retry, because a failed first request is a blank page
+ * otherwise, and neither cause - the API being down, or the limiter refusing a new session - is the
+ * visitor's mistake.
+ */
+type Boot = "opening" | "ready" | "failed";
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  const navigate = useNavigate();
   const pathname = useLocation().pathname;
   const t = useT();
-  // The token lives in localStorage, which does not exist while the server renders. Reading it directly
-  // would make the server's output (the spinner) disagree with the client's first render (the shell), and
-  // React would throw the tree away as a hydration mismatch. Gating on `hydrated` keeps the two in step.
+  // localStorage does not exist while the server renders, and reading the stored token directly would make
+  // the server's output (the spinner) disagree with the client's first render, which React throws the tree
+  // away for. Gating on `hydrated` keeps the two in step - and keeps the session request on the client.
   const hydrated = useHydrated();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  // The stored profile is not read here any more: the avatar menu that printed the name and the email is
-  // gone, and the settings page reads its own copy. A valid token is the whole of what "signed in" means.
-  const ready = hydrated && !!getToken();
+  const [boot, setBoot] = useState<Boot>("opening");
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (hydrated && !ready) {
-      navigate("/login");
-    }
-  }, [hydrated, ready, navigate]);
+    if (!hydrated) return;
+
+    let cancelled = false;
+    setBoot("opening");
+    ensureSession()
+      .then(() => {
+        if (!cancelled) setBoot("ready");
+      })
+      .catch((err: unknown) => {
+        // The reason belongs in the console: the screen can only say "try again" without turning into a
+        // debug console, and the last investigation looked exactly here and found nothing.
+        console.error("kada: could not open a session", err);
+        if (!cancelled) setBoot("failed");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated, attempt]);
 
   // Close the mobile sidebar when the route changes (React's documented
   // "adjust state when a prop changes" pattern).
@@ -36,13 +61,26 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     setSidebarOpen(false);
   }
 
-  if (!ready) {
+  if (boot !== "ready") {
     return (
-      <div className="flex h-screen items-center justify-center bg-subtle">
-        <div className="flex flex-col items-center gap-3">
-          <div className="size-8 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
-          <p className="text-sm text-faint">{t("加载中...")}</p>
-        </div>
+      <div className="flex h-screen items-center justify-center bg-subtle px-6">
+        {boot === "failed" ? (
+          <div className="max-w-sm text-center">
+            <p className="text-sm text-body">{t("暂时无法打开会话，请稍后重试。")}</p>
+            <button
+              type="button"
+              onClick={() => setAttempt((n) => n + 1)}
+              className={buttonClass({ size: "sm", className: "mt-4" })}
+            >
+              {t("重试")}
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-3">
+            <div className="size-8 animate-spin rounded-full border-2 border-brand border-t-transparent" />
+            <p className="text-sm text-faint">{t("加载中...")}</p>
+          </div>
+        )}
       </div>
     );
   }
@@ -102,9 +140,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <h2 className="text-sm font-medium text-body">{pageTitle}</h2>
           </div>
 
-          {/* Right: theme + GitHub + language, in the order and at the position every other shell uses.
-              The avatar menu that used to sit here went with the profile fields it displayed, and signing
-              out now lives on the settings page - the one page that is about the account. */}
+          {/* Right: theme + GitHub + language, in the order and at the position every shell uses. Signing
+              out used to live on the settings page; there is nothing to sign out of while the account is a
+              guest one, and the claim step that will need it does not exist yet. */}
           <TopBarControls />
         </header>
 

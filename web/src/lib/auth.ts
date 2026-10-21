@@ -2,11 +2,11 @@ const TOKEN_KEY = "kada_token";
 const USER_KEY = "kada_user";
 
 /**
- * The signed-in account, as the API publishes it.
+ * The account the app runs as, as the API publishes it.
  *
- * The phone number and nothing else: it is the sign-in method, the unique key, and the only field
- * `/api/me` returns (see domain.UserInfo on the backend). What is kept in localStorage is a copy of the
- * last login response - something immutable, cached, rather than state that can drift.
+ * A copy of the last session response, and the phone number is empty until the guest account is claimed -
+ * which is the difference between "we do not know who you are" and "there is no account", and the reason
+ * it is optional here.
  */
 export interface User {
   id: number;
@@ -40,8 +40,4 @@ export function getUser(): User | null {
 
 export function setUser(user: User) {
   localStorage.setItem(USER_KEY, JSON.stringify(user));
-}
-
-export function isAuthenticated(): boolean {
-  return !!getToken();
 }

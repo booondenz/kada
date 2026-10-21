@@ -1,5 +1,5 @@
 // Resolves the API base URL.
-import { getToken } from "./auth";
+import { getToken, type User } from "./auth";
 //
 // The three cases are deliberately distinct, because an empty value cannot express them:
 //
@@ -103,43 +103,17 @@ export async function fetchCSV(path: string, token: string): Promise<string> {
 
 // ========== Auth API ==========
 //
-// Sign-in is a phone number plus the password chosen at registration, and the code is what registers the
-// number - one message per account instead of one per sign-in. `captcha` returns a one-time graphical
-// challenge whose `captcha_id` has to travel with the answer on sendSMSCode: without it the request is
-// rejected, which is the whole point of the challenge, and the SMS bill is what it protects.
-//
-// `loginByPhone` is still here for the accounts that have no password yet - every account created before
-// passwords existed - and for anyone who has forgotten theirs. Registering the same number sets one.
+// There is one call here, because the app no longer has a sign-in screen: it opens in a guest session (see
+// `lib/session.ts`), and the account it runs in is a real row whose phone number is still empty. The phone
+// endpoints on the server - captcha, send code, register, password login - are still registered and still
+// tested; they are how a guest session gets claimed, and the client will speak them again when the claim
+// step and the payment flow that needs it exist. They are not exposed here until something calls them, the
+// same way the old email and WeChat routes were deleted rather than kept "just in case".
 
 export const authAPI = {
-  captcha: (): Promise<{ captcha_id: string; image: string }> =>
-    fetchAPI("/api/auth/captcha"),
-
-  sendSMSCode: (phone: string, captchaId: string, captchaCode: string) =>
-    fetchAPI("/api/auth/send-sms-code", {
-      method: "POST",
-      body: JSON.stringify({ phone, captcha_id: captchaId, captcha_code: captchaCode }),
-    }),
-
-  register: (phone: string, code: string, password: string) =>
-    fetchAPI("/api/auth/register", {
-      method: "POST",
-      body: JSON.stringify({ phone, code, password }),
-    }),
-
-  login: (phone: string, password: string) =>
-    fetchAPI("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ phone, password }),
-    }),
-
-  loginByPhone: (phone: string, code: string) =>
-    fetchAPI("/api/auth/login-by-phone", {
-      method: "POST",
-      body: JSON.stringify({ phone, code }),
-    }),
-
-  getMe: (token: string) => fetchAPI("/api/me", { token }),
+  /** Opens a session for a visitor who has not given any identity yet. */
+  guest: (): Promise<{ token: string; user: User }> =>
+    fetchAPI("/api/auth/guest", { method: "POST" }),
 };
 
 // ========== Links API ==========

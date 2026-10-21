@@ -333,6 +333,9 @@ export const zh = {
   "密码至少 8 位": "密码至少 8 位",
   "至少 8 位字符": "至少 8 位字符",
   "注册成功": "注册成功",
+  "重试": "重试",
+  "暂时无法打开会话，请稍后重试。": "暂时无法打开会话，请稍后重试。",
+  "返回首页": "返回首页",
 } as const;
 
 export type MessageKey = keyof typeof zh;
@@ -669,4 +672,7 @@ export const en: Messages = {
   "密码至少 8 位": "The password must be at least 8 characters",
   "至少 8 位字符": "At least 8 characters",
   "注册成功": "Signed up",
+  "重试": "Try again",
+  "暂时无法打开会话，请稍后重试。": "Could not open a session. Please try again shortly.",
+  "返回首页": "Back to home",
 };
