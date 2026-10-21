@@ -75,16 +75,18 @@ func main() {
 
 	// Initialize the Aliyun SMS verification service.
 	//
-	// This is no longer a nice-to-have: phone + SMS code is the only way to sign in, so a service that
-	// cannot send a code cannot be logged into at all. The process still starts (an unstartable API is a
-	// worse outage than an unreachable one) but it says so in the log, at the top, every time.
+	// Phone + SMS code is how a guest account is claimed, and the only way into an account that has one, so a
+	// sender that cannot start is not cosmetic: without it every account stays a guest, and a guest's links
+	// live in one browser. The process still starts (an API that refuses to boot is a worse outage than one
+	// that cannot send messages) but it says so in the log, at the top, every time.
 	var smsSender service.SMSSender
 	if cfg.SMSCredentialsConfigured() {
 		sender, senderErr := sms.NewAliyunSender(cfg.SMSAccessKeyID, cfg.SMSAccessKeySecret, cfg.SMSSignName, cfg.SMSTemplateCode)
 		if senderErr != nil {
-			// Not fatal: every other feature still works. But nobody can sign in, and the reason is
-			// printed now rather than deferred to a request that would only report a provider error.
-			log.Printf("SMS service disabled, NOBODY CAN SIGN IN: %v", senderErr)
+			// Not fatal: every other feature still works. But no account can be claimed with a phone number,
+			// and the reason is printed now rather than deferred to a request that would only report a
+			// provider error.
+			log.Printf("SMS service disabled, so no account can be claimed with a phone number: %v", senderErr)
 		} else {
 			// Assigned only on success. The constructor returns (nil, error), and a nil *AliyunSender stored
 			// in this interface is not nil: the service's own `sms != nil` guard would pass, and every send
@@ -94,14 +96,14 @@ func main() {
 		}
 	} else {
 		// Distinguish "not configured" from "configured with the .env.example placeholders": both end in the
-		// same warning, but the second one is the common cause of sign-in failing with a provider error.
+		// same warning, but the second one is the common cause of a send failing with a provider error.
 		if cfg.SMSAccessKeyID != "" || cfg.SMSAccessKeySecret != "" {
 			log.Println("SMS_ACCESS_KEY_ID/SMS_ACCESS_KEY_SECRET still hold the .env.example placeholder values; " +
-				"NOBODY CAN SIGN IN until real Aliyun credentials are set")
+				"no account can be claimed with a phone number until real Aliyun credentials are set")
 		} else {
-			log.Println("SMS not configured: NOBODY CAN SIGN IN. Verification codes are printed to this log " +
-				"instead (development only); set SMS_ACCESS_KEY_ID/SMS_ACCESS_KEY_SECRET/SMS_SIGN_NAME/SMS_TEMPLATE_CODE " +
-				"to enable real sending")
+			log.Println("SMS not configured, so no account can be claimed with a phone number. Verification codes " +
+				"are printed to this log instead (development only); set SMS_ACCESS_KEY_ID/SMS_ACCESS_KEY_SECRET/" +
+				"SMS_SIGN_NAME/SMS_TEMPLATE_CODE to enable real sending")
 		}
 	}
 

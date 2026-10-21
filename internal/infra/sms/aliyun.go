@@ -62,13 +62,14 @@ func NewAliyunSender(accessKeyID, accessKeySecret, signName, templateCode string
 		return nil, errors.New("missing SMS template: copy the system-granted template code from the PNVS console into SMS_TEMPLATE_CODE")
 	}
 
-	// Warn, do not refuse to start: the misconfiguration only blocks sign-in, while refusing would also
-	// take down short-link redirection, which is the part of the product that has to keep working.
+	// Warn, do not refuse to start: the misconfiguration only blocks claiming an account with a phone
+	// number, while refusing would also take down short-link redirection, which is the part of the product
+	// that has to keep working.
 	if len(accessKeyID) < accessKeyIDLength || len(accessKeySecret) < accessKeySecretLength {
 		log.Printf("SMS credentials do not look like an Aliyun AccessKey pair: "+
 			"SMS_ACCESS_KEY_ID is %d characters (expected %d) and SMS_ACCESS_KEY_SECRET is %d (expected %d). "+
-			"Aliyun will reject every send with SignatureDoesNotMatch, so NOBODY CAN SIGN IN until the real "+
-			"secret from the console is set",
+			"Aliyun will reject every send with SignatureDoesNotMatch, so no account can be claimed with a "+
+			"phone number until the real secret from the console is set",
 			len(accessKeyID), accessKeyIDLength, len(accessKeySecret), accessKeySecretLength)
 	}
 

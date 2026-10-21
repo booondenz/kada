@@ -138,7 +138,8 @@ Expected secrets:
   DEEPSEEK_API_KEY    chat model key           -> DEEPSEEK_API_KEY in the host's /opt/kada/backend/.env
   
   SMS_ACCESS_KEY_ID, SMS_ACCESS_KEY_SECRET, SMS_SIGN_NAME, SMS_TEMPLATE_CODE -> the host's /opt/kada/backend/.env
-      (phone + SMS code is the only sign-in method, so without these NOBODY CAN SIGN IN)
+      (phone + SMS code is how a guest account is claimed and the only way into an account that has one,
+       so without these no one can claim a phone number)
 EOF
   exit 1
 fi
