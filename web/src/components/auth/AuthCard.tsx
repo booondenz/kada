@@ -1,6 +1,17 @@
 import { Link2 } from "lucide-react";
-import StarfieldCanvas from "@/components/StarfieldCanvas";
+import { Card } from "@/components/ui/Card";
 
+/**
+ * The sign-in page's shell: a wordmark, the form's title, and the form itself on a card.
+ *
+ * It used to be a permanently dark page with a three.js starfield behind a glass panel, which made the one
+ * screen every account passes through look like a different product from the one it leads into. The page
+ * is themed now and follows the visitor's choice like every other page, and what is left is the type and
+ * one hairline - which is the whole design, and the reason there is nothing here to explain.
+ *
+ * The footer slot keeps the mode switch ("no account yet? register"), because that switch is part of the
+ * form rather than part of the brand.
+ */
 interface AuthCardProps {
   title: string;
   subtitle: string;
@@ -10,23 +21,18 @@ interface AuthCardProps {
 
 export function AuthCard({ title, subtitle, footer, children }: AuthCardProps) {
   return (
-    <div className="relative min-h-dvh overflow-x-hidden bg-deep-space">
-      {/* Starfield background is fixed and fills the viewport, so it stays put while scrolling */}
-      <StarfieldCanvas className="fixed inset-0 h-full w-full" />
-      <div className="relative z-10 flex min-h-dvh items-center justify-center px-4 py-12">
-        <div className="w-full max-w-md">
+    <div className="flex min-h-dvh flex-col bg-subtle">
+      <div className="flex flex-1 items-center justify-center px-4 py-12">
+        <div className="w-full max-w-sm">
           <div className="mb-8 flex flex-col items-center text-center">
-            <div className="mb-4 flex size-11 items-center justify-center rounded-xl bg-indigo-600">
-              <Link2 className="size-5 text-white" />
+            <div className="mb-4 flex size-9 items-center justify-center rounded-md bg-brand">
+              <Link2 className="size-4 text-white" />
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-white">{title}</h1>
-            <p className="mt-2 text-sm text-indigo-200/80">{subtitle}</p>
+            <h1 className="text-xl font-semibold tracking-tight text-strong">{title}</h1>
+            <p className="mt-1.5 text-sm text-muted">{subtitle}</p>
           </div>
-          {/* Transparent glass card */}
-          <div className="rounded-xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-lg sm:p-8">
-            {children}
-          </div>
-          <p className="mt-6 text-center text-sm text-indigo-100/70">{footer}</p>
+          <Card className="p-6 sm:p-7">{children}</Card>
+          <p className="mt-6 text-center text-sm text-muted">{footer}</p>
         </div>
       </div>
     </div>

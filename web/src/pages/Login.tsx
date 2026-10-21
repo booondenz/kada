@@ -7,7 +7,8 @@ import useSWR from "swr";
 import { authAPI } from "@/lib/api";
 import { setToken, setUser } from "@/lib/auth";
 import { AuthCard } from "@/components/auth/AuthCard";
-import { FormField, inputBase, fieldState } from "@/components/auth/FormField";
+import { Field, inputClass } from "@/components/ui/Field";
+import { buttonClass } from "@/components/ui/Button";
 import { TopBarControls } from "@/components/TopBarControls";
 import { useT } from "@/lib/i18n";
 
@@ -238,7 +239,7 @@ export default function LoginPage() {
     <>
       {/* The corner the app shell's top bar puts these controls in, so nothing moves as you sign in: the
           cluster and the corner it is pinned to both come from TopBarControls. */}
-      <TopBarControls onDark pinned />
+      <TopBarControls pinned />
       <AuthCard
         title={t(modeTitles[mode])}
         subtitle={t("智能短链接管理平台")}
@@ -249,7 +250,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => switchTo("register")}
-                className="text-indigo-300 underline hover:text-indigo-200"
+                className="text-link underline underline-offset-2"
               >
                 {t("注册")}
               </button>
@@ -260,7 +261,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => switchTo("login")}
-                className="text-indigo-300 underline hover:text-indigo-200"
+                className="text-link underline underline-offset-2"
               >
                 {t("登录")}
               </button>
@@ -269,37 +270,37 @@ export default function LoginPage() {
         }
       >
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-          <FormField id="phone" label={t("手机号")} error={phoneError}>
+          <Field id="phone" label={t("手机号")} error={phoneError}>
             <input
               id="phone"
               type="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
-              className={`${inputBase} ${fieldState(!!phoneError)}`}
+              className={inputClass(!!phoneError)}
               placeholder={t("请输入 11 位手机号")}
               autoComplete="tel"
               required
             />
-          </FormField>
+          </Field>
 
           {mode === "login" && (
-            <FormField id="password" label={t("密码")} error={passwordError}>
+            <Field id="password" label={t("密码")} error={passwordError}>
               <input
                 id="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className={`${inputBase} ${fieldState(!!passwordError)}`}
+                className={inputClass(!!passwordError)}
                 placeholder={t("请输入密码")}
                 autoComplete="current-password"
                 required
               />
-            </FormField>
+            </Field>
           )}
 
           {sendsMessages && (
             <>
-              <FormField
+              <Field
                 id="captcha"
                 label={t("图形验证码")}
                 error={captchaError || (challengeError ? t("图形验证码加载失败，请点击刷新") : "")}
@@ -310,7 +311,7 @@ export default function LoginPage() {
                     type="text"
                     value={captcha}
                     onChange={(e) => setCaptcha(e.target.value.slice(0, 6))}
-                    className={`${inputBase} ${fieldState(!!captchaError || !!challengeError)}`}
+                    className={inputClass(!!captchaError || !!challengeError)}
                     placeholder={t("输入图中字符")}
                     autoComplete="off"
                     required
@@ -322,7 +323,7 @@ export default function LoginPage() {
                     onClick={() => refreshCaptcha()}
                     title={t("看不清？换一张")}
                     aria-label={t("看不清？换一张")}
-                    className="relative h-[42px] w-[120px] shrink-0 overflow-hidden rounded-lg border border-white/20 bg-white/10 transition hover:bg-white/20"
+                    className="relative h-9 w-[120px] shrink-0 overflow-hidden rounded-md border border-line-strong bg-subtle transition-colors hover:bg-muted-surface"
                   >
                     {captchaImage ? (
                       // Painted as a background rather than with <img>: the challenge is an inline SVG data URI
@@ -332,13 +333,13 @@ export default function LoginPage() {
                         style={{ backgroundImage: `url("${captchaImage}")` }}
                       />
                     ) : (
-                      <RefreshCw className="size-4 animate-spin text-indigo-200" />
+                      <RefreshCw className="size-4 animate-spin text-muted" />
                     )}
                   </button>
                 </div>
-              </FormField>
+              </Field>
 
-              <FormField id="code" label={t("验证码")} error={codeError}>
+              <Field id="code" label={t("验证码")} error={codeError}>
                 <div className="flex gap-3">
                   <input
                     id="code"
@@ -346,7 +347,7 @@ export default function LoginPage() {
                     inputMode="numeric"
                     value={code}
                     onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    className={`${inputBase} ${fieldState(!!codeError)}`}
+                    className={inputClass(!!codeError)}
                     placeholder={t("6 位验证码")}
                     autoComplete="one-time-code"
                     required
@@ -357,34 +358,38 @@ export default function LoginPage() {
                     // No challenge, no send: without an id to send back the server would refuse the request
                     // anyway, and a button that visibly does nothing is worse than a disabled one.
                     disabled={countdown > 0 || !phoneValid || !captchaId || sending}
-                    className="shrink-0 rounded-lg bg-indigo-500/20 px-4 py-2.5 text-sm font-medium text-indigo-200 transition hover:bg-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+                    className={buttonClass({ variant: "secondary" })}
                   >
                     {countdown > 0 ? `${countdown}s` : codeSent ? t("重新发送") : t("获取验证码")}
                   </button>
                 </div>
-              </FormField>
+              </Field>
             </>
           )}
 
           {mode === "register" && (
-            <FormField id="new-password" label={t("密码")} error={passwordError}>
+            <Field
+              id="new-password"
+              label={t("密码")}
+              hint={t("至少 8 位字符")}
+              error={passwordError}
+            >
               <input
                 id="new-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className={`${inputBase} ${fieldState(!!passwordError)}`}
+                className={inputClass(!!passwordError)}
                 placeholder={t("请输入密码")}
                 autoComplete="new-password"
                 required
               />
-              <p className="mt-1 text-xs text-neutral-400">{t("至少 8 位字符")}</p>
-            </FormField>
+            </Field>
           )}
 
           {sendsMessages && (
             <div>
-              <label className="flex items-start gap-2 text-xs text-neutral-300">
+              <label className="flex items-start gap-2 text-xs text-muted">
                 <input
                   type="checkbox"
                   checked={agreed}
@@ -392,23 +397,27 @@ export default function LoginPage() {
                     setAgreed(e.target.checked);
                     if (e.target.checked) setAgreeError("");
                   }}
-                  className="mt-0.5 size-3.5 shrink-0 cursor-pointer rounded border-white/30 bg-white/10 accent-indigo-500"
+                  className="mt-0.5 size-3.5 shrink-0 cursor-pointer rounded border-line-strong bg-canvas accent-brand"
                 />
                 <span>
                   {t("我已阅读并同意")}
-                  <Link to="/privacy" target="_blank" className="text-indigo-300 underline hover:text-indigo-200">
+                  <Link
+                    to="/privacy"
+                    target="_blank"
+                    className="text-link underline underline-offset-2"
+                  >
                     {t("《隐私政策》")}
                   </Link>
                 </span>
               </label>
-              {agreeError && <p className="mt-1 text-xs text-red-300">{agreeError}</p>}
+              {agreeError && <p className="mt-1 text-xs text-danger">{agreeError}</p>}
             </div>
           )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className={buttonClass({ className: "w-full" })}
           >
             {loading
               ? mode === "register"
@@ -424,7 +433,7 @@ export default function LoginPage() {
           <button
             type="button"
             onClick={() => switchTo(mode === "sms" ? "login" : "sms")}
-            className="w-full text-center text-xs text-neutral-400 transition hover:text-neutral-200"
+            className="w-full text-center text-xs text-muted transition hover:text-strong"
           >
             {mode === "sms" ? t("用密码登录") : t("用短信验证码登录")}
           </button>

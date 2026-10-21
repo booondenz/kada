@@ -46,6 +46,16 @@
   --color-faint: #9ca3af;        /* gray-400: placeholders, disabled, icons */
   --color-line: #e5e7eb;         /* gray-200: borders and dividers */
   --color-line-strong: #d1d5db;  /* gray-300: control borders, hover dividers */
+
+  /*
+   * Two roles the neutral ramp cannot express, because neither is a grey: a link, which is the accent read
+   * as type, and an error, which is red. Both are defined twice for the same reason the neutrals are -
+   * indigo-700 and red-600 are legible on white and disappear on the near-black canvas, indigo-300 and
+   * red-400 the other way round - so a component writes `text-link` or `text-danger` and stops thinking
+   * about which theme is on.
+   */
+  --color-link: #4338ca;         /* indigo-700: inline links and text actions */
+  --color-danger: #dc2626;       /* red-600: field errors, failed states */
 }
 
 /* Dark theme: the neutral roles move to a near-black canvas and light type. */
@@ -62,6 +72,8 @@
   --color-faint: #6b7280;
   --color-line: #374151;
   --color-line-strong: #4b5563;
+  --color-link: #a5b4fc;         /* indigo-300 */
+  --color-danger: #f87171;       /* red-400 */
 
   /*
    * The brand tint is a *surface role*, not a fixed pair: `bg-brand-soft text-brand-ink` is a chip, a
@@ -86,8 +98,8 @@
 
   /*
    * `white` stays literal white in both themes. It is not a surface role here: it is the type on the
-   * selected segment of the language capsule, and the low-alpha wash over the permanently dark sign-in
-   * screens. Only `bg-canvas` follows the theme.
+   * selected segment of the language capsule, and the type on a brand fill (`bg-brand text-white`). Those
+   * are pairs whose two halves have to keep their contrast in either theme. Only `bg-canvas` follows it.
    */
   --color-white: #ffffff;
 }
