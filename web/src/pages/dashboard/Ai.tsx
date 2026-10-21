@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { RotateCcw, Send, Sparkles } from "lucide-react";
+import { RotateCcw, Send } from "lucide-react";
 import { toast } from "sonner";
 import { AiAnswer } from "@/components/AiAnswer";
 import { aiAPI } from "@/lib/api";
@@ -159,12 +159,9 @@ export default function AIPage() {
             {t("加载中...")}
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center text-center text-faint">
-            <div className="mb-3 flex size-14 items-center justify-center rounded-2xl bg-brand-soft">
-              <Sparkles className="size-7 text-indigo-500" />
-            </div>
-            <h3 className="text-lg font-semibold text-body">{t("开始对话")}</h3>
-            <p className="mt-1 text-sm">{t("AI 会记住本次对话的上下文")}</p>
+          /* The empty conversation is one line too: this panel is the chat, not a page about the chat. */
+          <div className="flex h-full items-center justify-center">
+            <p className="text-sm text-faint">{t("开始对话")}</p>
           </div>
         ) : (
           <div className="space-y-3">

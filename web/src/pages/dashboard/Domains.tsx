@@ -174,15 +174,8 @@ export default function DomainsPage() {
           ))}
         </div>
       ) : domains.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="flex size-14 items-center justify-center rounded-2xl bg-muted-surface mb-4">
-            <Globe className="size-7 text-faint" />
-          </div>
-          <h3 className="text-lg font-semibold text-strong">{t("还没有自定义域名")}</h3>
-          <p className="mt-1 text-sm text-muted max-w-sm">
-            {t("绑定你自己的域名来创建品牌短链接，在上方输入框添加")}
-          </p>
-        </div>
+        /* Empty state: one line, above the input that adds the first one. */
+        <p className="py-16 text-center text-sm text-muted">{t("还没有自定义域名")}</p>
       ) : (
         <div className="space-y-1.5">
           {domains.map((d) => (

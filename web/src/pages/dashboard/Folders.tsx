@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Folder, Plus, Pencil, Trash2, Check, X, FolderOpen } from "lucide-react";
+import { Folder, Plus, Pencil, Trash2, Check, X } from "lucide-react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import { foldersAPI } from "@/lib/api";
@@ -136,16 +136,9 @@ export default function FoldersPage() {
           ))}
         </div>
       ) : folders.length === 0 ? (
-        /* Empty state */
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="flex size-14 items-center justify-center rounded-2xl bg-muted-surface mb-4">
-            <FolderOpen className="size-7 text-faint" />
-          </div>
-          <h3 className="text-lg font-semibold text-strong">{t("还没有文件夹")}</h3>
-          <p className="mt-1 text-sm text-muted">
-            {t("在上方输入框输入名称来创建第一个文件夹")}
-          </p>
-        </div>
+        /* Empty state: one line. The input that creates the first folder is directly above it, so a tile,
+           a heading and a sentence pointing at that input were three ways of saying what the form says. */
+        <p className="py-16 text-center text-sm text-muted">{t("还没有文件夹")}</p>
       ) : (
         /* Folder list */
         <div className="space-y-1.5">

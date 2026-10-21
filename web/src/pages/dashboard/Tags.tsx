@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Tag, Plus, Trash2, Check, X, Hash } from "lucide-react";
+import { Tag, Plus, Trash2, Check, X } from "lucide-react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import { tagsAPI } from "@/lib/api";
@@ -155,16 +155,8 @@ export default function TagsPage() {
           ))}
         </div>
       ) : tags.length === 0 ? (
-        /* Empty state */
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="flex size-14 items-center justify-center rounded-2xl bg-muted-surface mb-4">
-            <Hash className="size-7 text-faint" />
-          </div>
-          <h3 className="text-lg font-semibold text-strong">{t("还没有标签")}</h3>
-          <p className="mt-1 text-sm text-muted">
-            {t("在上方输入框创建标签，用于标记和筛选链接")}
-          </p>
-        </div>
+        /* Empty state: one line, because the creating happens in the form above. */
+        <p className="py-16 text-center text-sm text-muted">{t("还没有标签")}</p>
       ) : (
         /* Tag list - pill style */
         <div className="flex flex-wrap gap-2">

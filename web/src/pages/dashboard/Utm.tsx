@@ -197,22 +197,9 @@ export default function UTMPage() {
           ))}
         </div>
       ) : templates.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="flex size-14 items-center justify-center rounded-2xl bg-muted-surface mb-4">
-            <ArrowRightLeft className="size-7 text-faint" />
-          </div>
-          <h3 className="text-lg font-semibold text-strong">{t("还没有 UTM 模板")}</h3>
-          <p className="mt-1 text-sm text-muted max-w-sm">
-            {t("保存常用的 UTM 参数组合，创建链接时一键应用，轻松追踪营销效果")}
-          </p>
-          <button
-            onClick={() => setShowForm(true)}
-            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 transition shadow-sm"
-          >
-            <Plus className="size-4" />
-            {t("创建第一个模板")}
-          </button>
-        </div>
+        /* Empty state: one line. The 新建模板 button sits in the page header, so the button that stood here
+           was the same action a second time. */
+        <p className="py-16 text-center text-sm text-muted">{t("还没有 UTM 模板")}</p>
       ) : (
         <div className="space-y-2">
           {templates.map((tpl) => {
