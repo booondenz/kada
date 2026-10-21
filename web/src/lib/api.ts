@@ -106,17 +106,43 @@ export async function fetchCSV(path: string, token: string): Promise<string> {
 
 // ========== Auth API ==========
 //
-// There is one call here, because the app no longer has a sign-in screen: it opens in a guest session (see
-// `lib/session.ts`), and the account it runs in is a real row whose phone number is still empty. The phone
-// endpoints on the server - captcha, send code, register, password login - are still registered and still
-// tested; they are how a guest session gets claimed, and the client will speak them again when the claim
-// step and the payment flow that needs it exist. They are not exposed here until something calls them, the
-// same way the old email and WeChat routes were deleted rather than kept "just in case".
+// The app opens in a guest session (see `lib/session.ts`): a real account row whose phone number is still
+// empty. Three calls turn that into a named account - the challenge the server demands before it spends an
+// SMS, the code itself, and the claim - and they are the only auth endpoints the client speaks. Registration
+// (phone + code + password) and password sign-in stay on the server, tested, for clients that are not this
+// one; nothing here can reach them.
+//
+// `claim` deliberately has no password: the account exists already, the code proves the number, and asking
+// somebody who has been using the product for a week to invent a password at that moment is the step they
+// would abandon.
 
 export const authAPI = {
   /** Opens a session for a visitor who has not given any identity yet. */
   guest: (): Promise<{ token: string; user: User }> =>
     fetchAPI("/api/auth/guest", { method: "POST" }),
+
+  /** Issues the graphical challenge that sending an SMS code requires. */
+  captcha: (): Promise<{ captcha_id: string; image: string }> =>
+    fetchAPI("/api/auth/captcha"),
+
+  /** Sends the verification code, once the challenge above has been answered. */
+  sendCode: (phone: string, captchaId: string, captchaCode: string): Promise<unknown> =>
+    fetchAPI("/api/auth/send-sms-code", {
+      method: "POST",
+      body: JSON.stringify({ phone, captcha_id: captchaId, captcha_code: captchaCode }),
+    }),
+
+  /**
+   * Names the account this browser is already using: the phone number is written onto the guest row, or -
+   * when the number already has an account - the session becomes that account's. Both outcomes answer a
+   * token, because both are a sign-in.
+   */
+  claim: (token: string, phone: string, code: string): Promise<{ token: string; user: User }> =>
+    fetchAPI("/api/auth/claim", {
+      method: "POST",
+      token,
+      body: JSON.stringify({ phone, code }),
+    }),
 };
 
 // ========== Links API ==========

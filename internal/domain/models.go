@@ -63,6 +63,17 @@ type PasswordLoginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
+// ClaimRequest gives the account the caller is already using a phone number - or, when that number already
+// has an account, moves the caller into it.
+//
+// There is no password here on purpose. A guest account has none, and asking for one at the moment somebody
+// finally identifies themselves would put "choose a password" in front of the one action they came to do.
+// The code proves the number; the number is the identity; that is the whole of this flow.
+type ClaimRequest struct {
+	Phone string `json:"phone" binding:"required"`
+	Code  string `json:"code" binding:"required"`
+}
+
 // ErrInvalidCredentials is returned for every way a password sign-in can fail to match: an unknown number, a
 // wrong password, and an account that has no password yet. They are one error on purpose - telling them
 // apart turns the endpoint into a way to ask which numbers have accounts here.

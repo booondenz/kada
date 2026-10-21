@@ -23,6 +23,7 @@ type mockAuthService struct {
 	loginWithPass   func(ctx context.Context, phone, password string) (*domain.AuthResponse, error)
 	loginByPhone    func(ctx context.Context, phone, code string) (*domain.AuthResponse, error)
 	createGuest     func(ctx context.Context) (*domain.AuthResponse, error)
+	claimOrLogin    func(ctx context.Context, userID int64, phone, code string) (*domain.AuthResponse, error)
 	getUserByID     func(ctx context.Context, userID int64) (*domain.UserInfo, error)
 }
 
@@ -73,6 +74,13 @@ func (m *mockAuthService) CreateGuest(ctx context.Context) (*domain.AuthResponse
 		return m.createGuest(ctx)
 	}
 	return &domain.AuthResponse{Token: "guest-token", User: domain.UserInfo{ID: 1}}, nil
+}
+
+func (m *mockAuthService) ClaimOrLogin(ctx context.Context, userID int64, phone, code string) (*domain.AuthResponse, error) {
+	if m.claimOrLogin != nil {
+		return m.claimOrLogin(ctx, userID, phone, code)
+	}
+	return &domain.AuthResponse{Token: "claimed-token", User: domain.UserInfo{ID: userID, Phone: &phone}}, nil
 }
 
 func strPtr(s string) *string { return &s }
@@ -608,6 +616,67 @@ func TestRegisterRoutes_EmailRoutesAreGone(t *testing.T) {
 		if !found {
 			t.Errorf("%s is not registered", path)
 		}
+	}
+}
+
+// ========== Claim ==========
+
+// The route is the only way out of a guest account, so it has to be reachable with the token the app is
+// already holding - and it has to return a token of its own, because both of its outcomes are a sign-in.
+func TestClaim_ReturnsATokenForTheCallersAccount(t *testing.T) {
+	var gotUserID int64
+	var gotPhone, gotCode string
+	h := NewHandler(&mockAuthService{
+		claimOrLogin: func(_ context.Context, userID int64, phone, code string) (*domain.AuthResponse, error) {
+			gotUserID, gotPhone, gotCode = userID, phone, code
+			return &domain.AuthResponse{Token: "claimed-token", User: domain.UserInfo{ID: userID, Phone: &phone}}, nil
+		},
+	})
+
+	r := setupTestRouter(h)
+	r.POST("/auth/claim", func(c *gin.Context) {
+		c.Set("user_id", int64(42))
+		c.Next()
+	}, h.Claim)
+
+	w := postJSON(t, r, "/auth/claim", map[string]string{"phone": "13800138000", "code": "123456"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if gotUserID != 42 || gotPhone != "13800138000" || gotCode != "123456" {
+		t.Errorf("service called with (%d, %q, %q), want (42, 13800138000, 123456)", gotUserID, gotPhone, gotCode)
+	}
+
+	var resp struct {
+		Token string          `json:"token"`
+		User  domain.UserInfo `json:"user"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response is not JSON: %v", err)
+	}
+	if resp.Token != "claimed-token" || resp.User.Phone == nil || *resp.User.Phone != "13800138000" {
+		t.Errorf("unexpected response: %s", w.Body.String())
+	}
+}
+
+// A code that does not match is the caller's mistake, and the page shows the sentence: 400 with the reason,
+// not a 500 that would send them looking for a server fault.
+func TestClaim_ReportsAWrongCode(t *testing.T) {
+	h := NewHandler(&mockAuthService{
+		claimOrLogin: func(context.Context, int64, string, string) (*domain.AuthResponse, error) {
+			return nil, errors.New("invalid or expired verification code")
+		},
+	})
+
+	r := setupTestRouter(h)
+	r.POST("/auth/claim", func(c *gin.Context) { c.Next() }, h.Claim)
+
+	w := postJSON(t, r, "/auth/claim", map[string]string{"phone": "13800138000", "code": "000000"})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "invalid or expired verification code") {
+		t.Errorf("the reason is not in the response: %s", w.Body.String())
 	}
 }
 

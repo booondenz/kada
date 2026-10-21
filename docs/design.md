@@ -366,17 +366,27 @@ The app follows the browser's `prefers-color-scheme` by default and lets the use
   redefined as an attribute selector, so it works on any browser and the OS setting and an explicit
   choice take the same path.
 - **Colours are roles, not shades.** `text-body` and `bg-canvas` resolve per theme; `text-gray-700`
-  cannot, because a shade that reads correctly on white is usually wrong on near-black. The scales are
-  not inverted wholesale: brand and status colours are fixed, because `bg-indigo-600 text-white` is a
-  pair and brightening the indigo for a dark canvas would leave white text on a light blue.
+  cannot, because a shade that reads correctly on white is usually wrong on near-black. The scales are not
+  inverted wholesale: `bg-indigo-600 text-white` is a fill and its type, and lightening the fill for a dark
+  canvas would leave white text on a pale blue button.
+- **The dark neutrals are one ramp, and lightness is elevation.** The scale is DeepSeek Harness's
+  `neutral-bluish` ramp: the page is `#151517`, a card `#232324`, a chip `#2c2c2e`, a filled state
+  `#353638` - each surface a step lighter than the one behind it, so a card rises off the page by fill
+  rather than by shadow. It replaced a set of Tailwind greys picked shade by shade, which were navy
+  (`#0b1220` page, `#111827` card) and put a blue cast on every neutral next to an indigo accent. Hairlines
+  are white at 12% and 16%, which is how they keep one contrast step over all four surfaces.
 - **A tint is a surface role and both halves move together.** `bg-brand-soft text-brand-ink` is a chip, a
-  selected nav item, an icon tile - not a fixed pair - so it is redefined per theme as a unit. Theming
-  only one of the two is how a light chip ends up carrying light ink.
+  selected nav item, an icon tile - not a fixed pair - so it is redefined per theme as a unit. Theming only
+  one of the two is how a light chip ends up carrying light ink. The same rule covers the status tints
+  (`bg-emerald-50 text-emerald-700`, `bg-amber-50 text-amber-800`, `bg-red-50 text-red-600`): in dark mode
+  the `-50` half becomes a 14% wash of its own hue and the ink moves up its scale, because a `#ecfdf5`
+  patch on `#151517` is a glowing hole in the page. `web/scripts/check-theme-css.mjs` asserts the pairing
+  rule and the fact that brand fills are *not* redefined.
 - **`gray-50` is the one raw Tailwind neutral remapped for dark mode.** The app uses it purely as a
-  neutral surface (`bg-gray-50`, `bg-gray-50/50`, `border-gray-50`, `hover:bg-gray-50`), always under
-  `text-*` classes that are themselves themed; left alone it paints white panels and near-white code
-  chips on a near-black page. `web/scripts/check-theme-css.mjs` asserts both this and the fact that
-  `indigo-600`/`red-600` are *not* remapped, so the two rules cannot be confused by accident.
+  neutral surface (`bg-gray-50`, `border-gray-50`, `hover:bg-gray-50`), always under `text-*` classes that
+  are themselves themed; left alone it paints white panels and near-white code chips on a near-black page.
+  The half-opacity form (`bg-gray-50/50`) is *not* remappable - Tailwind inlines that value as `oklch` -
+  which is why the panels that used it now say `bg-subtle`.
 - **The switch is in the top bar.** A one-click sun/moon toggle sits beside the language switcher and pins
   an explicit choice; Settings keeps the three-way control (follow system / light / dark). Before
   hydration the toggle renders the server's assumption and is disabled, because the real value comes from
@@ -453,9 +463,9 @@ under the strict limiter, because each call is a row and it is the cheapest thin
 
 - **A guest is a real account, not a demo mode.** `phone`, `password_hash` and the OAuth columns are all
   nullable and unique, and PostgreSQL allows any number of NULLs in a unique index, so "no identity yet"
-  is a state the schema already had. The links a visitor creates have an owner, and that owner can be
-  *claimed* later by writing a phone number onto the same row - which is what the payment flow will need,
-  since a top-up has to be about an account.
+  is a state the schema already had. The links a visitor creates have an owner, and that owner is
+  *claimed* by writing a phone number onto the same row - the form on the user page, which is what the
+  payment flow will need, since a top-up has to be about an account.
 - **One request in flight.** Two components opening a session at once would create two accounts and keep
   whichever token was written last, so `ensureSession()` shares one promise per page.
 - **An expired token is replaced, not reused.** The client reads the token's own `exp` claim - unsigned,
@@ -465,13 +475,13 @@ under the strict limiter, because each call is a row and it is the cheapest thin
 - **A session that cannot be opened is said out loud.** The shell prints the reason to the console and puts
   a retry button on the screen; a failed first request is otherwise a blank page.
 - **Nothing signs out.** There is nothing to sign out of, so the sign-out card went with the sign-in page.
-  It comes back with the claim step that would need it.
+  It comes back with a second account to switch between, which is a question about merging links rather
+  than about clearing a cookie.
 
 What this costs, stated plainly: the account lives in one browser's `localStorage`. Clearing site data
 loses it, another device is another account, and an expiring token starts a new one. That is the price of
-not asking for a phone number first, and the claim step is what turns the account into one that survives.
-The phone flows in [7.1](#71-signing-in-is-phone-plus-password) are still registered, still tested, and
-still the only way into an account that has one - they are just not the door any more.
+not asking for a phone number first, and the 登录 form on the user page is what turns the account into one
+that survives - see [7.1](#71-signing-in-is-phone-plus-password) for what that call does.
 
 ## 7. Key flows
 
@@ -483,9 +493,25 @@ an account is signed into far more often than it is created, so a message is spe
 belongs to the caller rather than on every visit.
 
 None of this is the way in any more: the app opens as a guest ([6.4](#64-there-is-no-sign-in-page)) and
-this is the identity a guest account can be given. It is written down here because the routes are what the
-claim step will speak, and because the password bound below is a security decision that does not depend on
-which screen calls it.
+this is the identity a guest account can be given. It is written down here because the routes are the
+material the user page's 登录 form is built from, and because the password bound below is a security
+decision that does not depend on which screen calls it.
+
+**The form on the user page is one call, not four.** `POST /api/auth/claim` takes the phone number and the
+code and answers a token, because both of its outcomes are a sign-in:
+
+- the number has no account, so it is written onto the caller's own guest row (`WHERE id = ? AND phone IS
+  NULL` - the guard is what makes it a claim rather than a rewrite), and the links created before this
+  moment stay with the account that now has an identity;
+- the number already has an account, so the session becomes that account's, and the links created in this
+  browser are moved onto it with one `UPDATE`. A visitor who creates links, signs in, and watches them
+  disappear would rightly call that a bug, and the browser cannot tell them which case they are in.
+
+Folders, tags and API tokens do not move: they belong to the guest row, which is not deleted, and a token in
+particular must not change hands. The code is consumed *before* the lookup, so a wrong code answers the same
+way whether or not the number has an account here. There is no password in this flow on purpose - the
+account exists, the code proves the number, and "choose a password" is not a question to put in front of
+somebody who has been using the product for a week.
 
 Two other sign-in paths were removed rather than hidden, and the reason is worth recording:
 
@@ -502,8 +528,10 @@ Two other sign-in paths were removed rather than hidden, and the reason is worth
 The code path (`login-by-phone`) is kept, and it is not a convenience: an account created before this flow
 existed has no password, so a code is the only way into it - and registering the same number with a code is
 how such an account gets one. It is also the way back in for a password that has been forgotten, since a
-password can be reset only by someone who can receive the message. The claim step will reach it by a small
-link rather than presenting it as an equal choice.
+password can be reset only by someone who can receive the message. The 登录 form on the user page reaches
+`auth/claim` directly, and a caller whose number has a password stays signed in - signing somebody out of an
+account they just proved they own, to ask for a password they may not remember, is a step in the wrong
+direction.
 
 ### 7.2 Registering, and signing in
 

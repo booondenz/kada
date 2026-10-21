@@ -338,6 +338,78 @@ func (s *AuthService) Register(ctx context.Context, phone, code, password string
 	return s.startSession(ctx, toUserInfo(*row))
 }
 
+// ClaimOrLogin gives the account the caller is already using a phone number, or moves the caller into the
+// account that number owns.
+//
+// The two cases are one endpoint because they are one decision from the visitor's side: "this is my number".
+// Which of the two the server performs is a fact about the database, not something the page should have to
+// know before the code is even typed.
+//
+// The claim case writes the number onto the caller's own row - the guest row the app opened with - so the
+// links created before this moment stay with the account that now has an identity. The login case moves those
+// links onto the account being entered (one UPDATE): a visitor who creates links, signs in, and watches them
+// disappear would rightly call that a bug, and the browser they are on cannot tell the difference. Folders,
+// tags and tokens stay where they are - they belong to the guest row, which is not deleted, and a token in
+// particular must not change hands.
+//
+// The code is consumed *before* the lookup, so a wrong code answers the same way whether or not the number has
+// an account here.
+func (s *AuthService) ClaimOrLogin(ctx context.Context, currentUserID int64, phone, code string) (*domain.AuthResponse, error) {
+	if !phonePattern.MatchString(phone) {
+		return nil, errors.New("invalid phone number format")
+	}
+	if err := s.consumeSMSCode(ctx, phone, code); err != nil {
+		return nil, err
+	}
+
+	row, err := s.userByPhone(ctx, phone)
+	switch {
+	case err == nil:
+		if row.ID == currentUserID {
+			// The number is already on this account: the code proved it again, nothing to write.
+			return s.startSession(ctx, toUserInfo(*row))
+		}
+		// Signing in from a browser that was using a guest account: keep the links that were created there.
+		if moveErr := s.db.WithContext(ctx).Model(&entity.Link{}).
+			Where("user_id = ?", currentUserID).
+			Update("user_id", row.ID).Error; moveErr != nil {
+			log.Printf("move the links of guest %d to user %d failed: %v", currentUserID, row.ID, moveErr)
+		}
+		return s.startSession(ctx, toUserInfo(*row))
+
+	case !errors.Is(err, gorm.ErrRecordNotFound):
+		log.Printf("lookup user by phone %s failed: %v", phone, err)
+		return nil, errors.New("could not sign in, please try again later")
+	}
+
+	// No account owns the number yet: this is the claim. The `phone IS NULL` guard is what makes it a claim
+	// rather than a rewrite - an account that already has a number cannot gain a second one by this path.
+	res := s.db.WithContext(ctx).Model(&entity.User{}).
+		Where("id = ? AND phone IS NULL", currentUserID).
+		Update("phone", phone)
+	if res.Error != nil {
+		if isDuplicateKey(res.Error) {
+			// The unique index settled a race: the number was claimed by another row between the lookup and
+			// this write. That account is the one that owns it, so the caller is moved into it below.
+			if owner, findErr := s.userByPhone(ctx, phone); findErr == nil {
+				return s.startSession(ctx, toUserInfo(*owner))
+			}
+		}
+		log.Printf("claim user %d with phone %s failed: %v", currentUserID, phone, res.Error)
+		return nil, errors.New("could not claim this account, please try again")
+	}
+	if res.RowsAffected == 0 {
+		return nil, errors.New("this account already has a phone number")
+	}
+
+	claimed, err := s.GetUserByID(ctx, currentUserID)
+	if err != nil {
+		log.Printf("read back claimed user %d failed: %v", currentUserID, err)
+		return nil, errors.New("could not claim this account, please try again")
+	}
+	return s.startSession(ctx, claimed)
+}
+
 // CreateGuest opens a session for a visitor who has not identified themselves.
 //
 // The row it writes has no phone, no password and no OAuth subject. That is not a placeholder: every one of

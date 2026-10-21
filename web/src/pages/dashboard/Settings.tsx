@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { User, Key, Copy, Trash2, Plus, Monitor, Moon, Sun } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { IcpNotice } from "@/components/IcpNotice";
-import { tokensAPI } from "@/lib/api";
-import { getToken, getUser } from "@/lib/auth";
+import { buttonClass } from "@/components/ui/Button";
+import { inputClass } from "@/components/ui/Field";
+import { authAPI, tokensAPI } from "@/lib/api";
+import { getToken, getUser, setToken, setUser } from "@/lib/auth";
 import { useT, useI18n } from "@/lib/i18n";
 import { useTheme } from "@/lib/theme";
 
@@ -54,6 +56,89 @@ export default function SettingsPage() {
     }
   };
 
+  // ---- Claiming the account ----
+  //
+  // The challenge is fetched only while the account has no phone number: it is a puzzle that exists to
+  // guard the one endpoint that spends money, and a page that already has an identity has nothing to ask.
+  // Revalidation on focus is off for the same reason the old sign-in page turned it off - the challenge is
+  // one-time, so replacing the image under somebody who is halfway through reading it is worse than stale.
+  const phoneEmpty = !savedUser?.phone;
+  const { data: challenge, mutate: refreshCaptcha } = useSWR(
+    token && phoneEmpty ? "auth-captcha" : null,
+    () => authAPI.captcha(),
+    { revalidateOnFocus: false, dedupingInterval: 0 }
+  );
+  const [phone, setPhone] = useState("");
+  const [captchaAnswer, setCaptchaAnswer] = useState("");
+  const [code, setCode] = useState("");
+  const [sending, setSending] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
+  const [signInError, setSignInError] = useState("");
+  const [countdown, setCountdown] = useState(0);
+
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const timer = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown]);
+
+  const sendCode = async () => {
+    if (!token || !challenge) return;
+    if (phone.length !== 11) {
+      setSignInError(t("请输入 11 位手机号"));
+      return;
+    }
+    if (!captchaAnswer.trim()) {
+      setSignInError(t("请先输入图形验证码"));
+      return;
+    }
+
+    setSending(true);
+    setSignInError("");
+    try {
+      await authAPI.sendCode(phone, challenge.captcha_id, captchaAnswer.trim());
+      setCountdown(60);
+      setCaptchaAnswer("");
+      toast.success(t("验证码已发送"));
+    } catch (err) {
+      setSignInError(err instanceof Error ? err.message : t("发送失败"));
+    } finally {
+      // The server consumes the challenge whether the send worked or not, so the image on screen is spent
+      // either way and asking for another one is not an optimisation.
+      setSending(false);
+      setCaptchaAnswer("");
+      refreshCaptcha();
+    }
+  };
+
+  const submitClaim = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    if (phone.length !== 11) {
+      setSignInError(t("请输入 11 位手机号"));
+      return;
+    }
+    if (!code.trim()) {
+      setSignInError(t("验证码"));
+      return;
+    }
+
+    setSigningIn(true);
+    setSignInError("");
+    try {
+      const res = await authAPI.claim(token, phone, code.trim());
+      setToken(res.token);
+      setUser(res.user);
+      // A reload rather than a re-render: the account is read once at boot (`ensureSession`), and every SWR
+      // key on every page is scoped to the account that was in the token. Reloading is the honest way to say
+      // "the account changed", and it costs one request.
+      window.location.reload();
+    } catch (err) {
+      setSignInError(err instanceof Error ? err.message : t("登录失败"));
+      setSigningIn(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -74,11 +159,90 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="px-6 py-5">
-          <p className="text-xs text-muted">{t("身份")}</p>
-          <p className="text-sm text-strong">
-            {savedUser?.phone || <span className="text-muted">{t("游客")}</span>}
-          </p>
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <p className="text-xs text-muted">{t("身份")}</p>
+            <p className="text-sm text-strong">
+              {savedUser?.phone || <span className="text-muted">{t("游客")}</span>}
+            </p>
+          </div>
+
+          {/* The way out of the guest account. It is on this page because this is where the identity is
+              shown; a separate sign-in page would be a page whose only content is a form nobody could reach
+              from the product. Both outcomes are the same form: a number nobody has used yet is written
+              onto this account, a number that already has one signs the browser into that account. */}
+          {!savedUser?.phone && (
+            <form onSubmit={submitClaim} className="space-y-3 border-t border-line pt-4">
+              <p className="text-xs text-muted">
+                {t("用手机号登录，本机创建的链接会归到这个账号。")}
+              </p>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  maxLength={11}
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
+                  placeholder={t("手机号")}
+                  aria-label={t("手机号")}
+                  className={`${inputClass(Boolean(signInError) && phone.length !== 11)} sm:col-span-2`}
+                />
+
+                <div className="flex items-center gap-2">
+                  {challenge?.image ? (
+                    <img
+                      src={challenge.image}
+                      alt={t("图形验证码")}
+                      title={t("图形验证码")}
+                      onClick={() => refreshCaptcha()}
+                      className="h-9 w-24 shrink-0 cursor-pointer rounded-md border border-line bg-canvas object-contain"
+                    />
+                  ) : (
+                    <div className="h-9 w-24 shrink-0 animate-pulse rounded-md border border-line bg-muted-surface" />
+                  )}
+                  <input
+                    type="text"
+                    value={captchaAnswer}
+                    onChange={(e) => setCaptchaAnswer(e.target.value)}
+                    placeholder={t("图形验证码")}
+                    aria-label={t("图形验证码")}
+                    maxLength={8}
+                    className={`${inputClass()} flex-1`}
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                    placeholder={t("验证码")}
+                    aria-label={t("验证码")}
+                    maxLength={6}
+                    className={`${inputClass()} flex-1`}
+                  />
+                  <button
+                    type="button"
+                    onClick={sendCode}
+                    disabled={sending || countdown > 0 || phone.length !== 11}
+                    className={buttonClass({ variant: "secondary", className: "shrink-0" })}
+                  >
+                    {countdown > 0 ? `${countdown}s` : t("获取验证码")}
+                  </button>
+                </div>
+              </div>
+
+              {signInError && <p className="text-xs text-danger">{signInError}</p>}
+
+              <button type="submit" disabled={signingIn} className={buttonClass({ size: "sm" })}>
+                {t("登录")}
+              </button>
+            </form>
+          )}
         </div>
       </div>
 

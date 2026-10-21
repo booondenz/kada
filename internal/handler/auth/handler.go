@@ -20,6 +20,7 @@ type AuthService interface {
 	LoginWithPassword(ctx context.Context, phone, password string) (*domain.AuthResponse, error)
 	LoginByPhone(ctx context.Context, phone, code string) (*domain.AuthResponse, error)
 	CreateGuest(ctx context.Context) (*domain.AuthResponse, error)
+	ClaimOrLogin(ctx context.Context, currentUserID int64, phone, code string) (*domain.AuthResponse, error)
 	GetUserByID(ctx context.Context, userID int64) (*domain.UserInfo, error)
 }
 
@@ -72,6 +73,31 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc, str
 	// Routes that require authentication.
 	auth := r.Group("").Use(authMW)
 	auth.GET("/me", h.GetMe)
+	// Claiming needs a session to claim: it writes a phone number onto the caller's own row, or moves the
+	// caller into the account that number owns. Both are statements about the account in the token, so it
+	// cannot be a public route - the guest row is created by `auth/guest` and all this one does is name it.
+	auth.POST("/auth/claim", h.Claim)
+}
+
+// Claim is "this is my number", for an account that has been used without one.
+//
+// It answers a token, like every other way in, because both of its outcomes are a sign-in: the caller's guest
+// account becomes theirs, or the caller becomes the account the number already had. The client replaces the
+// stored token either way and does not need to know which happened.
+func (h *Handler) Claim(c *gin.Context) {
+	var req domain.ClaimRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a phone number and the verification code are required"})
+		return
+	}
+
+	resp, err := h.svc.ClaimOrLogin(c.Request.Context(), middleware.GetUserID(c), req.Phone, req.Code)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"token": resp.Token, "user": resp.User})
 }
 
 // CreateGuest opens the session the app runs in before anyone has registered.
