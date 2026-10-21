@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -157,5 +158,27 @@ func TestCheckPasswordHash_LegacySHA256(t *testing.T) {
 	}
 	if checkPasswordHash("legacy-pass-123", "") {
 		t.Error("empty hash should never verify")
+	}
+}
+
+// The COUNT and the page are the same query up to projection and ordering, and the filters they share are
+// written against the `l` alias. A count built on `Model(&entity.Link{})` renders `FROM "links"` with no
+// alias, so PostgreSQL answers 42P01 and the list reports a total of zero forever - which it did.
+func TestLinkListQueryCountCarriesTheAliasTheFiltersUse(t *testing.T) {
+	svc := &LinkService{db: newDryRunDB(t)}
+
+	var total int64
+	stmt := svc.linkListQuery(context.Background(), "l.user_id = ?", []any{int64(7)}).
+		Count(&total).Statement
+
+	sql := stmt.SQL.String()
+	if !strings.Contains(sql, "FROM links AS l") {
+		t.Errorf("the count must carry the alias its filters use, got: %s", sql)
+	}
+	if !strings.Contains(sql, "l.user_id = $1") {
+		t.Errorf("the count must keep the shared filter, got: %s", sql)
+	}
+	if len(stmt.Vars) != 1 || stmt.Vars[0] != int64(7) {
+		t.Errorf("the filter value must be bound, got: %v", stmt.Vars)
 	}
 }

@@ -326,7 +326,7 @@ func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int
 	where := strings.Join(filters, " AND ")
 
 	var total int64
-	if err := s.db.WithContext(ctx).Model(&entity.Link{}).Where(where, args...).Count(&total).Error; err != nil {
+	if err := s.linkListQuery(ctx, where, args).Count(&total).Error; err != nil {
 		log.Printf("count links failed: %v", err)
 		total = 0
 	}
@@ -342,10 +342,8 @@ func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int
 	}
 
 	var rows []entity.Link
-	err := s.db.WithContext(ctx).
-		Table("links AS l").
+	err := s.linkListQuery(ctx, where, args).
 		Select("l.*").
-		Where(where, args...).
 		Order(orderBy).
 		Limit(pageSize).
 		Offset((page - 1) * pageSize).
@@ -362,6 +360,17 @@ func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int
 	return &domain.PaginatedLinks{
 		Links: links, TotalCount: total, Page: page, PageSize: pageSize,
 	}, nil
+}
+
+// linkListQuery is the one place the list's FROM and its WHERE are assembled.
+//
+// The count and the page have to be the same query up to projection and ordering, because the filters are
+// written against the `l` alias. A count built on `Model(&entity.Link{})` renders `FROM "links"` with no
+// alias, and PostgreSQL answers 42P01 - "missing FROM-clause entry for table l" - which the caller logs and
+// swallows into a total of 0. That is what it used to do: every account, every filter combination, a
+// `total_count` of zero.
+func (s *LinkService) linkListQuery(ctx context.Context, where string, args []any) *gorm.DB {
+	return s.db.WithContext(ctx).Table("links AS l").Where(where, args...)
 }
 
 // Update updates a link
