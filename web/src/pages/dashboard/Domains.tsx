@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Globe, Plus, Trash2, Check, X, ShieldCheck, ShieldAlert, Info } from "lucide-react";
+import { Plus, Trash2, Check, X, ShieldCheck, ShieldAlert, Info } from "lucide-react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import { domainsAPI } from "@/lib/api";
@@ -125,9 +125,6 @@ export default function DomainsPage() {
           }}
           className="flex items-center gap-3"
         >
-          <div className="flex size-9 items-center justify-center rounded-lg bg-sky-50 shrink-0">
-            <Globe className="size-4 text-sky-600" />
-          </div>
           <input
             type="text"
             value={newDomain}
@@ -183,10 +180,6 @@ export default function DomainsPage() {
               key={d.id}
               className="group rounded-xl border border-line bg-canvas p-4 flex items-center gap-4 hover:border-line hover:shadow-sm transition"
             >
-              <div className="flex size-9 items-center justify-center rounded-lg bg-sky-50 shrink-0">
-                <Globe className="size-4 text-sky-600" />
-              </div>
-
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-mono font-medium text-strong truncate">
