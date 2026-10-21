@@ -99,7 +99,7 @@ internal/
   mq/                Kafka publisher and event payloads
 db/                  (removed) schema used to live here as SQL migrations
 web/
-  src/router.tsx     the route table: landing, sign-in, dashboard/**, r/[code]
+  src/router.tsx     the route table: sign-in, privacy, dashboard/**, r/[code]
   src/pages/         one component per route
   src/components/    shared UI components; ui/ holds the primitives every page uses
   src/lib/           API client, auth storage, i18n, utilities
@@ -310,7 +310,7 @@ service, its systemd unit and a whole deployment step with it.
 
 | Path | Content |
 |---|---|
-| `/` | Landing page: what the product is, and one way in |
+| `/` | No page of its own: redirects to `/dashboard`, which sends a visitor without a session to `/login` |
 | `/login` | Sign-in: phone number and password; `/register` opens the same page in its sign-up mode |
 | `/register` | Redirects to `/login`: a new phone number is registered on the spot |
 | `/privacy` | Privacy policy, linked from the consent checkbox before sign-in |
@@ -326,10 +326,13 @@ declared and where the bearer token is attached. Components never call `fetch` d
 State that must survive a reload (session token, profile, locale) lives in `localStorage` behind
 helpers in `src/lib/auth.ts` and `src/lib/i18n`.
 
-The two pages a visitor can reach without an account - `/` and `/privacy` - carry the ICP filing number at
-the bottom, linked to the filing office's query page, which is what operating a site under a filing requires.
-The number is one constant in `web/src/components/IcpNotice.tsx` and not a translated string: the filing
-office checks the characters, and a second copy of them could only ever disagree with the first.
+The two pages a visitor can reach without an account - `/login` and `/privacy` - carry the ICP filing
+number at the bottom, linked to the filing office's query page, which is what operating a site under a
+filing requires. The sign-in shell is one of them because it is the page the site now opens on: `/` has no
+landing page (see [6.3](#63-a-restrained-visual-language)), and the filing number has to be on a page a
+spot check reaches without an account. The number is one constant in `web/src/components/IcpNotice.tsx` and
+not a translated string: the filing office checks the characters, and a second copy of them could only ever
+disagree with the first.
 
 ### 6.1 Internationalisation
 
@@ -410,10 +413,12 @@ stat tiles, and the two shared nothing but a colour. What the pages are held to 
   twelve dashboard pages each writing their own card is how the drift started. `ui/ui.test.tsx` asserts
   the rules above - no shadow on a card, the one radius, heights rather than padding - so a later "make
   this pop" has to break a test to land.
-- **Nothing runs on the landing page.** It is a heading, a sentence saying what the product does, and
-  one button. Its cost matters as much as its look: `router.tsx` imports every page statically, so the
-  three.js scene that used to sit behind the wordmark was in the **initial** bundle of every route - a
-  visitor to `/login` downloaded a 3D engine to look at a form.
+- **There is no landing page.** The front page was one heading, one sentence and one button, and it is
+  gone: `/` redirects to the dashboard, which sends a visitor without a session to the sign-in form. A
+  page like that is not free either - `router.tsx` imports every page statically, so the three.js scene
+  that used to sit behind it was in the **initial** bundle of every route, and a visitor to `/login`
+  downloaded a 3D engine to look at a form. Removing the page removed the engine, a route, and the one
+  screen that existed to say the product's name to someone already on their way in.
 
 The dashboard pages are being moved onto these primitives one at a time; until a page is moved it still
 carries its own markup, which is the drift the list above exists to end.

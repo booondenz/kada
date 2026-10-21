@@ -1,4 +1,4 @@
-import { createBrowserRouter, Outlet } from "react-router";
+import { createBrowserRouter, Navigate, Outlet } from "react-router";
 
 import { AppLayout } from "@/components/AppLayout";
 import Ai from "@/pages/dashboard/Ai";
@@ -13,7 +13,6 @@ import Links from "@/pages/dashboard/Links";
 import Settings from "@/pages/dashboard/Settings";
 import Tags from "@/pages/dashboard/Tags";
 import Utm from "@/pages/dashboard/Utm";
-import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
 import Privacy from "@/pages/Privacy";
 import Redirect from "@/pages/Redirect";
@@ -21,12 +20,16 @@ import Redirect from "@/pages/Redirect";
 /**
  * The route table.
  *
- * It says in one place what the app/ directory used to say with file names. A single-page app has no file
- * system to derive routes from at runtime, so the mapping is written out - which also makes it the only
- * file to read to answer "what URLs does this site serve".
+ * It says in one place what a file system used to say with file names: a single-page app has no directory
+ * to derive routes from at runtime, so the mapping is written out - which also makes it the only file to
+ * read to answer "what URLs does this site serve".
  */
 export const router = createBrowserRouter([
-  { path: "/", element: <Landing /> },
+  // There is no landing page. It was one heading, one sentence and one button, and the only thing it said
+  // was the product's name, which the tab already says; a visitor who matters is on their way to sign in.
+  // `/` therefore means "wherever you belong": the dashboard guard sends anyone without a session to
+  // /login, and a visitor who has one lands on their links instead of being asked to sign in again.
+  { path: "/", element: <Navigate to="/dashboard" replace /> },
   { path: "/login", element: <Login /> },
   // Sign-up is a mode of the sign-in page rather than a page of its own: the two forms share the phone
   // field, the graphical challenge and the code, and only the password differs. The URL exists because it
@@ -58,6 +61,7 @@ export const router = createBrowserRouter([
       { path: "utm", element: <Utm /> },
     ],
   },
-  // There is no 404 screen, and a stale bookmark should not be a dead end: the landing page is the fallback.
-  { path: "*", element: <Landing /> },
+  // There is no 404 screen either, and a stale bookmark should not be a dead end: an unknown path is
+  // treated exactly like `/`, so it lands wherever the visitor belongs.
+  { path: "*", element: <Navigate to="/dashboard" replace /> },
 ]);
