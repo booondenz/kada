@@ -27,6 +27,15 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    // Saving a file is atomic: the writer creates a dot-prefixed `<name>.<pid>.<uuid>.tmpdir` directory next
+    // to the target, writes into it, and renames the file out. For those few milliseconds the temp file is
+    // open, and on Windows an open file cannot be watched - the watcher descends into the new directory
+    // under src/, `fs.watch` throws EBUSY, and a watcher error is fatal, so the dev server exits in the
+    // middle of an edit. Ignoring the pattern stops the two from meeting. Vite appends this to its own
+    // ignores rather than replacing them, so node_modules and .git stay unwatched.
+    watch: {
+      ignored: [/\.(tmpdir|tmp)([\\/]|$)/],
+    },
     // Development serves /api from the same origin, the way nginx does in production, so the frontend never
     // deals with a second origin. This replaces the rewrites next.config.ts used to declare.
     proxy: {
