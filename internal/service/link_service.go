@@ -49,8 +49,8 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 		return nil, errors.New("target URL must use http or https")
 	}
 
-	// validate folder/workspace ownership (previously any ID could be attached, leaking names across users)
-	if err := s.validateOwnedRefs(ctx, userID, req.FolderID, req.WorkspaceID); err != nil {
+	// validate folder ownership (previously any ID could be attached, leaking names across users)
+	if err := s.validateOwnedFolder(ctx, userID, req.FolderID); err != nil {
 		return nil, err
 	}
 
@@ -104,7 +104,6 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 			PasswordHash: passwordHash,
 			ExpiresAt:    expiresAt,
 			UserID:       &userID,
-			WorkspaceID:  req.WorkspaceID,
 			FolderID:     req.FolderID,
 			UTMSource:    req.UTMSource,
 			UTMMedium:    req.UTMMedium,
@@ -293,7 +292,7 @@ func (s *LinkService) CheckPassword(ctx context.Context, shortCode, password str
 }
 
 // List gets the user's link list
-func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int, search string, folderID, tagID, workspaceID int64, sort string) (*domain.PaginatedLinks, error) {
+func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int, search string, folderID, tagID int64, sort string) (*domain.PaginatedLinks, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -318,10 +317,6 @@ func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int
 	if tagID > 0 {
 		filters = append(filters, "l.id IN (SELECT link_id FROM link_tags WHERE tag_id = ?)")
 		args = append(args, tagID)
-	}
-	if workspaceID > 0 {
-		filters = append(filters, "l.workspace_id = ?")
-		args = append(args, workspaceID)
 	}
 	where := strings.Join(filters, " AND ")
 
@@ -379,8 +374,8 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 		return nil, errors.New("target URL must use http or https")
 	}
 
-	// validate folder ownership (req has no WorkspaceID field)
-	if err := s.validateOwnedRefs(ctx, userID, req.FolderID, nil); err != nil {
+	// validate folder ownership
+	if err := s.validateOwnedFolder(ctx, userID, req.FolderID); err != nil {
 		return nil, err
 	}
 
@@ -562,22 +557,14 @@ func (s *LinkService) BatchTag(ctx context.Context, ids []int64, tagID int64, us
 	return nil
 }
 
-// validateOwnedRefs validates that the folder/workspace belongs to the current user (nil or 0 means unset)
-func (s *LinkService) validateOwnedRefs(ctx context.Context, userID int64, folderID, workspaceID *int64) error {
+// validateOwnedFolder validates that the folder belongs to the current user (nil or 0 means unset)
+func (s *LinkService) validateOwnedFolder(ctx context.Context, userID int64, folderID *int64) error {
 	if folderID != nil && *folderID != 0 {
 		var count int64
 		if err := s.db.WithContext(ctx).Model(&entity.Folder{}).
 			Where("id = ? AND user_id = ?", *folderID, userID).
 			Count(&count).Error; err != nil || count == 0 {
 			return errors.New("folder not found or access denied")
-		}
-	}
-	if workspaceID != nil && *workspaceID != 0 {
-		var count int64
-		if err := s.db.WithContext(ctx).Model(&entity.Workspace{}).
-			Where("id = ? AND user_id = ?", *workspaceID, userID).
-			Count(&count).Error; err != nil || count == 0 {
-			return errors.New("workspace not found or access denied")
 		}
 	}
 	return nil

@@ -78,8 +78,10 @@ func gormLogger() logger.Interface {
 // have to be reconciled first, otherwise AutoMigrate aborts while trying to drop a constraint that exists
 // under PostgreSQL's generated name instead of the one GORM derives from the model. Legacy columns go too,
 // before the comparison: a column the models no longer write keeps its old NOT NULL, and AutoMigrate will
-// not relax it, so every insert into that table fails until the column is gone. The enum types come first
-// of all, because a table whose column uses one cannot be created until the type exists.
+// not relax it, so every insert into that table fails until the column is gone. Tables of features that
+// were removed follow the columns, because the column carrying the foreign key has to go before the table
+// it points at. The enum types come first of all, because a table whose column uses one cannot be created
+// until the type exists.
 //
 // The one data step, the action names left in the referer column, runs last for the opposite reason: it
 // writes to a column AutoMigrate has to create first.
@@ -91,6 +93,9 @@ func Migrate(db *gorm.DB) error {
 		return err
 	}
 	if err := schema.ReconcileLegacyColumns(db); err != nil {
+		return err
+	}
+	if err := schema.ReconcileLegacyTables(db); err != nil {
 		return err
 	}
 	if err := db.AutoMigrate(entity.Models()...); err != nil {

@@ -101,7 +101,6 @@ func TestIntegrationMigrateFromScratchIsIdempotent(t *testing.T) {
 	assertUniqueIndexExists(t, db, "users", []string{"email"})
 	assertUniqueIndexExists(t, db, "users", []string{"wechat_openid"})
 	assertUniqueIndexExists(t, db, "links", []string{"short_code"})
-	assertUniqueIndexExists(t, db, "workspaces", []string{"slug"})
 	assertUniqueIndexExists(t, db, "api_tokens", []string{"token_hash"})
 	assertUniqueIndexExists(t, db, "click_logs", []string{"event_id"})
 	assertUniqueIndexExists(t, db, "domains", []string{"user_id", "name"})
@@ -193,6 +192,12 @@ func TestIntegrationMigrateFromLegacySchema(t *testing.T) {
 		if err := db.Exec(stmt).Error; err != nil {
 			t.Fatalf("failed to build the legacy schema: %v\n%s", err, stmt)
 		}
+	}
+
+	// The workspace feature, exactly as production has it: the column on links with the foreign key that
+	// makes the table impossible to drop until the column is gone.
+	if err := db.Exec(`ALTER TABLE links ADD COLUMN workspace_id BIGINT REFERENCES workspaces(id)`).Error; err != nil {
+		t.Fatalf("failed to add the legacy workspace column: %v", err)
 	}
 
 	// This is the call that used to fail with SQLSTATE 42704.

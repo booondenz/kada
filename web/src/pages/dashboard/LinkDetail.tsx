@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
-import { linksAPI, foldersAPI, tagsAPI, domainsAPI, workspacesAPI, analyticsAPI } from "@/lib/api";
+import { linksAPI, foldersAPI, tagsAPI, domainsAPI, analyticsAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { safeHref } from "@/lib/utils";
 import { useT, useI18n } from "@/lib/i18n";
@@ -40,7 +40,6 @@ interface LinkDetail {
   expires_at?: string;
   folder_id?: number;
   folder_name?: string;
-  workspace_id?: number;
   tags?: TagInfo[];
 }
 
@@ -70,7 +69,6 @@ export default function LinkDetailPage() {
   const [editPassword, setEditPassword] = useState("");
   const [editExpiresAt, setEditExpiresAt] = useState("");
   const [editFolderId, setEditFolderId] = useState<number | null>(null);
-  const [editWorkspaceId, setEditWorkspaceId] = useState<number | null>(null);
   const [editTagIds, setEditTagIds] = useState<number[]>([]);
   const [editUtmSource, setEditUtmSource] = useState("");
   const [editUtmMedium, setEditUtmMedium] = useState("");
@@ -93,10 +91,8 @@ export default function LinkDetailPage() {
   const { data: folderData } = useSWR(token ? "folders" : null, () => foldersAPI.list(token!));
   const { data: tagData } = useSWR(token ? "tags" : null, () => tagsAPI.list(token!));
   const { data: domainData } = useSWR(token ? "domains" : null, () => domainsAPI.list(token!));
-  const { data: workspaceData } = useSWR(token ? "workspaces" : null, () => workspacesAPI.list(token!));
   const folders = folderData?.folders ?? [];
   const allTags = tagData?.tags ?? [];
-  const workspaces = workspaceData?.workspaces ?? [];
   const verifiedDomains = (domainData?.domains ?? []).filter((d: { verified: boolean }) => d.verified);
 
   // Memoised so the effect below can depend on it without refetching on every render.
@@ -115,7 +111,6 @@ export default function LinkDetailPage() {
         setEditDomain(l.domain || "");
         setEditExpiresAt(l.expires_at ? l.expires_at.slice(0, 16) : "");
         setEditFolderId(l.folder_id ?? null);
-        setEditWorkspaceId(l.workspace_id ?? null);
         setEditTagIds((l.tags ?? []).map((tag: TagInfo) => tag.id));
         setEditUtmSource(l.utm_source || "");
         setEditUtmMedium(l.utm_medium || "");
@@ -177,7 +172,6 @@ export default function LinkDetailPage() {
         description: editDescription,
         original_url: editOriginalUrl,
         folder_id: editFolderId,
-        workspace_id: editWorkspaceId,
         tag_ids: editTagIds,
         short_code: editShortCode || undefined,
         domain: editDomain || undefined,
@@ -403,8 +397,8 @@ export default function LinkDetailPage() {
                 className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" rows={2} />
             </div>
 
-            {/* Folder + Workspace + Tags edit */}
-            <div className="grid gap-4 sm:grid-cols-3">
+            {/* Folder + Tags edit */}
+            <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className="block text-xs font-medium text-muted mb-1">{t("文件夹")}</label>
                 <select
@@ -418,21 +412,6 @@ export default function LinkDetailPage() {
                   ))}
                 </select>
               </div>
-              {workspaces.length > 0 && (
-                <div>
-                  <label className="block text-xs font-medium text-muted mb-1">{t("工作区")}</label>
-                  <select
-                    value={editWorkspaceId ?? ""}
-                    onChange={(e) => setEditWorkspaceId(e.target.value ? Number(e.target.value) : null)}
-                    className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition bg-canvas"
-                  >
-                    <option value="">{t("默认")}</option>
-                    {workspaces.map((w: { id: number; name: string }) => (
-                      <option key={w.id} value={w.id}>{w.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
               <div>
                 <label className="block text-xs font-medium text-muted mb-1">{t("标签")}</label>
                 <select

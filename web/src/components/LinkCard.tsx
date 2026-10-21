@@ -22,7 +22,6 @@ export interface LinkItem {
 interface LinkCardProps {
   link: LinkItem;
   onDelete: (id: number) => void;
-  workspaceSlug?: string;
   selectable?: boolean;
   selected?: boolean;
   onSelect?: (id: number, checked: boolean) => void;

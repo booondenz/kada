@@ -75,10 +75,9 @@ func (h *Handler) List(c *gin.Context) {
 	search := c.Query("search")
 	folderID, _ := strconv.ParseInt(c.Query("folder_id"), 10, 64)
 	tagID, _ := strconv.ParseInt(c.Query("tag_id"), 10, 64)
-	workspaceID, _ := strconv.ParseInt(c.Query("workspace_id"), 10, 64)
 	sort := c.DefaultQuery("sort", "created_desc")
 
-	result, err := h.svc.List(c.Request.Context(), middleware.GetUserID(c), page, pageSize, search, folderID, tagID, workspaceID, sort)
+	result, err := h.svc.List(c.Request.Context(), middleware.GetUserID(c), page, pageSize, search, folderID, tagID, sort)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

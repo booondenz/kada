@@ -34,7 +34,6 @@ var legacyUniqueConstraints = []legacyUniqueConstraint{
 	{Table: "users", Column: "email", LegacySQL: "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_key"},
 	{Table: "users", Column: "wechat_openid", LegacySQL: "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_wechat_openid_key"},
 	{Table: "links", Column: "short_code", LegacySQL: "ALTER TABLE links DROP CONSTRAINT IF EXISTS links_short_code_key"},
-	{Table: "workspaces", Column: "slug", LegacySQL: "ALTER TABLE workspaces DROP CONSTRAINT IF EXISTS workspaces_slug_key"},
 	{Table: "api_tokens", Column: "token_hash", LegacySQL: "ALTER TABLE api_tokens DROP CONSTRAINT IF EXISTS api_tokens_token_hash_key"},
 	{Table: "click_logs", Column: "event_id", LegacySQL: "ALTER TABLE click_logs DROP CONSTRAINT IF EXISTS click_logs_event_id_key"},
 	// The original 000006 migration declared UNIQUE(user_id, name) on domains, which PostgreSQL named
@@ -144,6 +143,11 @@ type legacyColumn struct {
 // persisted.
 var legacyColumns = []legacyColumn{
 	{Table: "sms_codes", Column: "code", LegacySQL: "ALTER TABLE sms_codes DROP COLUMN IF EXISTS code"},
+	// links.workspace_id belongs to the workspaces teardown described on legacyTables below. It is a column
+	// rather than a table entry because the foreign key lives on the column: dropping the column is what
+	// releases the table, so this statement has to run before the DROP TABLE, and it does - both are
+	// executed from ReconcileLegacyColumns' position in the migration, which is before AutoMigrate.
+	{Table: "links", Column: "workspace_id", LegacySQL: "ALTER TABLE links DROP COLUMN IF EXISTS workspace_id"},
 }
 
 // LegacyColumnStatements returns the idempotent DDL that removes the columns the models no longer write.
@@ -180,6 +184,59 @@ func ReconcileLegacyColumns(db *gorm.DB) error {
 	}
 
 	log.Println("Legacy schema columns reconciled")
+	return nil
+}
+
+// legacyTable is a table the models no longer declare. AutoMigrate is additive here too: it creates what
+// the models describe and never removes what they stopped describing, so a feature deleted from the code
+// leaves its table behind, along with the question of which of the two the schema is about.
+type legacyTable struct {
+	Table string
+	SQL   string
+}
+
+// legacyTables lists the tables to remove.
+//
+// workspaces is the first entry. It grouped links by team/project, but it granted access to nobody - there
+// was no membership and no role - no URL ever carried its slug, and folders already grouped links, so the
+// only thing it added to the product was a second filter that behaved exactly like the first one. Its
+// foreign key, links.workspace_id, is dropped first: see legacyColumns.
+var legacyTables = []legacyTable{
+	{Table: "workspaces", SQL: "DROP TABLE IF EXISTS workspaces"},
+}
+
+// LegacyTableStatements returns the idempotent DDL that removes the tables the models no longer declare.
+// It is exported so it can be asserted in tests without a database.
+func LegacyTableStatements() []string {
+	statements := make([]string, 0, len(legacyTables))
+	for _, t := range legacyTables {
+		statements = append(statements, t.SQL)
+	}
+	return statements
+}
+
+// ReconcileLegacyTables drops the tables whose feature is gone.
+//
+// It must run AFTER ReconcileLegacyColumns: the link column that points at the table has to go first, or
+// PostgreSQL refuses to drop a table something still references. Every statement is guarded with IF
+// EXISTS, so a second deploy - and a database that never had the feature - are both no-ops.
+func ReconcileLegacyTables(db *gorm.DB) error {
+	if db.Name() != "postgres" {
+		// The tables in the list never existed on another engine.
+		return nil
+	}
+
+	migrator := db.Migrator()
+	for _, t := range legacyTables {
+		if !migrator.HasTable(t.Table) {
+			continue
+		}
+		if err := db.Exec(t.SQL).Error; err != nil {
+			return fmt.Errorf("failed to drop the removed table %s: %w", t.Table, err)
+		}
+		log.Printf("Dropped the table of a removed feature: %s", t.Table)
+	}
+
 	return nil
 }
 

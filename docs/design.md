@@ -22,7 +22,7 @@ watch how they are clicked. This document explains how the system is put togethe
 |---|---|
 | Authentication | Phone + password behind a graphical challenge at registration, JWT bearer token for the API |
 | Links | Create, edit, disable, expire, password protect, batch delete and batch tag |
-| Organisation | Folders, tags, workspaces |
+| Organisation | Folders and tags |
 | Custom domains | DNS TXT ownership verification before a domain can serve links |
 | Analytics | Click totals, daily trend, platform breakdown, visitor list, raw event log |
 | Integrations | UTM templates, QR codes, CSV export, personal API tokens |
@@ -202,8 +202,8 @@ GET /r/:code
                  └─ otherwise     ──► 302 to the target
 ```
 
-The result is written back to Redis with a TTL, and every mutation (update, delete, batch delete,
-workspace delete) invalidates the affected short codes. This is a cache-aside pattern; PostgreSQL
+The result is written back to Redis with a TTL, and every mutation (update, delete, batch delete)
+invalidates the affected short codes. This is a cache-aside pattern; PostgreSQL
 remains the source of truth and a cold cache only costs latency.
 
 A lookup that finds no row is cached as well, under a key of its own and for sixty seconds rather than
@@ -267,7 +267,6 @@ the response does not.
 users ──┬── links ──┬── click_logs
         │           └── link_tags ── tags
         ├── folders ──┘ (links.folder_id)
-        ├── workspaces ─┘ (links.workspace_id)
         ├── domains
         ├── utm_templates
         └── api_tokens
@@ -281,8 +280,7 @@ login_captchas  (standalone, keyed by id)
 | `users` | Accounts | `phone` (unique, and the whole profile); `email`, `name`, `avatar`, `password_hash`, `wechat_openid` are retained legacy columns nothing reads |
 | `links` | Short links | `short_code` (unique), `original_url`, `domain`, `password_hash`, `expires_at`, `is_active`, `click_count` |
 | `click_logs` | One row per click request | `kind` (what the row is evidence of, and the only thing the counters read), `action` (which guide page interaction, NULL otherwise), `platform`, `ip`, `referer`, `event_id` (unique, idempotency) |
-| `folders`, `tags`, `link_tags` | Organisation | `link_tags` is a plain junction table |
-| `workspaces` | Team/project grouping | `slug` (unique), `links.workspace_id` |
+| `folders`, `tags`, `link_tags` | Organisation | `link_tags` is a plain junction table; `links.folder_id` is the other grouping |
 | `domains` | Custom domains | `verified`, unique per `(user_id, name)` |
 | `utm_templates` | Reusable UTM sets | `utm_*` columns |
 | `api_tokens` | Programmatic access | `token_hash` (unique); the raw token is shown once |
@@ -299,7 +297,10 @@ Design rules:
   no captcha, because the endpoint still looks protected. The database is not optional.
 - **Deletion semantics are explicit.** Deleting a user cascades to their folders, tags, domains,
   templates and tokens, but only detaches links (`ON DELETE SET NULL`) so public links do not vanish.
-  Deleting a folder or workspace detaches its links. Deleting a link cascades to its click logs.
+  Deleting a folder detaches its links. Deleting a link cascades to its click logs.
+- **A removed feature is removed from the database too.** AutoMigrate only adds, so `schema.ReconcileLegacyTables`
+  drops the tables of features the models no longer declare (`workspaces` is the first), and the column that
+  held the foreign key to one is dropped by `schema.ReconcileLegacyColumns` before it.
 - **Timestamps are UTC** (`timestamptz`); the frontend formats for display.
 
 ## 6. Frontend
@@ -317,7 +318,7 @@ service, its systemd unit and a whole deployment step with it.
 | `/dashboard/links`, `/new`, `/[id]` | Link list, creation form, detail/edit |
 | `/dashboard/analytics`, `/events`, `/customers` | Click analytics, raw events, visitors |
 | `/dashboard/folders`, `/tags`, `/domains`, `/utm` | Organisation |
-| `/dashboard/settings` | The user page: identity, appearance, API tokens, workspaces, and the site's own footer |
+| `/dashboard/settings` | The user page: identity, appearance, API tokens, and the site's own footer |
 | `/r/[code]` | Client-side fallback page for a short code |
 
 Data fetching uses SWR against `src/lib/api.ts`, which is the single place where the API surface is
@@ -1088,8 +1089,10 @@ These are deliberate trade-offs, not oversights:
 - **AutoMigrate cannot express every future change.** Renames, type narrowing and data backfills need
   a hand-written statement; there is no down-migration path.
 - **No background job scheduler.** Expiry is evaluated at read time rather than by a sweeper.
-- **Single-tenant deployment.** There is no organisation/role model beyond `workspaces`, which group
-  links but do not grant access to other users.
+- **Single-tenant deployment.** There is no organisation or role model: an account owns its folders, tags
+  and links and shares them with nobody. The `workspaces` table was the place a team model would have gone,
+  and it was removed rather than kept warm - it grouped links without granting access, which is a filter
+  folders already provided.
 - **Rate-limit state is per-Redis-instance**, so a multi-instance deployment needs a shared Redis
   (which is the intended topology).
 - **An account starts as a guest and stays one until it is claimed.** Its token lives in one browser's

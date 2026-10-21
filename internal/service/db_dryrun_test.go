@@ -37,8 +37,8 @@ func TestLinkListSQLFiltersAndPaginates(t *testing.T) {
 	filters = append(filters, "(l.title ILIKE ? OR l.original_url ILIKE ? OR l.short_code ILIKE ?)")
 	like := "%kada%"
 	args = append(args, like, like, like)
-	filters = append(filters, "l.folder_id = ?", "l.id IN (SELECT link_id FROM link_tags WHERE tag_id = ?)", "l.workspace_id = ?")
-	args = append(args, int64(3), int64(4), int64(5))
+	filters = append(filters, "l.folder_id = ?", "l.id IN (SELECT link_id FROM link_tags WHERE tag_id = ?)")
+	args = append(args, int64(3), int64(4))
 
 	stmt := db.Session(&gorm.Session{DryRun: true}).
 		Table("links AS l").
@@ -57,17 +57,16 @@ func TestLinkListSQLFiltersAndPaginates(t *testing.T) {
 		"l.title ILIKE $2",
 		"l.folder_id = $5",
 		"l.id IN (SELECT link_id FROM link_tags WHERE tag_id = $6)",
-		"l.workspace_id = $7",
 		"ORDER BY l.created_at DESC",
-		"LIMIT $8",
-		"OFFSET $9",
+		"LIMIT $7",
+		"OFFSET $8",
 	} {
 		if !strings.Contains(sql, want) {
 			t.Errorf("generated SQL is missing %q:\n%s", want, sql)
 		}
 	}
-	if len(stmt.Vars) != 9 {
-		t.Errorf("expected 9 bound parameters, got %d: %v", len(stmt.Vars), stmt.Vars)
+	if len(stmt.Vars) != 8 {
+		t.Errorf("expected 8 bound parameters, got %d: %v", len(stmt.Vars), stmt.Vars)
 	}
 }
 
@@ -91,21 +90,6 @@ func TestBulkOperationsRenderValidInClauses(t *testing.T) {
 		Statement
 	if !strings.Contains(stmt.SQL.String(), "short_code") || !strings.Contains(stmt.SQL.String(), "id IN ($1,$2,$3)") {
 		t.Errorf("short-code lookup must expand the IN clause, got: %s", stmt.SQL.String())
-	}
-}
-
-// Clearing a nullable column has to render "SET workspace_id=NULL"; a Go nil would be dropped by
-// Updates() and leave the link attached to a workspace that no longer exists.
-func TestNullableColumnResetRendersNull(t *testing.T) {
-	db := newDryRunDB(t)
-
-	stmt := db.Session(&gorm.Session{DryRun: true}).
-		Model(&struct{}{}).
-		Where("workspace_id = ? AND user_id = ?", int64(1), int64(2)).
-		Update("workspace_id", gorm.Expr("NULL")).
-		Statement
-	if !strings.Contains(stmt.SQL.String(), `"workspace_id"=NULL`) {
-		t.Errorf("expected an explicit NULL assignment, got: %s", stmt.SQL.String())
 	}
 }
 

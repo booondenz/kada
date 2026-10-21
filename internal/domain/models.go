@@ -100,7 +100,6 @@ type CreateLinkRequest struct {
 	ExpiresAt   *string `json:"expires_at"`
 	FolderID    *int64  `json:"folder_id"`
 	TagIDs      []int64 `json:"tag_ids"`
-	WorkspaceID *int64  `json:"workspace_id"`
 	UTMSource   *string `json:"utm_source"`
 	UTMMedium   *string `json:"utm_medium"`
 	UTMCampaign *string `json:"utm_campaign"`
@@ -354,32 +353,6 @@ type CreateAPITokenRequest struct {
 type CreateAPITokenResponse struct {
 	Token    string   `json:"token"`
 	APIToken APIToken `json:"api_token"`
-}
-
-// ---- Workspaces ----
-
-type Workspace struct {
-	ID        int64     `json:"id"`
-	Name      string    `json:"name"`
-	Slug      string    `json:"slug"`
-	UserID    int64     `json:"user_id"`
-	LinkCount int64     `json:"link_count"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-type CreateWorkspaceRequest struct {
-	Name string `json:"name" binding:"required"`
-	Slug string `json:"slug" binding:"required"`
-}
-
-type UpdateWorkspaceRequest struct {
-	Name *string `json:"name"`
-	Slug *string `json:"slug"`
-}
-
-type WorkspaceListResponse struct {
-	Workspaces []Workspace `json:"workspaces"`
 }
 
 // ==================== Link preview ====================

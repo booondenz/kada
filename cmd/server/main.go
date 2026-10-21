@@ -25,7 +25,6 @@ import (
 	tagHandler "github.com/booondenz/kada/internal/handler/tag"
 	tokenHandler "github.com/booondenz/kada/internal/handler/token"
 	utmHandler "github.com/booondenz/kada/internal/handler/utm"
-	workspaceHandler "github.com/booondenz/kada/internal/handler/workspace"
 	"github.com/booondenz/kada/internal/infra"
 	"github.com/booondenz/kada/internal/infra/sms"
 	"github.com/booondenz/kada/internal/middleware"
@@ -137,7 +136,6 @@ func main() {
 	tagSvc := service.NewTagService(db)
 	utmSvc := service.NewUTMTemplateService(db)
 	tokenSvc := service.NewAPITokenService(db)
-	workspaceSvc := service.NewWorkspaceService(db)
 	analyticsSvc := service.NewAnalyticsService(db)
 
 	// Initialize the handler layer
@@ -149,7 +147,6 @@ func main() {
 	tagH := tagHandler.NewHandler(tagSvc)
 	utmH := utmHandler.NewHandler(utmSvc)
 	tokenH := tokenHandler.NewHandler(tokenSvc)
-	workspaceH := workspaceHandler.NewHandler(workspaceSvc)
 	analyticsH := analyticsHandler.NewHandler(db, analyticsSvc)
 
 	// The assistant: it used to be a separate Python service that this binary reverse-proxied to, and it
@@ -247,7 +244,6 @@ func main() {
 		tagH.RegisterRoutes(v1, authMW)
 		utmH.RegisterRoutes(v1, authMW)
 		tokenH.RegisterRoutes(v1, authMW)
-		workspaceH.RegisterRoutes(v1, authMW)
 		analyticsH.RegisterRoutes(v1, authMW)
 		aiH.RegisterRoutes(v1, authMW)
 	}

@@ -38,7 +38,6 @@ func TestTableNames(t *testing.T) {
 		"Domain":              "domains",
 		"UTMTemplate":         "utm_templates",
 		"APIToken":            "api_tokens",
-		"Workspace":           "workspaces",
 		"AIConversation":      "ai_conversations",
 		"AIMessage":           "ai_messages",
 	}
@@ -63,7 +62,7 @@ func TestColumns(t *testing.T) {
 		"users": {"id", "phone", "email", "wechat_openid", "wechat_unionid", "name", "avatar",
 			"password_hash", "created_at", "updated_at", "last_login_at", "last_login_ip"},
 		"links": {"id", "short_code", "original_url", "title", "description", "image_url", "domain",
-			"password_hash", "expires_at", "is_active", "click_count", "user_id", "workspace_id",
+			"password_hash", "expires_at", "is_active", "click_count", "user_id",
 			"folder_id", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
 			"ios_url", "android_url", "created_at", "updated_at"},
 		"click_logs": {"id", "link_id", "ip", "user_agent", "platform", "kind", "action", "referer",
@@ -79,7 +78,6 @@ func TestColumns(t *testing.T) {
 		"utm_templates": {"id", "user_id", "name", "utm_source", "utm_medium", "utm_campaign",
 			"utm_term", "utm_content", "created_at", "updated_at"},
 		"api_tokens":       {"id", "user_id", "name", "token_hash", "last_used", "created_at"},
-		"workspaces":       {"id", "name", "slug", "user_id", "created_at", "updated_at"},
 		"ai_conversations": {"id", "user_id", "created_at"},
 		"ai_messages":      {"id", "conversation_id", "role", "content", "created_at"},
 	}
@@ -143,7 +141,6 @@ func TestUniqueIndexes(t *testing.T) {
 		{&User{}, "phone", "one account per phone number"},
 		{&User{}, "email", "one account per email"},
 		{&User{}, "wechat_openid", "one account per WeChat identity"},
-		{&Workspace{}, "slug", "workspace slugs are the public identifier"},
 		{&APIToken{}, "token_hash", "a token hash must identify exactly one token"},
 		{&ClickLog{}, "event_id", "click event idempotency relies on it"},
 	}
@@ -201,7 +198,6 @@ func TestIndexesExist(t *testing.T) {
 		{&Link{}, "user_id"},
 		{&Link{}, "created_at"},
 		{&Link{}, "folder_id"},
-		{&Link{}, "workspace_id"},
 		{&ClickLog{}, "created_at"},
 		{&ClickLog{}, "platform"},
 		// Every click aggregate filters on it.
@@ -221,7 +217,6 @@ func TestIndexesExist(t *testing.T) {
 		{&Domain{}, "user_id"},
 		{&UTMTemplate{}, "user_id"},
 		{&APIToken{}, "user_id"},
-		{&Workspace{}, "user_id"},
 	}
 
 	for _, tt := range tests {
@@ -275,8 +270,8 @@ func TestNoIndexRepeatsAColumn(t *testing.T) {
 	}
 }
 
-// Deleting a user must clean up everything that belongs to it, and deleting a folder/workspace must only
-// detach links. These constraints were explicit in the SQL migrations and drive real data-safety behavior.
+// Deleting a user must clean up everything that belongs to it, and deleting a folder must only detach
+// links. These constraints were explicit in the SQL migrations and drive real data-safety behavior.
 func TestDeleteConstraints(t *testing.T) {
 	tests := []struct {
 		model    any
@@ -291,7 +286,6 @@ func TestDeleteConstraints(t *testing.T) {
 		{&APIToken{}, "user_id", "CASCADE"},
 		{&Link{}, "user_id", "SET NULL"},
 		{&Link{}, "folder_id", "SET NULL"},
-		{&Link{}, "workspace_id", "SET NULL"},
 	}
 
 	for _, tt := range tests {

@@ -14,7 +14,7 @@ The backend is written in Go, the frontend is a Vite single-page app served as s
 - Create, edit, delete, and bulk-manage short links
 - Custom short codes and custom domains
 - Access passwords and expiry times
-- Folders, tags, and workspace management
+- Folders and tags
 - UTM parameters and templates
 - Link preview, QR codes, and CSV export
 - Click analytics dashboard (overview, platform breakdown, daily trend, visitor detail)

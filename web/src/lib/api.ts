@@ -122,12 +122,11 @@ export const authAPI = {
 // ========== Links API ==========
 
 export const linksAPI = {
-  list: (token: string, page = 1, pageSize = 20, search = "", folderId = 0, tagId = 0, workspaceId = 0, sort = "created_desc") => {
+  list: (token: string, page = 1, pageSize = 20, search = "", folderId = 0, tagId = 0, sort = "created_desc") => {
     const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
     if (search) params.set("search", search);
     if (folderId > 0) params.set("folder_id", String(folderId));
     if (tagId > 0) params.set("tag_id", String(tagId));
-    if (workspaceId > 0) params.set("workspace_id", String(workspaceId));
     if (sort) params.set("sort", sort);
     return fetchAPI(`/api/links?${params.toString()}`, { token });
   },
@@ -141,7 +140,6 @@ export const linksAPI = {
     password?: string;
     expires_at?: string;
     folder_id?: number;
-    workspace_id?: number;
     tag_ids?: number[];
     utm_source?: string;
     utm_medium?: string;
@@ -328,33 +326,6 @@ export const tokensAPI = {
 
   delete: (token: string, id: number) =>
     fetchAPI(`/api/api-tokens/${id}`, {
-      method: "DELETE",
-      token,
-    }),
-};
-
-// ========== Workspaces API ==========
-
-export const workspacesAPI = {
-  list: (token: string) =>
-    fetchAPI("/api/workspaces", { token }),
-
-  create: (token: string, name: string, slug: string) =>
-    fetchAPI("/api/workspaces", {
-      method: "POST",
-      token,
-      body: JSON.stringify({ name, slug }),
-    }),
-
-  update: (token: string, id: number, data: { name?: string; slug?: string }) =>
-    fetchAPI(`/api/workspaces/${id}`, {
-      method: "PATCH",
-      token,
-      body: JSON.stringify(data),
-    }),
-
-  delete: (token: string, id: number) =>
-    fetchAPI(`/api/workspaces/${id}`, {
       method: "DELETE",
       token,
     }),

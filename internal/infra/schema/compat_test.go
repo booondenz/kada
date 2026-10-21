@@ -29,7 +29,6 @@ func TestLegacyConstraintStatementsCoverEveryAffectedColumn(t *testing.T) {
 		"users_email_key",
 		"users_wechat_openid_key",
 		"links_short_code_key",
-		"workspaces_slug_key",
 		"api_tokens_token_hash_key",
 		"click_logs_event_id_key",
 		"domains_user_id_name_key",
@@ -146,6 +145,32 @@ func TestLegacyColumnStatementsCoverTheSmsCodeColumn(t *testing.T) {
 		if !strings.Contains(joined, "TABLE "+w.table) || !strings.Contains(joined, "COLUMN IF EXISTS "+w.column) {
 			t.Errorf("no statement drops the legacy column %s.%s", w.table, w.column)
 		}
+	}
+}
+
+// The workspace teardown is two statements across two lists, and only one order works: the foreign key
+// lives on links.workspace_id, so the column goes first and the table follows. Losing either half would
+// leave the database describing a feature the code no longer has.
+func TestLegacyStatementsDropTheWorkspaceFeature(t *testing.T) {
+	columns := strings.Join(LegacyColumnStatements(), "\n")
+	if !strings.Contains(columns, "ALTER TABLE links DROP COLUMN IF EXISTS workspace_id") {
+		t.Error("no statement drops links.workspace_id, so the workspaces table cannot be dropped")
+	}
+
+	tables := LegacyTableStatements()
+	if len(tables) == 0 {
+		t.Fatal("expected the removed table to be listed")
+	}
+	for _, stmt := range tables {
+		if !strings.Contains(stmt, "IF EXISTS") {
+			t.Errorf("statement is not idempotent, missing IF EXISTS: %s", stmt)
+		}
+		if !strings.HasPrefix(stmt, "DROP TABLE ") {
+			t.Errorf("unexpected statement shape: %s", stmt)
+		}
+	}
+	if !strings.Contains(strings.Join(tables, "\n"), "DROP TABLE IF EXISTS workspaces") {
+		t.Error("no statement drops the workspaces table")
 	}
 }
 

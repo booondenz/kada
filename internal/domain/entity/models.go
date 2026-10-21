@@ -30,9 +30,8 @@ type Link struct {
 	IsActive     bool       `gorm:"default:true" json:"is_active"`
 	ClickCount   int64      `gorm:"default:0" json:"click_count"`
 	// ON DELETE SET NULL: deleting an account must not delete the links that were created with it.
-	UserID      *int64 `gorm:"index" json:"user_id"`
-	WorkspaceID *int64 `gorm:"index" json:"workspace_id"`
-	FolderID    *int64 `gorm:"index" json:"folder_id"`
+	UserID   *int64 `gorm:"index" json:"user_id"`
+	FolderID *int64 `gorm:"index" json:"folder_id"`
 
 	UTMSource   *string `gorm:"type:varchar(255)" json:"utm_source"`
 	UTMMedium   *string `gorm:"type:varchar(255)" json:"utm_medium"`
@@ -46,10 +45,9 @@ type Link struct {
 	UpdatedAt time.Time `json:"updated_at"`
 
 	// Associations. Constraints are declared with OnDelete so AutoMigrate reproduces the behavior of the
-	// original SQL: a deleted folder/workspace must detach its links, not delete them.
-	User      *User      `gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL" json:"-"`
-	Folder    *Folder    `gorm:"foreignKey:FolderID;constraint:OnDelete:SET NULL" json:"-"`
-	Workspace *Workspace `gorm:"foreignKey:WorkspaceID;constraint:OnDelete:SET NULL" json:"-"`
+	// original SQL: a deleted folder must detach its links, not delete them.
+	User   *User   `gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL" json:"-"`
+	Folder *Folder `gorm:"foreignKey:FolderID;constraint:OnDelete:SET NULL" json:"-"`
 }
 
 // ClickLog is one recorded click on a short link.
@@ -260,20 +258,6 @@ type APIToken struct {
 	User *User `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
-// Workspace scopes links to a team/project.
-type Workspace struct {
-	ID        int64     `gorm:"primaryKey" json:"id"`
-	Name      string    `gorm:"type:varchar(100);not null" json:"name"`
-	Slug      string    `gorm:"type:varchar(50);not null;uniqueIndex" json:"slug"`
-	UserID    int64     `gorm:"not null;index" json:"user_id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-
-	// Workspaces have no ON DELETE clause in the original schema, so deleting a user is rejected while
-	// links still reference the workspace. Keep the default (NO ACTION) behavior.
-	User *User `gorm:"foreignKey:UserID" json:"-"`
-}
-
 // AIConversation is one chat session with the assistant. It is scoped to a user, and every query that
 // reads a conversation names that user, so one account's sessions are unreachable from another's.
 type AIConversation struct {
@@ -305,7 +289,6 @@ type AIMessage struct {
 func Models() []any {
 	return []any{
 		&User{},
-		&Workspace{},
 		&Folder{},
 		&Tag{},
 		&Link{},

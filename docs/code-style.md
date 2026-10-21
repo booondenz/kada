@@ -135,11 +135,11 @@ Section banners are used sparingly in longer files:
 ```go
 // Good
 if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
-    log.Printf("create workspace %q for user %d failed: %v", row.Slug, row.UserID, err)
+    log.Printf("create folder %q for user %d failed: %v", row.Name, row.UserID, err)
     if isDuplicateKey(err) {
-        return nil, ErrSlugTaken
+        return nil, ErrFolderNameTaken
     }
-    return nil, fmt.Errorf("failed to create workspace: %w", err)
+    return nil, fmt.Errorf("failed to create folder: %w", err)
 }
 ```
 

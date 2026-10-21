@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { User, Key, Copy, Trash2, Plus, Building2, Globe, Monitor, Moon, Sun } from "lucide-react";
+import { User, Key, Copy, Trash2, Plus, Monitor, Moon, Sun } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { IcpNotice } from "@/components/IcpNotice";
-import { tokensAPI, workspacesAPI } from "@/lib/api";
+import { tokensAPI } from "@/lib/api";
 import { getToken, getUser } from "@/lib/auth";
 import { useT, useI18n } from "@/lib/i18n";
 import { useTheme } from "@/lib/theme";
@@ -49,43 +49,6 @@ export default function SettingsPage() {
       await tokensAPI.delete(token, id);
       mutateTokens();
       toast.success(t("Token 已删除"));
-    } catch {
-      toast.error(t("删除失败"));
-    }
-  };
-
-  // Workspaces
-  const { data: workspaceData, mutate: mutateWorkspaces } = useSWR(
-    token ? "workspaces" : null,
-    () => workspacesAPI.list(token!)
-  );
-  const workspaces = workspaceData?.workspaces ?? [];
-  const [newWorkspaceName, setNewWorkspaceName] = useState("");
-  const [newWorkspaceSlug, setNewWorkspaceSlug] = useState("");
-  const [creatingWs, setCreatingWs] = useState(false);
-
-  const handleCreateWorkspace = async () => {
-    if (!token || !newWorkspaceName.trim() || !newWorkspaceSlug.trim()) return;
-    setCreatingWs(true);
-    try {
-      await workspacesAPI.create(token, newWorkspaceName.trim(), newWorkspaceSlug.trim().toLowerCase());
-      setNewWorkspaceName("");
-      setNewWorkspaceSlug("");
-      mutateWorkspaces();
-      toast.success(t("工作区已创建"));
-    } catch {
-      toast.error(t("创建失败"));
-    } finally {
-      setCreatingWs(false);
-    }
-  };
-
-  const handleDeleteWorkspace = async (id: number) => {
-    if (!token) return;
-    try {
-      await workspacesAPI.delete(token, id);
-      mutateWorkspaces();
-      toast.success(t("工作区已删除"));
     } catch {
       toast.error(t("删除失败"));
     }
@@ -236,69 +199,10 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Workspaces Card */}
-      <div className="rounded-xl border border-line bg-canvas shadow-sm overflow-hidden">
-        <div className="border-b border-line px-6 py-4">
-          <div className="flex items-center gap-2">
-            <Building2 className="size-4 text-muted" />
-            <h2 className="font-semibold text-strong">{t("工作区")}</h2>
-          </div>
-        </div>
-
-        <div className="px-6 py-5 space-y-4">
-          {/* Create workspace */}
-          <div className="flex items-center gap-2">
-            <input
-              type="text" value={newWorkspaceName}
-              onChange={(e) => setNewWorkspaceName(e.target.value)}
-              className="flex-1 rounded-lg border border-line px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
-              placeholder={t("工作区名称，如：个人项目")}
-              onKeyDown={(e) => { if (e.key === "Enter") handleCreateWorkspace(); }}
-            />
-            <input
-              type="text" value={newWorkspaceSlug}
-              onChange={(e) => setNewWorkspaceSlug(e.target.value.replace(/[^a-z0-9-]/g, ""))}
-              className="w-36 rounded-lg border border-line px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition font-mono"
-              placeholder="slug"
-              onKeyDown={(e) => { if (e.key === "Enter") handleCreateWorkspace(); }}
-            />
-            <button
-              onClick={handleCreateWorkspace}
-              disabled={creatingWs || !newWorkspaceName.trim() || !newWorkspaceSlug.trim()}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition shrink-0"
-            >
-              <Plus className="size-3.5" /> {t("创建")}
-            </button>
-          </div>
-
-          {/* Workspace list */}
-          {workspaces.length > 0 ? (
-            <div className="space-y-1">
-              {workspaces.map((w: { id: number; name: string; slug: string; link_count: number; created_at: string }) => (
-                <div key={w.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-gray-50 transition">
-                  <div className="flex items-center gap-2">
-                    <Globe className="size-4 text-faint" />
-                    <div>
-                      <p className="text-sm font-medium text-strong">{w.name}</p>
-                      <p className="text-xs text-faint">
-                        {t("{slug} · {count} 条链接 · {date}", { slug: w.slug, count: w.link_count ?? 0, date: new Date(w.created_at).toLocaleDateString(localeTag) })}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleDeleteWorkspace(w.id)}
-                    className="p-1.5 rounded-lg text-faint hover:text-red-500 hover:bg-red-50 transition"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-faint py-2">{t("暂无工作区，创建一个来组织你的链接")}</p>
-          )}
-        </div>
-      </div>
+      {/* There is no workspaces card. It offered a second way to group links, next to folders, and the
+          grouping it produced was a dropdown that behaved exactly like the folder one - the slug it made
+          you invent was never used by a URL, and it granted access to nobody. The feature is gone from the
+          API and the table is dropped by the migration. */}
 
       {/* There is no sign-out card any more. The account this page is about is a guest one - it exists
           because the browser opened the app, not because somebody signed in - so "sign out" would mean

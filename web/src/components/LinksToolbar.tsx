@@ -1,4 +1,4 @@
-import { Search, Plus, Folder, Tag, Download, Building2 } from "lucide-react";
+import { Search, Plus, Folder, Tag, Download } from "lucide-react";
 import { Link } from "react-router";
 import { useT } from "@/lib/i18n";
 
@@ -14,13 +14,10 @@ interface LinksToolbarProps {
   totalCount: number;
   folders: FilterOption[];
   tags: FilterOption[];
-  workspaces?: FilterOption[];
   selectedFolderId: number;
   onFolderChange: (id: number) => void;
   selectedTagId: number;
   onTagChange: (id: number) => void;
-  selectedWorkspaceId?: number;
-  onWorkspaceChange?: (id: number) => void;
   sort: string;
   onSortChange: (sort: string) => void;
   onExport?: () => void;
@@ -32,13 +29,10 @@ export function LinksToolbar({
   totalCount,
   folders,
   tags,
-  workspaces = [],
   selectedFolderId,
   onFolderChange,
   selectedTagId,
   onTagChange,
-  selectedWorkspaceId = 0,
-  onWorkspaceChange,
   sort,
   onSortChange,
   onExport,
@@ -74,6 +68,9 @@ export function LinksToolbar({
           <Folder className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-faint pointer-events-none" />
         </div>
 
+        {/* Workspace filter removed with the feature: folders were already the grouping, and the second
+            dropdown beside them behaved identically. */}
+
         {/* Tag filter */}
         <div className="relative">
           <select
@@ -88,23 +85,6 @@ export function LinksToolbar({
           </select>
             <Tag className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-faint pointer-events-none" />
         </div>
-
-        {/* Workspace filter */}
-        {workspaces.length > 0 && onWorkspaceChange && (
-          <div className="relative">
-            <select
-              value={selectedWorkspaceId}
-              onChange={(e) => onWorkspaceChange(Number(e.target.value))}
-              className="appearance-none rounded-lg border border-line bg-canvas py-2 pl-8 pr-8 text-sm text-muted focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition cursor-pointer"
-            >
-              <option value={0}>{t("全部工作区")}</option>
-              {workspaces.map((w) => (
-                <option key={w.id} value={w.id}>{w.name}</option>
-              ))}
-            </select>
-            <Building2 className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-faint pointer-events-none" />
-          </div>
-        )}
       </div>
 
       <div className="flex items-center gap-2">
