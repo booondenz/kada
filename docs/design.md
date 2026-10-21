@@ -412,6 +412,9 @@ stat tiles, and the two shared nothing but a colour. What the pages are held to 
   toolbar already said `0 条链接` and already carried the action. "Nothing here yet" is one sentence, set
   at the size of a sentence; the only case that still earns a sentence apart from the empty list is a
   search that matched nothing, because the toolbar looks identical either way.
+- **So is a failed one.** A request that did not arrive is one sentence and a reload, not an emoji in a
+  rounded box above a heading and a paragraph. Five list pages carried that block; it took the height of
+  the list it was standing in for, to say that the list was not there.
 - **Hairlines, not shadows.** A region is separated by a 1px `line` border and a step of background.
   Elevation is reserved for things that genuinely float (menus, dialogs): a shadow that separates two
   light surfaces does nothing on the near-black canvas, so it has to be reinvented per theme.

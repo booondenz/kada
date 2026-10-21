@@ -157,13 +157,11 @@ export default function DashboardPage() {
         onExport={handleExport}
       />
 
+      {/* A failed load is one sentence and a reload: the red rounded box, the emoji and the heading that
+          stood here took a screenshot's worth of space to say "the request did not arrive". */}
       {error ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="flex size-16 items-center justify-center rounded-2xl bg-red-50 mb-4">
-            <div className="text-3xl">😞</div>
-          </div>
-          <h3 className="text-lg font-semibold text-strong">{t("加载失败")}</h3>
-          <p className="mt-1 text-sm text-muted">{t("请检查网络后重试")}</p>
+        <div className="py-20 text-center">
+          <p className="text-sm text-muted">{t("加载失败，请检查网络后重试。")}</p>
           <button
             onClick={() => mutate()}
             className="mt-4 text-sm font-medium text-brand-ink hover:text-brand"
