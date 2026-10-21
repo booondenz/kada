@@ -22,7 +22,7 @@ export function Field({
   label: string;
   hint?: string;
   error?: string;
-  children: ReactNode;
+  children?: ReactNode;
 }) {
   return (
     <div>

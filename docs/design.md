@@ -99,9 +99,10 @@ internal/
   mq/                Kafka publisher and event payloads
 db/                  (removed) schema used to live here as SQL migrations
 web/
-  src/app/           routes: landing, (auth), dashboard/**, r/[code]
-  src/components/    shared UI components
-  src/lib/           API client, auth storage, i18n, canvas/starfield helpers
+  src/router.tsx     the route table: landing, sign-in, dashboard/**, r/[code]
+  src/pages/         one component per route
+  src/components/    shared UI components; ui/ holds the primitives every page uses
+  src/lib/           API client, auth storage, i18n, utilities
 docs/                this documentation
 deploy/              server bootstrap scripts and the env-file writer
   nginx/             reverse proxy configuration
@@ -309,7 +310,7 @@ service, its systemd unit and a whole deployment step with it.
 
 | Path | Content |
 |---|---|
-| `/` | Landing page with the animated starfield |
+| `/` | Landing page: what the product is, and one way in |
 | `/login` | Sign-in: phone number and password; `/register` opens the same page in its sign-up mode |
 | `/register` | Redirects to `/login`: a new phone number is registered on the spot |
 | `/privacy` | Privacy policy, linked from the consent checkbox before sign-in |
@@ -369,13 +370,15 @@ Settings → 外观, with a third option that hands control back to the system.
   `text-*` classes that are themselves themed; left alone it paints white panels and near-white code
   chips on a near-black page. `web/scripts/check-theme-css.mjs` asserts both this and the fact that
   `indigo-600`/`red-600` are *not* remapped, so the two rules cannot be confused by accident.
-- The sign-in and landing screens are dark in **both** themes. Anything on them that must stay light -
-  the selected segment, the language chip - uses literal white rather than a themed surface.
 - **The switch is in the top bar.** A one-click sun/moon toggle sits beside the language switcher and pins
   an explicit choice; Settings keeps the three-way control (follow system / light / dark). Before
   hydration the toggle renders the server's assumption and is disabled, because the real value comes from
   `localStorage` and reading it during the first client render is the hydration mismatch `useHydrated`
   exists to prevent.
+- **Links and errors are tokens too.** `text-link` and `text-danger` carry the two roles the neutral ramp
+  cannot express, and both are redefined per theme: indigo-700 and red-600 are legible on white and
+  vanish on the near-black canvas, indigo-300 and red-400 the other way round. A component writes the
+  role and stops thinking about which theme is on.
 - An inline `<script>` in the document head sets the attribute while the HTML is parsed. It is
   deliberately **not** `next/script`'s `beforeInteractive`: that queues the body through Next's loader,
   which measured 62ms *after* the first frame and produced a visible light flash. `scripts/check-theme-timing.mjs`
@@ -384,6 +387,36 @@ Settings → 外观, with a third option that hands control back to the system.
 Client components that read `localStorage` gate on `useHydrated()` (`src/lib/useHydrated.ts`). Reading a
 token or a stored preference straight into render output makes the server's HTML and the client's first
 render disagree, and React discards the tree as a hydration mismatch.
+
+### 6.3 A restrained visual language
+
+There was no rule about how the interface should look, so every page decided for itself: the landing
+page had a three.js starfield behind a glowing wordmark, the dashboard was a card grid with four tinted
+stat tiles, and the two shared nothing but a colour. What the pages are held to now:
+
+- **One accent.** `brand` means the primary action and the current selection, and nothing else. A status
+  colour appears when it reports a status; it never decorates. A page whose hierarchy needs four colours
+  is a page whose hierarchy is being carried by something other than size and weight.
+- **Hairlines, not shadows.** A region is separated by a 1px `line` border and a step of background.
+  Elevation is reserved for things that genuinely float (menus, dialogs): a shadow that separates two
+  light surfaces does nothing on the near-black canvas, so it has to be reinvented per theme.
+- **One radius**, 6px (`rounded-md`). A pill is a pill only where the control really is one.
+- **A fixed type scale** - 12 / 14 / 16 / 20 / 30-36, weights 400/500/600. No `font-black`, no
+  `tracking-[0.5em]`: a heading is told apart by size, not by an effect applied to one.
+- **Fixed heights on controls** (`h-8`, `h-9`) rather than `py-*`, so a row of them lines up.
+- **Motion only for state**: a colour or a transform that says what just happened, over 150-200ms. No
+  parallax, no bars that grow on arrival, nothing that runs on its own.
+- **One place per control.** `web/src/components/ui/` holds `Button`, `Card`, `PageHeader` and `Field`;
+  twelve dashboard pages each writing their own card is how the drift started. `ui/ui.test.tsx` asserts
+  the rules above - no shadow on a card, the one radius, heights rather than padding - so a later "make
+  this pop" has to break a test to land.
+- **Nothing runs on the landing page.** It is a heading, a sentence saying what the product does, and
+  one button. Its cost matters as much as its look: `router.tsx` imports every page statically, so the
+  three.js scene that used to sit behind the wordmark was in the **initial** bundle of every route - a
+  visitor to `/login` downloaded a 3D engine to look at a form.
+
+The dashboard pages are being moved onto these primitives one at a time; until a page is moved it still
+carries its own markup, which is the drift the list above exists to end.
 
 ## 7. Key flows
 
@@ -980,7 +1013,7 @@ those rules honest.
 | Services | Pure-function tests (validation, short-code generation, CSV escaping) |
 | Schema | `internal/domain/entity` asserts table names, columns, unique indexes and delete rules against the GORM schema |
 | Query shapes | Dry-run GORM sessions assert the generated SQL for the dynamic and bulk statements |
-| Frontend | Vitest for pure helpers (starfield geometry, ophiuchus lines, utilities) |
+| Frontend | Vitest for pure helpers (`aiAnswer` parsing, utilities) and the UI primitives, rendered to static markup - no DOM, no jsdom |
 | Assistant | A fake model, but the real Eino agent with the real tools and the real bundled documentation: one test drives a model that asks for a tool and asserts which user the tool acted for, another drives a model that never stops asking and asserts the step limit holds |
 
 Run everything with `go test ./... -count=1 -race` and `cd web && npm test`; CI

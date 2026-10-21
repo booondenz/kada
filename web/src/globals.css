@@ -110,10 +110,3 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 }
-
-/* Homepage deep-space background: deep navy → indigo → subtle violet radial gradient */
-.bg-deep-space {
-  background:
-    radial-gradient(90% 70% at 70% 20%, rgba(79, 70, 229, 0.16) 0%, transparent 60%),
-    radial-gradient(120% 100% at 50% 30%, #202a5e 0%, #131b45 45%, #0a0e28 100%);
-}

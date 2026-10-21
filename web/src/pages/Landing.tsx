@@ -1,61 +1,68 @@
 import { Link } from "react-router";
-import { Link2 } from "lucide-react";
 import { IcpNotice } from "@/components/IcpNotice";
-import StarfieldCanvas from "@/components/StarfieldCanvas";
 import { TopBarControls } from "@/components/TopBarControls";
 import { TOP_BAR_GUTTER, TOP_BAR_HEIGHT } from "@/components/topBar";
+import { buttonClass } from "@/components/ui/Button";
 import { useT } from "@/lib/i18n";
 
+/**
+ * The front page: what the product is, and one way in.
+ *
+ * This used to be a three.js starfield - 1,740 points, a constellation, two nebula sprites and a mouse
+ * parallax - behind a glowing 8xl wordmark. It was the heaviest page on the site and it was carrying a
+ * 3D engine into every other route, because `router.tsx` imports the pages statically. What replaced it
+ * is the type: one heading at 30/36px, one sentence saying what the product does, and one button.
+ *
+ * The sentence is the part that matters. A page this quiet has to answer "what is this" before the
+ * visitor has to guess, or "minimal" reads as "unfinished" - so the heading is the product, the line
+ * under it is the mechanism, and there is nothing else on the page to compete with either.
+ *
+ * The header keeps the app shell's height and gutter, because the language capsule is centred in this
+ * row and has to land on the same pixel it lands on in the dashboard. Only the geometry is shared: the
+ * bar here has no border and no background, since the page is already the surface.
+ */
 export default function HomePage() {
   const t = useT();
 
   return (
-    <main className="relative h-dvh w-full overflow-hidden overscroll-none bg-deep-space text-white">
-      {/* canvas is a replaced element, so inset-0 does not stretch it; h-full w-full is required to fill the viewport */}
-      <StarfieldCanvas className="absolute inset-0 h-full w-full" />
+    <div className="flex min-h-dvh flex-col bg-canvas">
+      <header className={`flex ${TOP_BAR_HEIGHT} items-center justify-between ${TOP_BAR_GUTTER}`}>
+        <span className="text-sm font-semibold tracking-tight text-strong">Kada</span>
+        {/* One call to action, not two: a phone number that has never been seen is registered on the
+            spot, so "sign in" and "sign up" are the same page. Two buttons pointing at /login with
+            different labels would only suggest a distinction that no longer exists. */}
+        <TopBarControls />
+      </header>
 
-      <div className="absolute inset-0 z-10 flex flex-col">
-        {/* Height and gutter are the app shell's, because the language capsule is centred in this row: the
-            row height is what decides which pixel it lands on. On the hero's own py-5 rhythm it sat 10px
-            lower and 8px further from the edge than the capsule on the sign-in and dashboard screens. Only
-            the geometry is shared - no border and no background, since this header floats on the starfield. */}
-        <header className={`flex ${TOP_BAR_HEIGHT} items-center justify-between ${TOP_BAR_GUTTER}`}>
-          <div className="flex items-center gap-2.5">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-indigo-600">
-              <Link2 className="size-4 text-white" />
-            </div>
-            <span className="text-lg font-semibold tracking-wider">KADA</span>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* One call to action, not two: a phone number that has never been seen is registered on the
-                spot, so "sign in" and "sign up" are the same page. Two buttons pointing at /login with
-                different labels would only suggest a distinction that no longer exists. */}
-            <Link
-              to="/login"
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
-            >
-              {t("登录 / 注册")}
-            </Link>
-            <TopBarControls onDark />
-          </div>
-        </header>
-
-        <div className="flex flex-1 flex-col items-center justify-center px-4 text-center">
-          <h1 className="text-6xl font-black tracking-[0.18em] text-white drop-shadow-[0_0_28px_rgba(99,102,241,0.45)] sm:text-8xl">
-            KADA
+      <main className="flex flex-1 items-center px-6 sm:px-8">
+        <div className="mx-auto w-full max-w-xl">
+          <h1 className="text-3xl font-semibold tracking-tight text-strong sm:text-4xl">
+            {t("短链接与点击分析")}
           </h1>
-          <p className="mt-6 text-base font-medium tracking-[0.5em] text-indigo-200/90 sm:text-lg">
-            {t("短链接平台")}
+          <p className="mt-4 max-w-md text-base leading-relaxed text-muted">
+            {t("把长链接变成短链接，然后在同一个地方看清谁点了、从哪里来。")}
           </p>
+          <div className="mt-8 flex items-center gap-5">
+            <Link to="/login" className={buttonClass()}>
+              {t("开始使用")}
+            </Link>
+            <Link
+              to="/privacy"
+              className="text-sm text-muted underline-offset-4 transition-colors hover:text-strong hover:underline"
+            >
+              {t("隐私政策")}
+            </Link>
+          </div>
         </div>
+      </main>
 
-        {/* The filing number goes at the bottom of the homepage, where the regulator expects to find it. It
-            sits outside the hero's flex-1 column so it stays on the bottom edge however tall the viewport
-            is, and it is quiet enough not to compete with the call to action it is required to accompany. */}
-        <footer className="pb-5 text-center">
-          <IcpNotice className="text-xs tracking-wide text-indigo-200/55 transition hover:text-indigo-200/90" />
-        </footer>
-      </div>
-    </main>
+      {/* The filing number goes at the bottom of the homepage, where the regulator expects to find it:
+          quiet, on the baseline of the page, in the same column as the type above it. */}
+      <footer className="px-6 pb-6 sm:px-8">
+        <div className="mx-auto w-full max-w-xl">
+          <IcpNotice className="text-xs text-faint transition-colors hover:text-muted" />
+        </div>
+      </footer>
+    </div>
   );
 }

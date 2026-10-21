@@ -18,9 +18,9 @@ export const ICP_QUERY_URL = "https://beian.miit.gov.cn/";
 /**
  * The number as a link.
  *
- * The caller supplies the styling: the two pages that show it sit on different backgrounds - one on the
- * starfield, one inside a light card - and a component that picked its own colour would be invisible on one
- * of them.
+ * The caller supplies the styling: the two pages that show it place it differently - the homepage puts it
+ * on the page baseline under the type, the privacy policy puts it under an article - and a component that
+ * picked its own colour would be wrong in one of those places.
  */
 export function IcpNotice({ className = "" }: { className?: string }) {
   return (

@@ -20,11 +20,8 @@ const REPO_URL = "https://github.com/booondenz/kada";
  * theme toggle and the capsule, and a second icon package for one symbol is not worth a dependency. What
  * is vendored is the outline lucide used to ship, so the stroke weight and the round caps are the ones the
  * rest of the bar is drawn with.
- *
- * `onDark` works like the capsule's: the landing and sign-in pages are dark in both themes, so here the
- * control has to be a light wash over the page rather than a themed chip.
  */
-export function GitHubLink({ onDark = false }: { onDark?: boolean }) {
+export function GitHubLink() {
   const t = useT();
   const label = t("GitHub");
 
@@ -35,11 +32,7 @@ export function GitHubLink({ onDark = false }: { onDark?: boolean }) {
       rel="noreferrer"
       aria-label={label}
       title={label}
-      className={`rounded-lg p-2 transition-colors ${
-        onDark
-          ? "text-white/70 hover:bg-white/10 hover:text-white"
-          : "text-muted hover:bg-muted-surface hover:text-strong"
-      }`}
+      className="rounded-lg p-2 text-muted transition-colors hover:bg-muted-surface hover:text-strong"
     >
       <GitHubMark />
     </a>

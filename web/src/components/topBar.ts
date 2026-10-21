@@ -2,10 +2,10 @@
  * Where the top bar's controls sit, shared by the three shells that show them.
  *
  * TopBarControls is what spends these numbers; a shell only places it. The app shell's bar holds it, and
- * the landing and sign-in pages - which have no bar, being dark in both themes - pin it to the viewport
- * corner instead. All three have to land on the same pixel, or the capsule visibly jumps sideways and up
- * as you sign in, which is exactly what the hand-written copies of these numbers did (16px against 24px on
- * the horizontal, and four pixels higher on the dark pages).
+ * the landing and sign-in pages - which have no bar - pin it to the viewport corner instead. All three have
+ * to land on the same pixel, or the capsule visibly jumps sideways and up as you sign in, which is exactly
+ * what the hand-written copies of these numbers did (16px against 24px on the horizontal, and four pixels
+ * higher on the pages without a bar).
  *
  * The pinned vertical offset is not a second rhythm: it is the bar's own centring with the bar removed,
  * (56px bar - cluster height) / 2. The cluster is 34px because its tallest control is the capsule, which

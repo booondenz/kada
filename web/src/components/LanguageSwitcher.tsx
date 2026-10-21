@@ -31,43 +31,32 @@ const SEGMENT_LABELS: Record<Locale, string> = { zh: "中", en: "EN" };
  * "中"/"EN" says the same thing in less space, in no country's colors, and is the one pair both locales
  * can read.
  *
- * The thumb is the app's existing "selected" idiom - `bg-indigo-600 text-white shadow-sm`, the same fixed
- * pair the pagination and the AI tabs use. It is deliberately not a themed surface: brand fills are not
- * re-themed (see globals.css), so this keeps its contrast in both themes with no `dark:` variant. Only the
- * track follows the theme.
- *
- * `onDark` is for the landing and sign-in screens, which are dark in both themes. There the track has to be
- * a light wash over the page rather than a themed chip: a themed surface follows the page into black and
- * takes the control with it, which is what happened when the sign-in screen's selected segment became one.
+ * The thumb is the app's existing "selected" idiom - `bg-indigo-600 text-white`, the same fixed pair the
+ * pagination and the AI tabs use. It is deliberately not a themed surface: brand fills are not re-themed
+ * (see globals.css), so this keeps its contrast in both themes with no `dark:` variant. Only the track
+ * follows the theme, and there is no shadow on the thumb: the control is part of the bar, not floating
+ * above it.
  *
  * Two segments, deliberately. The thumb is half the track and parks at one end or the other, and Tailwind
  * only emits the translate utilities it can read literally - so a third locale means rewriting this, not
  * just adding to LOCALES.
  */
-export function LanguageSwitcher({
-  className = "",
-  onDark = false,
-}: {
-  className?: string;
-  onDark?: boolean;
-}) {
+export function LanguageSwitcher({ className = "" }: { className?: string }) {
   const { locale, setLocale } = useI18n();
   const activeIndex = Math.max(0, LOCALES.indexOf(locale));
 
-  const track = onDark ? "border-white/20 bg-white/10" : "border-line bg-muted-surface";
-  const segment = (active: boolean) =>
-    active ? "text-white" : onDark ? "text-white/70 hover:text-white" : "text-muted hover:text-strong";
+  const segment = (active: boolean) => (active ? "text-white" : "text-muted hover:text-strong");
 
   return (
     <div
       role="group"
       aria-label="Language"
-      className={`relative inline-grid grid-cols-2 items-center rounded-full border p-0.5 ${track} ${className}`}
+      className={`relative inline-grid grid-cols-2 items-center rounded-full border border-line bg-muted-surface p-0.5 ${className}`}
     >
       {/* Half the track minus one padding step per side, so the thumb is flush at either end. */}
       <span
         aria-hidden="true"
-        className={`pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-0.125rem)] rounded-full bg-indigo-600 shadow-sm transition-transform duration-200 ease-out motion-reduce:transition-none ${
+        className={`pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-0.125rem)] rounded-full bg-indigo-600 transition-transform duration-200 ease-out motion-reduce:transition-none ${
           activeIndex === 1 ? "translate-x-full" : "translate-x-0"
         }`}
       />
