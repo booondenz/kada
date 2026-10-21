@@ -223,7 +223,7 @@ export default function SettingsPage() {
                     placeholder={t("验证码")}
                     aria-label={t("验证码")}
                     maxLength={6}
-                    className={`${inputClass()} flex-1`}
+                    className={`${inputClass()} min-w-0 flex-1`}
                   />
                   <button
                     type="button"
@@ -233,14 +233,15 @@ export default function SettingsPage() {
                   >
                     {countdown > 0 ? `${countdown}s` : t("获取验证码")}
                   </button>
+                  {/* The button ends the row rather than starting a new one: it submits the three fields to
+                      its left, and a form of four rows for three inputs reads as a longer form than it is. */}
+                  <button type="submit" disabled={signingIn} className={buttonClass({ className: "shrink-0" })}>
+                    {t("登录")}
+                  </button>
                 </div>
               </div>
 
               {signInError && <p className="text-xs text-danger">{signInError}</p>}
-
-              <button type="submit" disabled={signingIn} className={buttonClass({ size: "sm" })}>
-                {t("登录")}
-              </button>
             </form>
           )}
         </div>
