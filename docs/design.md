@@ -929,15 +929,29 @@ port 80, and `kada-nginx` holds port 80 under `--network host`, so every attempt
 
     Could not bind TCP port 80 because it is already in use by another process on this system
 
-`certbot.timer` is active and runs twice a day; the certificate still being July's means every attempt since
-mid-September failed, and the only record of that was a mail to root. Stopping the container first does free
-the port, and a restart then serves the new certificate - that is a valid one-off, and it is what the
-renewal issue describes.
+`certbot.timer` is active and runs twice a day; the certificate that expired on 13 October was July's, which
+means every attempt since mid-September failed and the only record of that was a mail to root. Stopping the
+container first does free the port, and a restart then serves the new certificate - that is a valid one-off,
+and it is what the renewal issue describes.
 
-**What it should be is DNS-01.** The zone is Aliyun's (`dns23.hichina.com`, `dns24.hichina.com`), and DNS-01
-validates through a TXT record: no port, no downtime, and - the property that matters while the domain
-carries no records for an ICP filing - no need for the name to resolve at all. HTTP-01, webroot and
-TLS-ALPN-01 all need the name to point here, so they are unavailable for exactly as long as a filing runs.
+**What renews it now is webroot.** By the time the filing ended the name resolved again, and the frontend
+directory is already nginx's root, so certbot writes its challenge where nginx will serve it:
+`certbot certonly --webroot -w /opt/kada/frontend`, and `certbot renew --dry-run` is the check that says the
+timer can manage on its own - which is the property the timer never had with an authenticator that wanted a
+port somebody else was holding.
+
+One consequence of that location is worth knowing. The deploy moves the frontend bundle into that directory
+and then deletes every file in it the bundle did not ship (section 10), so a challenge file that appears while
+a deploy is running is removed and that attempt fails. Nothing needs to fix this: the next run retries, an
+attempt is only ever spent from the thirty days before expiry, and the 14-day warning below is the backstop
+that makes one miss uninteresting.
+
+**DNS-01 is still the authenticator for a period in which the name does not resolve.** The zone is Aliyun's
+(`dns23.hichina.com`, `dns24.hichina.com`), and DNS-01 validates through a TXT record: no port, no downtime,
+and - the property that mattered while the domain carried no records for an ICP filing - no need for the name
+to resolve at all. HTTP-01, webroot and TLS-ALPN-01 all need the name to point here, so they are unavailable
+for exactly as long as a filing runs; that is why this filing's window could not be renewed the way it is
+renewed now.
 
 **Verify from the visitor's side, not from certbot.** `certbot certificates` reads the files on disk and
 says nothing about what is being served; `openssl s_client` against the public name says nothing either,
