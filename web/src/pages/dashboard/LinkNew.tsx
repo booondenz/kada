@@ -202,7 +202,7 @@ export default function CreateLinkPage() {
                   value={description}
                   onChange={(e) => { descriptionRef.current = e.target.value; setDescription(e.target.value); }}
                   className="w-full rounded-xl border border-line px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition resize-none"
-                  placeholder={t("简短描述（可选）")}
+                  placeholder={t("简短描述")}
                   rows={3}
                 />
               </div>
@@ -265,11 +265,6 @@ export default function CreateLinkPage() {
                         ))}
                       </div>
                     )}
-                    {allTags.length === 0 && (
-                      <p className="text-xs text-faint py-1">
-                        {t("还没有标签，去")}<a href="/dashboard/tags" className="text-brand-ink hover:underline ml-1">{t("标签管理")}</a>{t("创建")}
-                      </p>
-                    )}
                   </div>
               </div>
 
@@ -308,7 +303,7 @@ export default function CreateLinkPage() {
                   onChange={(e) => setDomain(e.target.value)}
                   className="w-full rounded-xl border border-line px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition bg-canvas"
                 >
-                  <option value="">{t("kada.click（默认）")}</option>
+                  <option value="">kada.click</option>
                   {verifiedDomains.map((d: { id: number; name: string }) => (
                     <option key={d.id} value={d.name}>{d.name}</option>
                   ))}
