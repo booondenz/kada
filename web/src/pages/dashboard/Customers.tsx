@@ -47,7 +47,7 @@ export default function CustomersPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-line bg-gray-50/50">
+              <tr className="border-b border-line bg-subtle">
                 <th className="text-left px-5 py-3 text-xs font-medium text-muted uppercase">{t("IP 地址")}</th>
                 <th className="text-left px-5 py-3 text-xs font-medium text-muted uppercase">{t("点击次数")}</th>
                 <th className="text-left px-5 py-3 text-xs font-medium text-muted uppercase">{t("独立链接")}</th>
@@ -76,7 +76,7 @@ export default function CustomersPage() {
                   unique_links: number;
                   last_seen: string;
                 }) => (
-                  <tr key={c.ip} className="border-b border-gray-50 hover:bg-gray-50/50 transition">
+                  <tr key={c.ip} className="border-b border-line hover:bg-subtle transition">
                     <td className="px-5 py-3">
                       <code className="text-body font-mono text-xs">{c.ip}</code>
                     </td>

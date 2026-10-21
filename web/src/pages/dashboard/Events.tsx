@@ -61,7 +61,7 @@ export default function EventsPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-line bg-gray-50/50">
+              <tr className="border-b border-line bg-subtle">
                 <th className="text-left px-5 py-3 text-xs font-medium text-muted uppercase">{t("时间")}</th>
                 <th className="text-left px-5 py-3 text-xs font-medium text-muted uppercase">{t("短链")}</th>
                 <th className="text-left px-5 py-3 text-xs font-medium text-muted uppercase">{t("平台")}</th>
@@ -99,7 +99,7 @@ export default function EventsPage() {
                   const pConfig = platformConfig[e.platform] || platformConfig.unknown;
                   const { isAction, action, refererUrl } = parseReferer(e.referer);
                   return (
-                    <tr key={e.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition">
+                    <tr key={e.id} className="border-b border-line hover:bg-subtle transition">
                       <td className="px-5 py-3 text-muted whitespace-nowrap font-mono text-xs">
                         {new Date(e.created_at).toLocaleString(localeTag, {
                           month: "2-digit", day: "2-digit",

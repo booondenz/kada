@@ -62,25 +62,96 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --color-canvas: #111827;
-  --color-subtle: #0b1220;
-  --color-muted-surface: #1f2937;
-  --color-raised: #374151;
+  /*
+   * One ramp, one hue, and the hue is the page's own rather than the accent's.
+   *
+   * The scale is DeepSeek Harness's `neutral-bluish` ramp (950 / 875 / 850 / 800, spelled out below), and it
+   * replaces a set of Tailwind greys picked shade by shade: those were `#0b1220` for the page and `#111827`
+   * for a card, both of them navy, so every neutral carried a blue cast that fought the indigo accent.
+   *
+   * The four surfaces are an order, darkest at the back, and lightness is elevation - a card is lighter than
+   * the page it sits on, never a shadow:
+   *
+   *   950  #151517  the page                        subtle
+   *   875  #232324  cards, the sidebar, the top bar canvas
+   *   850  #2c2c2e  chips, inert controls, hover    muted-surface
+   *   800  #353638  filled and selected states      raised
+   */
+  --color-subtle: #151517;
+  --color-canvas: #232324;
+  --color-muted-surface: #2c2c2e;
+  --color-raised: #353638;
+
   --color-strong: #f9fafb;
-  --color-body: #d1d5db;
-  --color-muted: #9ca3af;
-  --color-faint: #6b7280;
-  --color-line: #374151;
-  --color-line-strong: #4b5563;
+  --color-body: #cfd3d6;
+  --color-muted: #adb2b8;
+  /* 3 points lighter than the ramp's caption step (#81858c): this one carries text - timestamps, the filing
+     number - and #81858c lands at 4.24:1 on the card, just under AA. #8a8f96 is 4.82:1. */
+  --color-faint: #8a8f96;
+
+  /*
+   * Hairlines are white at 12% and 16%, the way the reference palette draws them: a fixed grey is only right
+   * on the surface it was measured against, while an alpha border keeps its contrast on the card, on a chip
+   * and on the page behind both.
+   */
+  --color-line: #ffffff1f;
+  --color-line-strong: #ffffff29;
+
   --color-link: #a5b4fc;         /* indigo-300 */
-  --color-danger: #f87171;       /* red-400 */
+  --color-danger: #f25a5a;       /* the ramp's red-400, which is legible on 875 and calmer than #f87171 */
+
+  /*
+   * Status tints.
+   *
+   * `bg-emerald-50 text-emerald-700` is a pair - a tinted surface and the ink that belongs on it - and in a
+   * dark theme the `-50` half is the problem: a #ecfdf5 patch on a #151517 page is a glowing pastel hole,
+   * with the ink for a light theme on top of it. So both halves move together, exactly as brand-soft and
+   * brand-ink do: the surface becomes a wash of its own hue over whatever is behind it, and the ink moves up
+   * its scale to the step that is legible on that wash. A pair cannot half-move.
+   *
+   * Brand fills are deliberately absent: `bg-indigo-600 text-white` is already a high-contrast pair, and
+   * lightening the indigo for a dark theme is how white type ends up on a pale blue button.
+   */
+  --color-emerald-50: rgb(16 185 129 / 0.14);
+  --color-emerald-100: rgb(16 185 129 / 0.22);
+  --color-emerald-600: #34d399;
+  --color-emerald-700: #34d399;
+  --color-green-50: rgb(34 197 94 / 0.14);
+  --color-green-100: rgb(34 197 94 / 0.22);
+  --color-green-500: #4ade80;
+  --color-green-700: #4ade80;
+  --color-amber-50: rgb(245 158 11 / 0.14);
+  --color-amber-100: rgb(245 158 11 / 0.22);
+  --color-amber-200: rgb(245 158 11 / 0.32);
+  --color-amber-600: #fbbf24;
+  --color-amber-700: #fbbf24;
+  --color-amber-800: #fcd34d;
+  --color-red-50: rgb(239 68 68 / 0.14);
+  --color-red-100: rgb(239 68 68 / 0.22);
+  --color-red-500: #f87171;
+  --color-red-600: #f87171;
+  --color-red-700: #f87171;
+  --color-blue-50: rgb(59 130 246 / 0.14);
+  --color-blue-700: #93c5fd;
+  --color-sky-50: rgb(14 165 233 / 0.14);
+  --color-sky-600: #38bdf8;
+  --color-sky-700: #7dd3fc;
+  --color-rose-50: rgb(244 63 94 / 0.14);
+  --color-rose-700: #fda4af;
+  --color-violet-50: rgb(139 92 246 / 0.14);
+  --color-violet-600: #a78bfa;
+  --color-violet-700: #c4b5fd;
 
   /*
    * The brand tint is a *surface role*, not a fixed pair: `bg-brand-soft text-brand-ink` is a chip, a
    * selected nav item, an icon tile. Both halves therefore move together, or they meet in the middle - a
    * light chip carrying light ink, which is what happens when only one of the two is themed.
+   *
+   * `brand-soft` was a solid `indigo-900`, which made the selected nav row the loudest block on the screen.
+   * It is the accent as a tint over the card colour instead, so the row reads as selected rather than as a
+   * hole cut in the sidebar.
    */
-  --color-brand-soft: #312e81;   /* indigo-900 */
+  --color-brand-soft: rgb(99 102 241 / 0.18);
   --color-brand-ink: #c7d2fe;    /* indigo-200 */
 
   /*
@@ -89,12 +160,15 @@
    * under `text-*` classes that are themselves themed, or holds no text at all. Left alone it paints
    * white panels and near-white code chips on a near-black page, with light text on top of them.
    *
+   * It follows the page colour, which is what it used to follow: a recessed chip is the surface behind the
+   * card, not a step in front of it.
+   *
    * It is deliberately the only raw Tailwind neutral remapped here. `indigo-600`, `red-600` and the other
    * brand/status shades are fixed pairs (`bg-indigo-600 text-white`, `bg-red-50 text-red-600`) whose two
    * halves must keep their contrast, and remapping one half is how a primary button ends up with white
    * text on a pale blue fill.
    */
-  --color-gray-50: #0b1220;
+  --color-gray-50: #151517;
 
   /*
    * `white` stays literal white in both themes. It is not a surface role here: it is the type on the

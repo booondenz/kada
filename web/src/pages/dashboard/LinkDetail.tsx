@@ -325,7 +325,7 @@ export default function LinkDetailPage() {
 
         {/* Per-link analytics */}
         {showAnalytics && (
-          <div className="p-6 border-b border-line bg-gray-50/50 space-y-4">
+          <div className="p-6 border-b border-line bg-subtle space-y-4">
             <h3 className="text-sm font-semibold text-strong">{t("点击统计")}</h3>
             {clickData ? (
               <>
@@ -385,7 +385,7 @@ export default function LinkDetailPage() {
 
         {/* Edit form */}
         {editing && (
-          <div className="p-6 border-b border-line bg-gray-50/50 space-y-4">
+          <div className="p-6 border-b border-line bg-subtle space-y-4">
             <div>
               <label className="block text-xs font-medium text-muted mb-1">{t("目标 URL")}</label>
               <input type="url" value={editOriginalUrl} onChange={(e) => setEditOriginalUrl(e.target.value)}

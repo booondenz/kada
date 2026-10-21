@@ -138,7 +138,7 @@ export default function CreateLinkPage() {
                 />
                 {/* Preview card */}
                 {(previewing || preview) && (
-                  <div className="mt-3 rounded-xl border border-line bg-gray-50/50 overflow-hidden">
+                  <div className="mt-3 rounded-xl border border-line bg-subtle overflow-hidden">
                     {previewing ? (
                       <div className="flex items-center gap-3 p-3">
                         <div className="size-10 rounded-lg bg-raised animate-pulse shrink-0" />
@@ -292,7 +292,7 @@ export default function CreateLinkPage() {
             </div>
 
             {/* ===== Right: Advanced ===== */}
-            <div className="lg:col-span-2 p-6 sm:p-8 space-y-6 bg-gray-50/50">
+            <div className="lg:col-span-2 p-6 sm:p-8 space-y-6 bg-subtle">
               <h2 className="text-sm font-semibold text-strong uppercase tracking-wider">{t("高级选项")}</h2>
 
               {/* Domain */}

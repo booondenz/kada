@@ -31,7 +31,7 @@ export function Probe() {
 }
 `;
 
-const css = readFileSync(join(root, "src", "app", "globals.css"), "utf8");
+const css = readFileSync(join(root, "src", "globals.css"), "utf8");
 
 // Tailwind reads candidate classes from the file system, so hand it the probe through a virtual file
 // using its @source directive rather than writing a scratch file into the source tree.
@@ -43,7 +43,7 @@ writeFileSync(probe, content, "utf8");
 
 let out;
 try {
-  const result = await postcss([tailwind()]).process(withSource, { from: join(root, "src", "app", "globals.css") });
+  const result = await postcss([tailwind()]).process(withSource, { from: join(root, "src", "globals.css") });
   out = result.css;
 } finally {
   rmSync(probe, { force: true });
@@ -61,25 +61,40 @@ check(
 );
 check(
   "semantic tokens are redefined for dark mode",
-  /--color-canvas:\s*#111827/.test(darkBlock) && /--color-strong:\s*#f9fafb/.test(darkBlock)
+  /--color-canvas:\s*#232324/.test(darkBlock) && /--color-strong:\s*#f9fafb/.test(darkBlock)
 );
 check(
-  "brand and status colours are NOT redefined, so bg-indigo-600 text-white keeps working",
-  !/--color-indigo-600/.test(darkBlock) && !/--color-red-600/.test(darkBlock),
-  "these are fixed pairs; brightening them would make the button text unreadable"
+  "brand fills are NOT redefined, so bg-indigo-600 text-white keeps working",
+  !/--color-indigo-600/.test(darkBlock) && !/--color-indigo-500/.test(darkBlock),
+  "a brand fill and white type are one fixed pair; lightening the fill makes it unreadable"
 );
+// Status tints moved into the themed set: `bg-red-50 text-red-600` is a pair like brand-soft/brand-ink,
+// and on a near-black page the `-50` half is a glowing patch with light-theme ink on it. A pair may only
+// move as a pair, so an ink without its surface is the failure this checks for.
+const statusHues = ["red", "green", "amber", "emerald", "sky", "violet", "blue", "rose"];
+for (const hue of statusHues) {
+  const ink = new RegExp(`--color-${hue}-(500|600|700|800):`).test(darkBlock);
+  const surface = new RegExp(`--color-${hue}-50:`).test(darkBlock);
+  check(
+    `the ${hue} tint moves as a pair (surface and ink together)`,
+    ink === surface,
+    surface
+      ? `${hue}-50 is redefined without an ink to sit on it, which leaves light-theme text on a dark wash`
+      : `${hue}-500/600/700 is redefined without its -50 surface`
+  );
+}
 // The tint is a surface role, so both halves have to move: a light chip whose ink did not follow would
 // carry light text on a light fill.
 check(
   "the brand tint and its ink BOTH follow the theme",
-  /--color-brand-soft:\s*#312e81/.test(darkBlock) && /--color-brand-ink:\s*#c7d2fe/.test(darkBlock),
+  /--color-brand-soft:\s*rgb\(99 102 241/.test(darkBlock) && /--color-brand-ink:\s*#c7d2fe/.test(darkBlock),
   "bg-brand-soft and text-brand-ink are a pair; theme them together or not at all"
 );
 // gray-50 is used as a neutral surface across the app; left alone it paints white panels on a near-black
 // page. It is a neutral, not one half of a brand/status pair, which is why it may be remapped here.
 check(
   "gray-50 is remapped for dark mode, so bg-gray-50 and hover:bg-gray-50 do not stay white",
-  /--color-gray-50:\s*#0b1220/.test(darkBlock),
+  /--color-gray-50:\s*#151517/.test(darkBlock),
   "expected --color-gray-50 to be redefined in the dark block"
 );
 check("bg-canvas is generated", /\.bg-canvas\s*\{/.test(out));
