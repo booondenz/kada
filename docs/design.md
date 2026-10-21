@@ -968,6 +968,17 @@ names are content hashes and are never reused); files the new build does not con
 that switch. `scripts/verify-deploy-step.test.js` runs that block against a stand-in directory and asserts
 the inode does not change, which is the property the mount depends on.
 
+Renaming the shell into place is only half of it: the browser has to ask for it again. `/assets/` is served
+with `expires 365d` and `immutable`, which the content hashes make safe, and `index.html` is served with
+`expires -1` - `Cache-Control: no-cache`, so every visit revalidates it and an unchanged file still answers
+304. Without that second half nginx sends only `Last-Modified` and `ETag`, and a browser is free to apply
+heuristic freshness of roughly ten percent of the time since the file changed: a deploy inside that window
+is invisible, because the cached shell points at a bundle that is still on disk and still works. That is
+not hypothetical - on 2026-10-21 the host had the new build and the site still looked a version behind.
+`expires` is used rather than `add_header Cache-Control` because a location that sets `add_header` stops
+inheriting the server block's security headers, and `location /` serves the one response they matter most
+for.
+
 The container has three read-only bind mounts into the host, which `docker inspect kada-nginx` shows:
 
     /opt/kada/nginx-prod.conf  ->  /etc/nginx/nginx.conf   (ro)
