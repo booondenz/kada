@@ -338,6 +338,27 @@ func (s *AuthService) Register(ctx context.Context, phone, code, password string
 	return s.startSession(ctx, toUserInfo(*row))
 }
 
+// CreateGuest opens a session for a visitor who has not identified themselves.
+//
+// The row it writes has no phone, no password and no OAuth subject. That is not a placeholder: every one of
+// those columns is nullable and unique, and PostgreSQL allows any number of NULLs in a unique index, so a
+// guest is an ordinary account whose identity is still empty. The links it creates therefore belong to a
+// real account that can be *claimed* later - by writing a phone number and a password onto this same row -
+// instead of being stranded in something that only exists in one browser.
+//
+// It is deliberately not idempotent: calling it twice creates two accounts. The only caller is the first
+// page load, and the front end keeps one request in flight per browser and stores the token it gets back,
+// so a second call means a second visitor as far as this service can tell.
+func (s *AuthService) CreateGuest(ctx context.Context) (*domain.AuthResponse, error) {
+	row := &entity.User{}
+	if err := s.db.WithContext(ctx).Create(row).Error; err != nil {
+		log.Printf("create guest user failed: %v", err)
+		return nil, errors.New("could not open a session, please try again")
+	}
+
+	return s.startSession(ctx, toUserInfo(*row))
+}
+
 // LoginWithPassword signs in with the password chosen at registration.
 //
 // Every failure returns the same error, and a number with no account is still verified against a throwaway

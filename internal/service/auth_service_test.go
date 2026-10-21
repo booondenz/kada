@@ -485,3 +485,21 @@ func TestPasswordLoginRejectsAMalformedPhone(t *testing.T) {
 		t.Fatal("expected an error for a malformed phone number")
 	}
 }
+
+// A guest is a real account with an empty identity: the row is written with NULL phone, password and OAuth
+// columns - PostgreSQL allows any number of NULLs in a unique index, which is what makes that possible - so
+// the same row can be claimed later instead of the visitor's links being stranded in one browser.
+func TestCreateGuestOpensASessionWithoutAnIdentity(t *testing.T) {
+	svc := NewAuthService(newDryRunDB(t), "secret", "1h", nil)
+
+	resp, err := svc.CreateGuest(context.Background())
+	if err != nil {
+		t.Fatalf("CreateGuest: %v", err)
+	}
+	if resp.Token == "" {
+		t.Error("a guest must be given a session token")
+	}
+	if resp.User.Phone != nil {
+		t.Errorf("a guest must have no phone number, got %q", *resp.User.Phone)
+	}
+}

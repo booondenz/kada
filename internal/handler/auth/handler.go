@@ -19,6 +19,7 @@ type AuthService interface {
 	Register(ctx context.Context, phone, code, password string) (*domain.AuthResponse, error)
 	LoginWithPassword(ctx context.Context, phone, password string) (*domain.AuthResponse, error)
 	LoginByPhone(ctx context.Context, phone, code string) (*domain.AuthResponse, error)
+	CreateGuest(ctx context.Context) (*domain.AuthResponse, error)
 	GetUserByID(ctx context.Context, userID int64) (*domain.UserInfo, error)
 }
 
@@ -45,6 +46,12 @@ func NewHandler(svc AuthService) *Handler {
 // `PATCH /me` went the same way once the profile became the phone number. A phone cannot be changed
 // without verifying the new one (a flow this app does not have) and there is no other field left to write,
 // so the route would have accepted a body and changed nothing.
+//
+// `auth/guest` is what the app opens with now: a visitor is given a real account row with no identity, so
+// the product can be used before a phone number is proved, and the same row can be claimed later by
+// setting one. It sits in this group, and therefore under the strict limiter, because it is the cheapest
+// endpoint here to abuse - each call is a row - while twenty a minute per address is far more than people
+// opening a page ever need.
 func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc, strictMW ...gin.HandlerFunc) {
 	// Public routes (strict rate limiting can be applied).
 	//
@@ -55,6 +62,7 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc, str
 	if len(strictMW) > 0 && strictMW[0] != nil {
 		public.Use(strictMW[0])
 	}
+	public.POST("/auth/guest", h.CreateGuest)
 	public.GET("/auth/captcha", h.Captcha)
 	public.POST("/auth/send-sms-code", h.SendSMSCode)
 	public.POST("/auth/register", h.Register)
@@ -64,6 +72,21 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc, str
 	// Routes that require authentication.
 	auth := r.Group("").Use(authMW)
 	auth.GET("/me", h.GetMe)
+}
+
+// CreateGuest opens the session the app runs in before anyone has registered.
+//
+// 200 rather than 201: the client did not choose what was created and has no use for the location, and a
+// browser treats the two identically. The user in the response carries no phone number, which is what the
+// settings page renders as "not bound yet".
+func (h *Handler) CreateGuest(c *gin.Context) {
+	resp, err := h.svc.CreateGuest(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"token": resp.Token, "user": resp.User})
 }
 
 // Captcha issues the graphical challenge that SendSMSCode requires.

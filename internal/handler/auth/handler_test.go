@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -21,6 +22,7 @@ type mockAuthService struct {
 	register        func(ctx context.Context, phone, code, password string) (*domain.AuthResponse, error)
 	loginWithPass   func(ctx context.Context, phone, password string) (*domain.AuthResponse, error)
 	loginByPhone    func(ctx context.Context, phone, code string) (*domain.AuthResponse, error)
+	createGuest     func(ctx context.Context) (*domain.AuthResponse, error)
 	getUserByID     func(ctx context.Context, userID int64) (*domain.UserInfo, error)
 }
 
@@ -64,6 +66,13 @@ func (m *mockAuthService) GetUserByID(ctx context.Context, userID int64) (*domai
 		return m.getUserByID(ctx, userID)
 	}
 	return &domain.UserInfo{ID: userID, Phone: strPtr("13800138000")}, nil
+}
+
+func (m *mockAuthService) CreateGuest(ctx context.Context) (*domain.AuthResponse, error) {
+	if m.createGuest != nil {
+		return m.createGuest(ctx)
+	}
+	return &domain.AuthResponse{Token: "guest-token", User: domain.UserInfo{ID: 1}}, nil
 }
 
 func strPtr(s string) *string { return &s }
@@ -137,6 +146,63 @@ func TestCaptcha_UsesRealIPHeader(t *testing.T) {
 
 	if seen != "203.0.113.9" {
 		t.Errorf("service saw ip %q, want %q (X-Real-IP, not X-Forwarded-For)", seen, "203.0.113.9")
+	}
+}
+
+// ========== CreateGuest ==========
+
+// The app opens on this call, so it has to answer with a session for an account that has no identity yet:
+// the client stores the token and renders the dashboard, and the settings page shows the empty phone number
+// as "not bound", which is where the claim step will hang later.
+func TestCreateGuest_ReturnsASessionWithoutAPhone(t *testing.T) {
+	h := NewHandler(&mockAuthService{
+		createGuest: func(context.Context) (*domain.AuthResponse, error) {
+			return &domain.AuthResponse{Token: "guest-token", User: domain.UserInfo{ID: 7}}, nil
+		},
+	})
+	r := setupTestRouter(h)
+	r.POST("/auth/guest", h.CreateGuest)
+
+	w := postJSON(t, r, "/auth/guest", map[string]string{})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Token string          `json:"token"`
+		User  domain.UserInfo `json:"user"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
+	if resp.Token != "guest-token" {
+		t.Errorf("token = %q, want %q", resp.Token, "guest-token")
+	}
+	if resp.User.ID != 7 {
+		t.Errorf("user id = %d, want 7", resp.User.ID)
+	}
+	if resp.User.Phone != nil {
+		t.Errorf("a guest must have no phone number, got %q", *resp.User.Phone)
+	}
+}
+
+// A refused row is the only way this endpoint fails, and it must not answer 200 with an empty token: the
+// client would store that and then report 401s from every other request instead of one clear error.
+func TestCreateGuest_ReportsAFailedSession(t *testing.T) {
+	h := NewHandler(&mockAuthService{
+		createGuest: func(context.Context) (*domain.AuthResponse, error) {
+			return nil, errors.New("could not open a session, please try again")
+		},
+	})
+	r := setupTestRouter(h)
+	r.POST("/auth/guest", h.CreateGuest)
+
+	w := postJSON(t, r, "/auth/guest", map[string]string{})
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "could not open a session") {
+		t.Errorf("the reason must reach the caller, got: %s", w.Body.String())
 	}
 }
 
