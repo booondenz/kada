@@ -407,6 +407,11 @@ stat tiles, and the two shared nothing but a colour. What the pages are held to 
   aim at; a stat tile, an empty state and a wordmark may not, because there is nothing there to hit and the
   glyph is describing itself. The four tinted chips on 分析's tiles reported no status - four numbers are
   four numbers - and the filled indigo square beside "Kada" was the one accent spent on a name.
+- **An empty state is a line of text.** The first page a visitor saw used to be a 64px icon tile, a
+  heading, a marketing line and a second create button, centred where a list should be - on a page whose
+  toolbar already said `0 条链接` and already carried the action. "Nothing here yet" is one sentence, set
+  at the size of a sentence; the only case that still earns a sentence apart from the empty list is a
+  search that matched nothing, because the toolbar looks identical either way.
 - **Hairlines, not shadows.** A region is separated by a 1px `line` border and a step of background.
   Elevation is reserved for things that genuinely float (menus, dialogs): a shadow that separates two
   light surfaces does nothing on the near-black canvas, so it has to be reinvented per theme.

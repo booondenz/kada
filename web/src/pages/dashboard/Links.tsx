@@ -1,6 +1,4 @@
 import { useState, useEffect, useRef } from "react";
-import { Link } from "react-router";
-import { Plus, Link2 } from "lucide-react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import { linksAPI, foldersAPI, tagsAPI, workspacesAPI } from "@/lib/api";
@@ -180,28 +178,14 @@ export default function DashboardPage() {
           ))}
         </div>
       ) : links.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="flex size-16 items-center justify-center rounded-2xl bg-muted-surface mb-4">
-            <Link2 className="size-8 text-faint" />
-          </div>
-          <h3 className="text-lg font-semibold text-strong">
-            {search ? t("没有匹配的链接") : t("创建你的第一个短链接")}
-          </h3>
-          <p className="mt-1 text-sm text-muted max-w-sm">
-            {search
-              ? t("换个关键词试试")
-              : t("缩短、分享并追踪你的链接，兼容微信、QQ、小红书等平台")}
-          </p>
-          {!search && (
-            <Link
-              to="/dashboard/links/new"
-              className="mt-5 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 transition shadow-sm"
-            >
-              <Plus className="size-4" />
-              {t("创建链接")}
-            </Link>
-          )}
-        </div>
+        // An empty list is the toolbar and nothing else: it already reads "0 条链接" and already carries
+        // the create action, so the 64px tile, the heading and the second button that stood here repeated
+        // both at the size of a landing page. A search that matched nothing is the one case that still
+        // needs a sentence - the toolbar looks identical either way, and silence would read as a broken
+        // filter.
+        search ? (
+          <p className="py-10 text-center text-sm text-muted">{t("没有匹配的链接")}</p>
+        ) : null
       ) : (
         <div className="space-y-2">
           {/* Select all bar */}
