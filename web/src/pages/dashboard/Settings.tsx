@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { User, Phone, Key, Copy, Trash2, Plus, Building2, Globe, Monitor, Moon, Sun } from "lucide-react";
+import { Link } from "react-router";
+import { User, Key, Copy, Trash2, Plus, Building2, Globe, Monitor, Moon, Sun } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
+import { IcpNotice } from "@/components/IcpNotice";
 import { tokensAPI, workspacesAPI } from "@/lib/api";
 import { getToken, getUser } from "@/lib/auth";
 import { useT, useI18n } from "@/lib/i18n";
@@ -92,14 +94,13 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-strong">{t("设置")}</h1>
+        <h1 className="text-2xl font-bold text-strong">{t("用户")}</h1>
         <p className="text-sm text-muted mt-1">{t("管理你的个人信息")}</p>
       </div>
 
-      {/* Profile Card. The phone number and nothing else: it is the account's identity, and it is empty
-          until the visitor claims the guest account they are using. "未绑定" is therefore the normal state
-          here rather than an error - the row is where the claim step will be offered, and where the
-          payment flow will need an answer. The name, the email and the avatar that stood here were
+      {/* Profile Card. The identity and nothing else: a guest account has no phone number, so 游客 is the
+          normal state here rather than an error - the row is where the claim step will write one, and where
+          the payment flow will need an answer. The name, the email and the avatar that stood here were
           editable fields nothing reads any more (PATCH /me went with them), and a field that can be edited
           but changes nothing is worse than no field at all. */}
       <div className="rounded-xl border border-line bg-canvas shadow-sm overflow-hidden">
@@ -111,15 +112,10 @@ export default function SettingsPage() {
         </div>
 
         <div className="px-6 py-5">
-          <div className="flex items-center gap-3 py-2">
-            <Phone className="size-4 text-faint shrink-0" />
-            <div>
-              <p className="text-xs text-muted">{t("手机号")}</p>
-              <p className="text-sm text-strong">
-                {savedUser?.phone || <span className="text-faint italic">{t("未绑定")}</span>}
-              </p>
-            </div>
-          </div>
+          <p className="text-xs text-muted">{t("身份")}</p>
+          <p className="text-sm text-strong">
+            {savedUser?.phone || <span className="text-muted">{t("游客")}</span>}
+          </p>
         </div>
       </div>
 
@@ -309,6 +305,21 @@ export default function SettingsPage() {
           "throw this browser's links away", which is not an action to put one click away from the theme
           switch. It comes back, with the claim step that gives the account a phone number, and with the
           payment flow that needs one. */}
+
+      {/* The version string and the filing number, at the bottom of the page. They used to sit in the
+          sidebar beside the links, where nothing about them is a link: they are statements about the site,
+          and this is the page that answers "what am I using". `/privacy` sits with them because the policy
+          and the number are the same kind of statement - the filing office's link should not be the only
+          way to find out what happens to your data. */}
+      <footer className="border-t border-line pt-4">
+        <p className="text-xs text-faint">Kada v0.2</p>
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-faint">
+          <IcpNotice className="transition-colors hover:text-muted" />
+          <Link to="/privacy" className="transition-colors hover:text-muted">
+            {t("隐私政策")}
+          </Link>
+        </div>
+      </footer>
     </div>
   );
 }

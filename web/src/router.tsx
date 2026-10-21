@@ -32,7 +32,6 @@ export const router = createBrowserRouter([
   { path: "/login", element: <Navigate to="/dashboard" replace /> },
   { path: "/register", element: <Navigate to="/dashboard" replace /> },
   { path: "/privacy", element: <Privacy /> },
-  { path: "/privacy", element: <Privacy /> },
   // The interstitial the backend redirects to when a short link needs a password or a deep-link hop.
   { path: "/r/:code", element: <Redirect /> },
   {

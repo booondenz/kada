@@ -1,4 +1,3 @@
-import { BarChart3, Link2, MousePointerClick, TrendingUp } from "lucide-react";
 import useSWR from "swr";
 import { analyticsAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
@@ -28,30 +27,25 @@ export default function AnalyticsPage() {
   const platforms: Array<{ platform: string; count: number }> = platformsData?.platforms ?? [];
   const daily: Array<{ date: string; count: number }> = dailyData?.daily ?? [];
 
+  // Four numbers, so four tiles - and nothing else: the tiles used to carry a tinted icon chip each, in
+  // brand, emerald, amber and rose, which reported no status and made the eye read the colour before the
+  // number. Size and weight say which number is which.
   const statCards = [
     {
       label: t("总链接数"),
       value: totalLinks.toLocaleString(),
-      icon: Link2,
-      color: "text-brand-ink bg-brand-soft",
     },
     {
       label: t("总点击数"),
       value: totalClicks.toLocaleString(),
-      icon: MousePointerClick,
-      color: "text-emerald-600 bg-emerald-50",
     },
     {
       label: t("平均点击"),
       value: totalLinks > 0 ? Math.round(totalClicks / totalLinks).toLocaleString() : "0",
-      icon: BarChart3,
-      color: "text-amber-600 bg-amber-50",
     },
     {
       label: t("平台来源"),
       value: t("${platforms.length} 种").replace("${platforms.length}", String(platforms.length)),
-      icon: TrendingUp,
-      color: "text-rose-600 bg-rose-50",
     },
   ];
 
@@ -76,12 +70,9 @@ export default function AnalyticsPage() {
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {statCards.map(({ label, value, icon: Icon, color }) => (
+        {statCards.map(({ label, value }) => (
           <div key={label} className="rounded-xl border border-line bg-canvas p-5 shadow-sm">
-            <div className={`inline-flex size-10 items-center justify-center rounded-lg ${color}`}>
-              <Icon className="size-5" />
-            </div>
-            <p className="mt-3 text-2xl font-bold text-strong tabular-nums">{value}</p>
+            <p className="text-2xl font-bold text-strong tabular-nums">{value}</p>
             <p className="mt-0.5 text-sm text-muted">{label}</p>
           </div>
         ))}
@@ -95,10 +86,7 @@ export default function AnalyticsPage() {
           </div>
           <div className="p-5">
             {platforms.length === 0 ? (
-              <div className="flex flex-col items-center py-8 text-center">
-                <BarChart3 className="size-8 text-gray-300 mb-2" />
-                <p className="text-sm text-muted">{t("暂无点击数据")}</p>
-              </div>
+              <p className="py-8 text-center text-sm text-muted">{t("暂无点击数据")}</p>
             ) : (
               <div className="space-y-3">
                 {platforms.map((p) => {
@@ -130,10 +118,7 @@ export default function AnalyticsPage() {
           </div>
           <div className="p-5">
             {daily.length === 0 ? (
-              <div className="flex flex-col items-center py-12 text-center">
-                <BarChart3 className="size-8 text-gray-300 mb-2" />
-                <p className="text-sm text-muted">{t("暂无点击数据")}</p>
-              </div>
+              <p className="py-12 text-center text-sm text-muted">{t("暂无点击数据")}</p>
             ) : (
               <div className="flex items-end gap-1 h-40">
                 {daily.map((d) => {

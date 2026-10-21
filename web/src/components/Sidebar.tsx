@@ -9,12 +9,12 @@ import {
   Folder,
   Tag,
   ArrowRightLeft,
-  Settings,
   Sparkles,
+  User,
   X,
   type LucideIcon,
 } from "lucide-react";
-import { IcpNotice } from "@/components/IcpNotice";
+import { getUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 
@@ -68,6 +68,10 @@ const NAV_SECTIONS: NavSection[] = [
 export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
   const pathname = useLocation().pathname;
   const t = useT();
+  // The account the app is running as. A guest row has no phone number yet, and "游客" is what that
+  // state is called here rather than an absence: the account exists from the first page load, so the row
+  // names who it belongs to instead of reporting a missing field.
+  const identity = getUser()?.phone || t("游客");
 
   const handleClick = () => {
     // Close mobile sidebar after navigation
@@ -76,14 +80,10 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
 
   return (
     <aside className="flex h-full w-[240px] shrink-0 flex-col border-r border-line bg-canvas">
-      {/* Logo */}
+      {/* The wordmark alone. It used to sit next to a filled indigo tile holding the link glyph, which spent
+          the one accent on a logo - the one place in the shell where the accent cannot mean anything. */}
       <div className="flex h-14 items-center justify-between px-4 border-b border-line">
-        <div className="flex items-center gap-2.5">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-indigo-600">
-            <Link2 className="size-4 text-white" />
-          </div>
-          <span className="font-bold text-lg text-strong">Kada</span>
-        </div>
+        <span className="font-bold text-lg text-strong">Kada</span>
         {onCloseMobile && (
           <button onClick={onCloseMobile} className="lg:hidden p-1.5 rounded-lg text-faint hover:bg-muted-surface transition">
             <X className="size-4" />
@@ -129,10 +129,11 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
         ))}
       </nav>
 
-      {/* Bottom: Settings, then the footer a filing requires. The number sits in the shell because there is
-          no public page left to put it on: the app opens on the dashboard. `/privacy` is linked from the
-          same block so the policy stays reachable without being hunted for. */}
-      <div className="border-t border-line px-3 py-3 space-y-2">
+      {/* The account, where "设置" used to be. The row is the only place in the shell that can say which
+          account the links below belong to, and it says the same thing the user page does: 游客 until the
+          guest row is claimed, the phone number after. The version string and the filing number are not
+          navigation, so they moved to the bottom of that page. */}
+      <div className="border-t border-line px-3 py-3">
         <Link
           to="/dashboard/settings"
           onClick={handleClick}
@@ -143,18 +144,9 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
               : "text-muted hover:bg-muted-surface hover:text-strong"
           )}
         >
-          <Settings className={cn("size-4 shrink-0", pathname === "/dashboard/settings" && "text-brand-ink")} />
-          <span>{t("设置")}</span>
+          <User className={cn("size-4 shrink-0", pathname === "/dashboard/settings" && "text-brand-ink")} />
+          <span className="truncate">{identity}</span>
         </Link>
-        <div className="space-y-1 px-3 pt-1">
-          <p className="text-xs text-faint">Kada v0.2</p>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-faint">
-            <IcpNotice className="transition-colors hover:text-muted" />
-            <Link to="/privacy" className="transition-colors hover:text-muted">
-              {t("隐私政策")}
-            </Link>
-          </div>
-        </div>
       </div>
     </aside>
   );

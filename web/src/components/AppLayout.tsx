@@ -97,7 +97,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     if (pathname === "/dashboard/folders") return t("文件夹");
     if (pathname === "/dashboard/tags") return t("标签");
     if (pathname === "/dashboard/utm") return t("UTM 模板");
-    if (pathname === "/dashboard/settings") return t("设置");
+    if (pathname === "/dashboard/settings") return t("用户");
     return "";
   })();
 

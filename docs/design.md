@@ -312,11 +312,12 @@ service, its systemd unit and a whole deployment step with it.
 |---|---|
 | `/` | Redirects to `/dashboard` |
 | `/login`, `/register` | Redirects to `/dashboard`: there is no sign-in page (see [6.4](#64-there-is-no-sign-in-page)) |
-| `/privacy` | Privacy policy, linked from the consent checkbox before sign-in |
+| `/privacy` | Privacy policy, reachable without a session and linked from the user page |
 | `/dashboard` | Overview: totals, trend, recent links |
 | `/dashboard/links`, `/new`, `/[id]` | Link list, creation form, detail/edit |
 | `/dashboard/analytics`, `/events`, `/customers` | Click analytics, raw events, visitors |
-| `/dashboard/folders`, `/tags`, `/domains`, `/utm`, `/settings` | Organisation and account settings |
+| `/dashboard/folders`, `/tags`, `/domains`, `/utm` | Organisation |
+| `/dashboard/settings` | The user page: identity, appearance, API tokens, workspaces, and the site's own footer |
 | `/r/[code]` | Client-side fallback page for a short code |
 
 Data fetching uses SWR against `src/lib/api.ts`, which is the single place where the API surface is
@@ -325,11 +326,16 @@ declared and where the bearer token is attached. Components never call `fetch` d
 State that must survive a reload (session token, profile, locale) lives in `localStorage` behind
 helpers in `src/lib/auth.ts` and `src/lib/i18n`.
 
-The ICP filing number sits in the app shell's sidebar, next to the link to `/privacy`, because there is no
-page a visitor reaches without a session any more: the app opens on the dashboard with a guest session (see
-[6.4](#64-there-is-no-sign-in-page)) and a spot check lands there. `/privacy` carries it too. The number is
+The ICP filing number sits at the bottom of the user page (`/dashboard/settings`), under the version
+string, next to the link to `/privacy`. It moved there from the sidebar: the filing office's link sat
+between two navigation links, and nothing about it is navigation. `/privacy` carries it too. The number is
 one constant in `web/src/components/IcpNotice.tsx` and not a translated string: the filing office checks the
 characters, and a second copy of them could only ever disagree with the first.
+
+The number being one click inside the app rather than on every screen is the weakest point of this
+arrangement, and the filing order is about the bottom of the site rather than the bottom of a page. If the
+annual review objects, the answer is to put a single line back under the link list - the page every
+visitor lands on - and not to move it around again.
 
 ### 6.1 Internationalisation
 
@@ -353,7 +359,7 @@ When adding UI text: write the Chinese string, wrap it in `t()`, and add the Eng
 ### 6.2 Theme
 
 The app follows the browser's `prefers-color-scheme` by default and lets the user override it from
-Settings → 外观, with a third option that hands control back to the system.
+用户 → 外观, with a third option that hands control back to the system.
 
 - `data-theme="light|dark"` on `<html>` is the single source of truth. Tailwind's `dark:` variant is
   redefined as an attribute selector, so it works on any browser and the OS setting and an explicit
@@ -397,6 +403,10 @@ stat tiles, and the two shared nothing but a colour. What the pages are held to 
 - **One accent.** `brand` means the primary action and the current selection, and nothing else. A status
   colour appears when it reports a status; it never decorates. A page whose hierarchy needs four colours
   is a page whose hierarchy is being carried by something other than size and weight.
+- **Icons label controls, not content.** A nav row or a button may carry one, because it is a target you
+  aim at; a stat tile, an empty state and a wordmark may not, because there is nothing there to hit and the
+  glyph is describing itself. The four tinted chips on 分析's tiles reported no status - four numbers are
+  four numbers - and the filled indigo square beside "Kada" was the one accent spent on a name.
 - **Hairlines, not shadows.** A region is separated by a 1px `line` border and a step of background.
   Elevation is reserved for things that genuinely float (menus, dialogs): a shadow that separates two
   light surfaces does nothing on the near-black canvas, so it has to be reinvented per theme.

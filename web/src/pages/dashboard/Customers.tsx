@@ -1,5 +1,4 @@
 import useSWR from "swr";
-import { Users, Monitor } from "lucide-react";
 import { analyticsAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
@@ -26,22 +25,17 @@ export default function CustomersPage() {
         <p className="text-sm text-muted mt-1">{t("独立访客统计（按 IP）")}</p>
       </div>
 
-      {/* Summary cards */}
+      {/* Summary cards. Two numbers, no icon chips: the tinted squares that stood here said nothing the
+          number did not, and the table below already says which two numbers these are. */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         <div className="rounded-xl border border-line bg-canvas p-5 shadow-sm">
-          <div className="inline-flex size-10 items-center justify-center rounded-lg text-brand-ink bg-brand-soft">
-            <Users className="size-5" />
-          </div>
-          <p className="mt-3 text-2xl font-bold text-strong tabular-nums">
+          <p className="text-2xl font-bold text-strong tabular-nums">
             {customers.length.toLocaleString()}
           </p>
           <p className="mt-0.5 text-sm text-muted">{t("独立 IP 数")}</p>
         </div>
         <div className="rounded-xl border border-line bg-canvas p-5 shadow-sm">
-          <div className="inline-flex size-10 items-center justify-center rounded-lg text-emerald-600 bg-emerald-50">
-            <Monitor className="size-5" />
-          </div>
-          <p className="mt-3 text-2xl font-bold text-strong tabular-nums">
+          <p className="text-2xl font-bold text-strong tabular-nums">
             {customers.reduce((sum: number, c: { click_count: number }) => sum + c.click_count, 0).toLocaleString()}
           </p>
           <p className="mt-0.5 text-sm text-muted">{t("总点击次数")}</p>
@@ -72,7 +66,6 @@ export default function CustomersPage() {
               ) : customers.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="px-5 py-16 text-center">
-                    <Users className="size-8 text-gray-300 mx-auto mb-2" />
                     <p className="text-sm text-muted">{t("暂无访客数据")}</p>
                   </td>
                 </tr>
