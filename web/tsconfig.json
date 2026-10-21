@@ -12,6 +12,7 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "allowJs": true,
+    "allowImportingTsExtensions": true,
     "incremental": true,
     "types": ["vite/client", "node"],
     "paths": {

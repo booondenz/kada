@@ -24,5 +24,10 @@ The theme script is injected into `index.html` at build time by `vite.config.ts`
 implementation in `src/lib/theme/bootstrap.ts`: it has to run before the first frame, which a component
 rendered by React cannot do.
 
+The package declares `"type": "module"` because it is one end to end: the config, that bootstrap script and
+every source file are ESM. Without the line Node loads the config as CommonJS while it is written as ESM,
+which is a warning today and a syntax error once Vite makes that loader its default. There are no CommonJS
+`.js` files in this package to be reinterpreted by the change - the scripts are `.mjs` already.
+
 The build is static files, so production has no Node process: nginx serves `dist/` directly. See
 `deploy/nginx/nginx-prod.conf` and the deployment section of `docs/design.md`.

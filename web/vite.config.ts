@@ -3,7 +3,12 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-import { themeBootstrapScript } from "./src/lib/theme/bootstrap";
+// The extension is explicit on purpose. Node's own ESM loader - the one Vite switches the config to when
+// `configLoader: native` becomes the default - does not do bundler-style extension resolution, so
+// "./src/lib/theme/bootstrap" is a module-not-found there; only today's bundling loader makes it work. The
+// `.ts` specifier is what makes the config loadable both ways, and `allowImportingTsExtensions` in
+// tsconfig.json is what lets TypeScript accept it.
+import { themeBootstrapScript } from "./src/lib/theme/bootstrap.ts";
 
 /**
  * Injects the theme script into <head>, from the one implementation in src/lib/theme/bootstrap.ts.
