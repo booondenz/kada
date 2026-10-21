@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import { Link2 } from "lucide-react";
+import { IcpNotice } from "@/components/IcpNotice";
 import StarfieldCanvas from "@/components/StarfieldCanvas";
 import { TopBarControls } from "@/components/TopBarControls";
 import { TOP_BAR_GUTTER, TOP_BAR_HEIGHT } from "@/components/topBar";
@@ -47,6 +48,13 @@ export default function HomePage() {
             {t("短链接平台")}
           </p>
         </div>
+
+        {/* The filing number goes at the bottom of the homepage, where the regulator expects to find it. It
+            sits outside the hero's flex-1 column so it stays on the bottom edge however tall the viewport
+            is, and it is quiet enough not to compete with the call to action it is required to accompany. */}
+        <footer className="pb-5 text-center">
+          <IcpNotice className="text-xs tracking-wide text-indigo-200/55 transition hover:text-indigo-200/90" />
+        </footer>
       </div>
     </main>
   );

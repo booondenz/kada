@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import { ArrowLeft } from "lucide-react";
+import { IcpNotice } from "@/components/IcpNotice";
 import { useI18n, useT } from "@/lib/i18n";
 
 /**
@@ -35,6 +36,12 @@ export default function PrivacyPage() {
 
           {isZh ? <ChinesePolicy /> : <EnglishPolicy />}
         </article>
+
+        {/* The same number the homepage carries: this page is the other one a visitor reaches without an
+            account, and a policy that states who operates the site should say which filing it runs under. */}
+        <div className="mt-6 text-center">
+          <IcpNotice className="text-xs text-muted hover:text-brand" />
+        </div>
       </div>
     </div>
   );

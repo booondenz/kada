@@ -325,6 +325,11 @@ declared and where the bearer token is attached. Components never call `fetch` d
 State that must survive a reload (session token, profile, locale) lives in `localStorage` behind
 helpers in `src/lib/auth.ts` and `src/lib/i18n`.
 
+The two pages a visitor can reach without an account - `/` and `/privacy` - carry the ICP filing number at
+the bottom, linked to the filing office's query page, which is what operating a site under a filing requires.
+The number is one constant in `web/src/components/IcpNotice.tsx` and not a translated string: the filing
+office checks the characters, and a second copy of them could only ever disagree with the first.
+
 ### 6.1 Internationalisation
 
 The UI ships in Chinese and English. The dictionary is keyed by the **Chinese source string**:
