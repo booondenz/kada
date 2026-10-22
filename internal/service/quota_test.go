@@ -10,7 +10,7 @@ func TestQuotaDecision_RefusesTheSixthLinkInTenMinutes(t *testing.T) {
 	now := time.Now().UTC()
 	oldest := now.Add(-2 * time.Minute)
 
-	refusal := quotaDecision(false, 5, burstLinks, oldest, oldest, now)
+	refusal := quotaDecision(5, burstLinks, oldest, oldest, now)
 	if refusal == nil {
 		t.Fatal("a burst over the ceiling must be refused")
 	}
@@ -22,17 +22,12 @@ func TestQuotaDecision_RefusesTheSixthLinkInTenMinutes(t *testing.T) {
 	}
 }
 
-// The burst window is what a script needs; the daily quota is what a patient one needs. Both have to hold,
-// and the daily one is the larger number only for a claimed account.
-func TestQuotaDecision_DailyAllowanceDependsOnClaimingANumber(t *testing.T) {
+// The burst window is what a script needs; the daily quota is what a patient one needs. Both have to hold.
+func TestQuotaDecision_RefusesADayAtTheAllowance(t *testing.T) {
 	now := time.Now().UTC()
 	oldest := now.Add(-time.Hour)
 
-	if refusal := quotaDecision(true, 30, 0, oldest, oldest, now); refusal != nil {
-		t.Errorf("a claimed account with 30 links today must be allowed, got %q", refusal.Message)
-	}
-
-	refusal := quotaDecision(false, guestLinksPerDay, 0, oldest, oldest, now)
+	refusal := quotaDecision(linksPerDay, 0, oldest, oldest, now)
 	if refusal == nil {
 		t.Fatal("a guest at the daily allowance must be refused")
 	}
@@ -48,7 +43,7 @@ func TestQuotaDecision_AllowsAnAccountInsideItsAllowance(t *testing.T) {
 	now := time.Now().UTC()
 	oldest := now.Add(-time.Hour)
 
-	if refusal := quotaDecision(false, 19, 4, oldest, oldest, now); refusal != nil {
+	if refusal := quotaDecision(19, 4, oldest, oldest, now); refusal != nil {
 		t.Errorf("20th create of the day must be allowed, got %q", refusal.Message)
 	}
 }
@@ -58,7 +53,7 @@ func TestQuotaDecision_AllowsAnAccountInsideItsAllowance(t *testing.T) {
 func TestQuotaDecision_WithoutAnOldestRowReportsTheWholeWindow(t *testing.T) {
 	now := time.Now().UTC()
 
-	refusal := quotaDecision(false, guestLinksPerDay, 0, time.Time{}, time.Time{}, now)
+	refusal := quotaDecision(linksPerDay, 0, time.Time{}, time.Time{}, now)
 	if refusal == nil {
 		t.Fatal("a guest at the daily allowance must be refused")
 	}

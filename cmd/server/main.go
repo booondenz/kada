@@ -30,7 +30,6 @@ import (
 	utmHandler "github.com/booondenz/kada/internal/handler/utm"
 	"github.com/booondenz/kada/internal/infra"
 	"github.com/booondenz/kada/internal/infra/blocklist"
-	"github.com/booondenz/kada/internal/infra/sms"
 	"github.com/booondenz/kada/internal/infra/storage"
 	"github.com/booondenz/kada/internal/middleware"
 	"github.com/booondenz/kada/internal/service"
@@ -76,40 +75,6 @@ func main() {
 		defer infra.CloseRedis(redisClient)
 	}
 
-	// Initialize the Aliyun SMS verification service.
-	//
-	// Phone + SMS code is how a guest account is claimed, and the only way into an account that has one, so a
-	// sender that cannot start is not cosmetic: without it every account stays a guest, and a guest's links
-	// live in one browser. The process still starts (an API that refuses to boot is a worse outage than one
-	// that cannot send messages) but it says so in the log, at the top, every time.
-	var smsSender service.SMSSender
-	if cfg.SMSCredentialsConfigured() {
-		sender, senderErr := sms.NewAliyunSender(cfg.SMSAccessKeyID, cfg.SMSAccessKeySecret, cfg.SMSSignName, cfg.SMSTemplateCode)
-		if senderErr != nil {
-			// Not fatal: every other feature still works. But no account can be claimed with a phone number,
-			// and the reason is printed now rather than deferred to a request that would only report a
-			// provider error.
-			log.Printf("SMS service disabled, so no account can be claimed with a phone number: %v", senderErr)
-		} else {
-			// Assigned only on success. The constructor returns (nil, error), and a nil *AliyunSender stored
-			// in this interface is not nil: the service's own `sms != nil` guard would pass, and every send
-			// would call a method on a nil receiver instead of using the development fallback that prints
-			// the code to the log.
-			smsSender = sender
-		}
-	} else {
-		// Distinguish "not configured" from "configured with the .env.example placeholders": both end in the
-		// same warning, but the second one is the common cause of a send failing with a provider error.
-		if cfg.SMSAccessKeyID != "" || cfg.SMSAccessKeySecret != "" {
-			log.Println("SMS_ACCESS_KEY_ID/SMS_ACCESS_KEY_SECRET still hold the .env.example placeholder values; " +
-				"no account can be claimed with a phone number until real Aliyun credentials are set")
-		} else {
-			log.Println("SMS not configured, so no account can be claimed with a phone number. Verification codes " +
-				"are printed to this log instead (development only); set SMS_ACCESS_KEY_ID/SMS_ACCESS_KEY_SECRET/" +
-				"SMS_SIGN_NAME/SMS_TEMPLATE_CODE to enable real sending")
-		}
-	}
-
 	// Initialize the cache service (if Redis is available). The variable is the interface rather than
 	// *CacheService on purpose: a nil *CacheService stored in an interface is not nil, so every
 	// `cache != nil` guard in the service would pass and the first cache call would dereference it.
@@ -119,7 +84,7 @@ func main() {
 	}
 
 	// Initialize the service layer
-	authSvc := service.NewAuthService(db, cfg.JWTSecret, cfg.JWTExpires, smsSender)
+	authSvc := service.NewAuthService(db, cfg.JWTSecret, cfg.JWTExpires)
 
 	// The blocked-host list: rows an operator edits, held in memory because the redirect path asks the
 	// question on every request. Failing to load it is a warning and not a refused start - links stay
@@ -279,7 +244,7 @@ func main() {
 		linkH.RegisterRoutes(v1, authMW)
 		// Always mounted, never conditionally: RequireAdmin refuses everybody when ADMIN_PHONES is empty,
 		// and a middleware left out of the chain would allow everybody.
-		adminH.RegisterRoutes(v1, authMW, middleware.RequireAdmin(cfg.AdminPhones))
+		adminH.RegisterRoutes(v1, authMW, middleware.RequireAdmin(cfg.AdminSecret))
 		reportH.RegisterRoutes(v1, strictMW)
 		domainH.RegisterRoutes(v1, authMW)
 		folderH.RegisterRoutes(v1, authMW)

@@ -1,37 +1,29 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"net/http"
-	"slices"
 
 	"github.com/gin-gonic/gin"
 )
 
-// GetUserPhone returns the phone number the token was issued for, if it carried one.
-//
-// API tokens do not: they identify an account, not a person signing in, and an operator route is a person
-// signing in. That is what keeps a leaked `kada_` token from stopping links - the token can create them.
-func GetUserPhone(c *gin.Context) *string {
-	v, exists := c.Get("user_phone")
-	if !exists || v == nil {
-		return nil
-	}
-	phone, ok := v.(*string)
-	if !ok || phone == nil {
-		return nil
-	}
-	return phone
-}
+// AdminSecretHeader is where the operator's secret travels.
+const AdminSecretHeader = "X-Admin-Secret"
 
-// RequireAdmin refuses everyone whose number is not in the operator list.
+// RequireAdmin refuses everyone who does not present the deployment's operator secret.
 //
-// An empty list refuses everybody rather than allowing everybody: the setting is absent on a fresh
-// deployment, and a missing environment variable must not be the thing that hands out the moderation
-// routes. It runs after JWTAuth, so a request without a valid token has already been refused.
-func RequireAdmin(phones []string) gin.HandlerFunc {
+// It is a shared secret rather than an account because the site has no accounts: every visitor has the same
+// kind of session, and a phone number that could sign in was removed with the sign-in. The secret is set on
+// the host (ADMIN_SECRET) and typed into the console once, where it is kept in that browser's storage.
+//
+// An empty secret refuses everybody rather than allowing everybody: the setting is absent on a fresh
+// deployment, and a missing environment variable must not be the thing that hands out the moderation routes.
+// The comparison is constant-time, because the alternative leaks the answer one byte at a time.
+func RequireAdmin(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		phone := GetUserPhone(c)
-		if phone == nil || !slices.Contains(phones, *phone) {
+		presented := c.GetHeader(AdminSecretHeader)
+		if secret == "" || presented == "" ||
+			subtle.ConstantTimeCompare([]byte(presented), []byte(secret)) != 1 {
 			c.JSON(http.StatusForbidden, gin.H{"error": "this account is not an operator"})
 			c.Abort()
 			return

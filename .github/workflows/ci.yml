@@ -269,55 +269,6 @@ jobs:
             'rm -rf /tmp/kada-deploy && mkdir -p /tmp/kada-deploy && tar xzf /tmp/kada-deploy.tar.gz -C /tmp/kada-deploy && rm -f /tmp/kada-deploy.tar.gz'
           echo "the bundle is unpacked on the host"
 
-      # Whether the deployment may proceed is decided on the host, by the --require checks in the deploy
-      # step below: they read /opt/kada/backend/.env as it will actually be after the sync, which is the
-      # truth. This step cannot see that file, so it must not pretend to: it only reports whether CI is
-      # *managing* these four values, and it never fails the job.
-      #
-      # That distinction matters in both directions. A missing secret here does not necessarily mean an
-      # outage - a hand-configured host keeps working, because --set with an empty value leaves the file
-      # alone - so claiming "nobody can sign in" would be a false alarm, and false alarms are how real ones
-      # get ignored. It is still worth saying, because a value that only exists on the server is lost when
-      # the server is rebuilt.
-      - name: Check the SMS credentials
-        env:
-          SMS_ACCESS_KEY_ID: ${{ secrets.SMS_ACCESS_KEY_ID }}
-          SMS_ACCESS_KEY_SECRET: ${{ secrets.SMS_ACCESS_KEY_SECRET }}
-          SMS_SIGN_NAME: ${{ secrets.SMS_SIGN_NAME }}
-          SMS_TEMPLATE_CODE: ${{ secrets.SMS_TEMPLATE_CODE }}
-        run: |
-          missing=""
-          for name in SMS_ACCESS_KEY_ID SMS_ACCESS_KEY_SECRET SMS_SIGN_NAME SMS_TEMPLATE_CODE; do
-            if [ -z "${!name}" ]; then
-              missing="${missing:+$missing, }$name"
-            fi
-          done
-
-          if [ -z "$missing" ]; then
-            echo "the SMS credentials are managed by this repository"
-            exit 0
-          fi
-
-          {
-            echo "### Note: CI does not manage the SMS credentials"
-            echo ""
-            echo "Not set as repository secrets: \`$missing\`"
-            echo ""
-            echo "The deployment is not blocked by this - the check that decides runs on the host, against"
-            echo "\`/opt/kada/backend/.env\`, where these values may already be configured by hand. But as"
-            echo "long as they are not set here, they live only on that machine: rebuilding the host, or"
-            echo "rotating the credential, means editing it over SSH by hand again."
-            echo ""
-            echo "| Secret | Where it comes from |"
-            echo "|---|---|"
-            echo "| \`SMS_ACCESS_KEY_ID\` / \`SMS_ACCESS_KEY_SECRET\` | Aliyun RAM AccessKey pair with SMS permission |"
-            echo "| \`SMS_SIGN_NAME\` / \`SMS_TEMPLATE_CODE\` | The system-granted signature and template in the Aliyun PNVS console |"
-            echo ""
-            echo "Phone number plus SMS code is the only sign-in method, so if the host is *also* missing"
-            echo "them, nobody can sign in and the deploy will fail at the sync step."
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          echo "::notice title=CI does not manage the SMS credentials::$missing is not set as a repository secret; the deploy checks the host's own .env instead."
 
       # The id is what the report step below reads to tell "the site was not reachable" apart from "the
       # release never reached the host": without it, a failed deploy is reported as a smoke test that did
@@ -328,25 +279,19 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           # The provider keys live here rather than in a file someone edits over SSH. "The AI page is
-          # broken" and "the SMS code never arrives" were both, in the end, an empty line in
-          # the host's env files that nothing had ever checked; see
+          # broken" was, in the end, an empty line in the host's env files that nothing had ever checked; see
           # deploy/upsert-env.sh for how these are written and why the deployment stops when they are
           # missing.
           #
           # Add them under Settings -> Secrets and variables -> Actions:
           #   DEEPSEEK_API_KEY      chat model key
-          #   SMS_ACCESS_KEY_ID / SMS_ACCESS_KEY_SECRET / SMS_SIGN_NAME / SMS_TEMPLATE_CODE
-          #                         the Aliyun PNVS credentials; without them nobody can sign in
+          #   ADMIN_SECRET          the operator secret the console asks for (optional)
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          SMS_ACCESS_KEY_ID: ${{ secrets.SMS_ACCESS_KEY_ID }}
-          SMS_ACCESS_KEY_SECRET: ${{ secrets.SMS_ACCESS_KEY_SECRET }}
-          SMS_SIGN_NAME: ${{ secrets.SMS_SIGN_NAME }}
-          SMS_TEMPLATE_CODE: ${{ secrets.SMS_TEMPLATE_CODE }}
+          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
           # Optional, and not required below: moderation can wait, and a deployment that refused to run
-          # because the operator's number was not set would be a deployment held hostage by a feature it
-          # does not need. Empty means the host file keeps whatever it already holds, and an empty list in
-          # the service refuses everybody.
-          ADMIN_PHONES: ${{ secrets.ADMIN_PHONES }}
+          # because the operator's secret was not set would be a deployment held hostage by a feature it
+          # does not need. Empty means the host file keeps whatever it already holds, and an empty secret
+          # in the service refuses everybody.
           # The public origin, so the check below can ask this host's nginx for the site without DNS.
           # Same variable and same default as the runner-side verification further down.
           SITE_ORIGIN: ${{ vars.SITE_URL || 'https://kada.click' }}
@@ -359,7 +304,7 @@ jobs:
           # default of 10m is generous for that. It was 30m when the Python image was built here, which
           # took minutes on a small server.
           command_timeout: 10m
-          envs: DATABASE_URL,DEEPSEEK_API_KEY,SMS_ACCESS_KEY_ID,SMS_ACCESS_KEY_SECRET,SMS_SIGN_NAME,SMS_TEMPLATE_CODE,ADMIN_PHONES,SITE_ORIGIN
+          envs: DATABASE_URL,DEEPSEEK_API_KEY,ADMIN_SECRET,SITE_ORIGIN
           script: |
             set -euo pipefail
 
@@ -384,23 +329,10 @@ jobs:
             # The assistant runs in this process, so its key belongs in the API's own env file:
             # the /opt/kada/ai/ai.env the Python service read is gone with it.
             #
-            # The SMS credentials are required too, and for the same reason as the AI key: phone number
-            # plus SMS code is the only way to sign in, so a host without them serves a site nobody can log
-            # into. Checking them here is what makes that a refused deploy instead of a quiet outage. The
-            # check reads the file, not the repository secrets, so a host that was configured by hand keeps
-            # deploying normally.
             bash "$DEPLOY_DIR/deploy/upsert-env.sh" "$BACKEND_DIR/.env" \
               --set "DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY" \
-              --set "SMS_ACCESS_KEY_ID=$SMS_ACCESS_KEY_ID" \
-              --set "SMS_ACCESS_KEY_SECRET=$SMS_ACCESS_KEY_SECRET" \
-              --set "SMS_SIGN_NAME=$SMS_SIGN_NAME" \
-              --set "SMS_TEMPLATE_CODE=$SMS_TEMPLATE_CODE" \
-              --set "ADMIN_PHONES=$ADMIN_PHONES" \
-              --require DEEPSEEK_API_KEY \
-              --require SMS_ACCESS_KEY_ID \
-              --require SMS_ACCESS_KEY_SECRET \
-              --require SMS_SIGN_NAME \
-              --require SMS_TEMPLATE_CODE
+              --set "ADMIN_SECRET=$ADMIN_SECRET" \
+              --require DEEPSEEK_API_KEY
 
             # 1. Back up the running binary so a failed start can be rolled back.
             echo "Backing up the current binary"

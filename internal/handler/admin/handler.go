@@ -14,7 +14,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/booondenz/kada/internal/domain"
-	"github.com/booondenz/kada/internal/middleware"
 )
 
 // Moderator is what this handler needs from the links: the three decisions and nothing else.
@@ -113,13 +112,11 @@ func (h *Handler) ListReports(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"reports": reports})
 }
 
-// operatorPhone is who the decision is attributed to. The middleware has already established that the
-// caller is in the operator list, so a missing phone here means the route was mounted without it.
+// operatorPhone is who the decision is attributed to. There are no accounts to name any more, so the record
+// says that an operator made it - which is the truth, and the history is still complete in every other
+// respect (when, why, on what evidence).
 func operatorPhone(c *gin.Context) string {
-	if phone := middleware.GetUserPhone(c); phone != nil {
-		return *phone
-	}
-	return ""
+	return "operator"
 }
 
 // respond maps the three refusals the operator can hit. A conflict is not an error in the request: it says

@@ -54,21 +54,23 @@ func (f *fakeReports) List(ctx context.Context, limit int) ([]domain.AbuseReport
 	return nil, nil
 }
 
-// testRouter mounts the routes the way main.go does: a token middleware standing in for JWTAuth, then
-// RequireAdmin with one listed number.
-func testRouter(t *testing.T, h *Handler, phone string) *gin.Engine {
+// The operator route the test router mounts, with the secret the console would have typed in.
+const testSecret = "s3cret"
+
+// testRouter mounts the routes the way main.go does: RequireAdmin with the deployment's secret. `presented`
+// is what the request carries, so an empty value is "no secret at all".
+func testRouter(t *testing.T, h *Handler, presented string) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	auth := func(c *gin.Context) {
-		c.Set("user_id", int64(7))
-		if phone != "" {
-			c.Set("user_phone", &phone)
+	r.Use(func(c *gin.Context) {
+		if presented != "" {
+			c.Request.Header.Set(middleware.AdminSecretHeader, presented)
 		}
 		c.Next()
-	}
-	h.RegisterRoutes(r.Group("/api"), auth, middleware.RequireAdmin([]string{"13800000000"}))
+	})
+	h.RegisterRoutes(r.Group("/api"), func(c *gin.Context) { c.Next() }, middleware.RequireAdmin(testSecret))
 	return r
 }
 
@@ -89,7 +91,7 @@ func TestBlockLink_RefusesANonOperator(t *testing.T) {
 		return nil, nil
 	}}, &fakeReports{})
 
-	w := post(t, testRouter(t, h, "13900000000"), "/api/admin/links/abc123/block", `{"reason":"gambling"}`)
+	w := post(t, testRouter(t, h, "wrong-secret"), "/api/admin/links/abc123/block", `{"reason":"gambling"}`)
 
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusForbidden)
@@ -99,8 +101,9 @@ func TestBlockLink_RefusesANonOperator(t *testing.T) {
 	}
 }
 
-// An API token has no phone number, and these routes are a person signing in.
-func TestBlockLink_RefusesATokenWithoutANumber(t *testing.T) {
+// No secret at all is the same refusal, and it is the one a browser sends before anybody has typed the
+// secret into the console.
+func TestBlockLink_RefusesARequestWithoutASecret(t *testing.T) {
 	h := NewHandler(&fakeModerator{}, &fakeReports{})
 
 	w := post(t, testRouter(t, h, ""), "/api/admin/links/abc123/block", `{"reason":"gambling"}`)
@@ -119,13 +122,13 @@ func TestBlockLink_RecordsWhoDecided(t *testing.T) {
 		},
 	}, &fakeReports{})
 
-	w := post(t, testRouter(t, h, "13800000000"), "/api/admin/links/abc123/block", `{"reason":"gambling","evidence":"report #4"}`)
+	w := post(t, testRouter(t, h, testSecret), "/api/admin/links/abc123/block", `{"reason":"gambling","evidence":"report #4"}`)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d: %s", w.Code, http.StatusOK, w.Body.String())
 	}
-	if gotOperator != "13800000000" {
-		t.Errorf("operator = %q, want the number that made the decision", gotOperator)
+	if gotOperator != "operator" {
+		t.Errorf("operator = %q, want the record to say an operator made the decision", gotOperator)
 	}
 	if gotReason != "gambling" {
 		t.Errorf("reason = %q, want gambling", gotReason)
@@ -139,7 +142,7 @@ func TestBlockLink_RequiresAReason(t *testing.T) {
 		return nil, nil
 	}}, &fakeReports{})
 
-	w := post(t, testRouter(t, h, "13800000000"), "/api/admin/links/abc123/block", `{}`)
+	w := post(t, testRouter(t, h, testSecret), "/api/admin/links/abc123/block", `{}`)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
@@ -156,7 +159,7 @@ func TestBlockLink_ReportsAlreadyStopped(t *testing.T) {
 		return nil, domain.ErrLinkAlreadyBlocked
 	}}, &fakeReports{})
 
-	w := post(t, testRouter(t, h, "13800000000"), "/api/admin/links/abc123/block", `{"reason":"gambling"}`)
+	w := post(t, testRouter(t, h, testSecret), "/api/admin/links/abc123/block", `{"reason":"gambling"}`)
 
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusConflict)
@@ -168,7 +171,7 @@ func TestBlockLink_ReportsAnUnknownCode(t *testing.T) {
 		return nil, domain.ErrLinkNotFound
 	}}, &fakeReports{})
 
-	w := post(t, testRouter(t, h, "13800000000"), "/api/admin/links/nope/block", `{"reason":"gambling"}`)
+	w := post(t, testRouter(t, h, testSecret), "/api/admin/links/nope/block", `{"reason":"gambling"}`)
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusNotFound)
@@ -183,7 +186,7 @@ func TestUnblockLink_AcceptsAnEmptyBody(t *testing.T) {
 		return nil
 	}}, &fakeReports{})
 
-	w := post(t, testRouter(t, h, "13800000000"), "/api/admin/links/abc123/unblock", "")
+	w := post(t, testRouter(t, h, testSecret), "/api/admin/links/abc123/unblock", "")
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d: %s", w.Code, http.StatusOK, w.Body.String())
@@ -198,7 +201,7 @@ func TestUnblockLink_ReportsALinkThatIsNotStopped(t *testing.T) {
 		return domain.ErrLinkNotBlocked
 	}}, &fakeReports{})
 
-	w := post(t, testRouter(t, h, "13800000000"), "/api/admin/links/abc123/unblock", "")
+	w := post(t, testRouter(t, h, testSecret), "/api/admin/links/abc123/unblock", "")
 
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusConflict)
@@ -210,7 +213,7 @@ func TestUnblockLink_SurfacesAnUnexpectedFailure(t *testing.T) {
 		return errors.New("database is gone")
 	}}, &fakeReports{})
 
-	w := post(t, testRouter(t, h, "13800000000"), "/api/admin/links/abc123/unblock", "")
+	w := post(t, testRouter(t, h, testSecret), "/api/admin/links/abc123/unblock", "")
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
@@ -224,7 +227,7 @@ func TestLinkBlocks_ReturnsTheHistory(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/links/abc123/blocks", nil)
 	w := httptest.NewRecorder()
-	testRouter(t, h, "13800000000").ServeHTTP(w, req)
+	testRouter(t, h, testSecret).ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
@@ -240,7 +243,7 @@ func TestListReports_PassesTheLimitThrough(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/reports?limit=7", nil)
 	w := httptest.NewRecorder()
-	testRouter(t, h, "13800000000").ServeHTTP(w, req)
+	testRouter(t, h, testSecret).ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)

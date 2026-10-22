@@ -31,22 +31,17 @@ type Config struct {
 	// Disable it (DB_AUTO_MIGRATE=false) once the schema is managed out of band.
 	AutoMigrate bool
 
-	// SMS service
-	SMSAccessKeyID     string
-	SMSAccessKeySecret string
-	SMSSignName        string
-	SMSTemplateCode    string
-
 	// WeChat
 	WechatAppID     string
 	WechatAppSecret string
 
-	// AdminPhones are the phone numbers that may stop and restore links (ADMIN_PHONES, comma separated).
+	// AdminSecret is the password for the operator routes (ADMIN_SECRET).
 	//
-	// Numbers rather than user ids: the operator knows the number they sign in with, and an id is only
-	// visible to whoever is already looking at the database. Empty means nobody - the operator routes then
-	// refuse everybody, which is the safe direction for a missing setting.
-	AdminPhones []string
+	// It is a shared secret rather than an account because there are no accounts: the site is free and every
+	// visitor has the same kind of session, so the operator proves who they are with something only the
+	// deployment knows. Empty means nobody - the operator routes then refuse everybody, which is the safe
+	// direction for a missing setting.
+	AdminSecret string
 }
 
 func Load() *Config {
@@ -65,29 +60,10 @@ func Load() *Config {
 		AIDeepSeekModel:   getEnv("AI_CHAT_MODEL", "deepseek-flash"),
 		AIMaxTokens:       getEnvInt("AI_MAX_TOKENS", 8192),
 		AutoMigrate:       getEnvBool("DB_AUTO_MIGRATE", true),
-		// SMS_SIGN_NAME has no default. A placeholder signature such as "kada" is not a value this account
-		// holds, and it turned "nobody configured SMS" into an Aliyun rejection that reads like a broken
-		// account: the startup guard in sms.NewAliyunSender never fired, and the failure only appeared when
-		// a real user tried to sign in. Empty means "not configured", which is what the startup log says.
-		SMSAccessKeyID:     getEnv("SMS_ACCESS_KEY_ID", ""),
-		SMSAccessKeySecret: getEnv("SMS_ACCESS_KEY_SECRET", ""),
-		SMSSignName:        getEnv("SMS_SIGN_NAME", ""),
-		SMSTemplateCode:    getEnv("SMS_TEMPLATE_CODE", ""),
-		WechatAppID:        getEnv("WECHAT_APP_ID", ""),
-		WechatAppSecret:    getEnv("WECHAT_APP_SECRET", ""),
-		AdminPhones:        splitList(getEnv("ADMIN_PHONES", "")),
+		WechatAppID:       getEnv("WECHAT_APP_ID", ""),
+		WechatAppSecret:   getEnv("WECHAT_APP_SECRET", ""),
+		AdminSecret:       getEnv("ADMIN_SECRET", ""),
 	}
-}
-
-// splitList splits a comma-separated setting, trimming whitespace and empty entries.
-func splitList(raw string) []string {
-	var out []string
-	for _, b := range strings.Split(raw, ",") {
-		if b = strings.TrimSpace(b); b != "" {
-			out = append(out, b)
-		}
-	}
-	return out
 }
 
 func getEnv(key, fallback string) string {
@@ -142,27 +118,4 @@ func IsWeakJWTSecret(s string) bool {
 		}
 	}
 	return false
-}
-
-// placeholderSMSValues are the sample values shipped in .env.example. Copying them verbatim yields a
-// non-empty key pair that still fails every Aliyun call with a signature/credential error, which looks
-// like a code bug logged deep inside a request handler. Detecting them turns it into a startup warning.
-var placeholderSMSValues = []string{
-	"your_access_key_id",
-	"your_access_key_secret",
-	"change-me",
-	"changeme",
-}
-
-// SMSCredentialsConfigured reports whether SMS_ACCESS_KEY_ID/SECRET hold real values.
-func (c *Config) SMSCredentialsConfigured() bool {
-	if c.SMSAccessKeyID == "" || c.SMSAccessKeySecret == "" {
-		return false
-	}
-	for _, p := range placeholderSMSValues {
-		if strings.EqualFold(c.SMSAccessKeyID, p) || strings.EqualFold(c.SMSAccessKeySecret, p) {
-			return false
-		}
-	}
-	return true
 }

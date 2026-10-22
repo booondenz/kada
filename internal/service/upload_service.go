@@ -23,10 +23,9 @@ const (
 	// maxUploadBytes is one file's ceiling: a photo or a slide deck, and far below what a video needs -
 	// which is the point, since video and audio are out of scope and refused by type before this matters.
 	maxUploadBytes = 20 << 20
-	// Per-account storage. A guest gets less for the same reason a guest gets fewer links: an account
-	// costs one request to create, so the space behind it must not.
-	guestStorageBytes  = 50 << 20
-	memberStorageBytes = 1 << 30
+	// Per-account storage. One allowance, because there is one kind of account: a phone number used to buy a
+	// larger one, and the site has no phone numbers any more.
+	guestStorageBytes = 50 << 20
 )
 
 // allowedExtensions is the whole list of what this service stores, and what each one must claim to be.
@@ -95,9 +94,6 @@ func (s *UploadService) Create(ctx context.Context, userID int64, filename strin
 	}
 
 	limit := int64(guestStorageBytes)
-	if claimedAccount(ctx, s.db, userID) {
-		limit = memberStorageBytes
-	}
 	used := s.usedBytes(ctx, userID)
 	if used >= limit {
 		return nil, fmt.Errorf("%w: this account can store %s and it is full", domain.ErrStorageQuota, humanBytes(limit))

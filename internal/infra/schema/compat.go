@@ -203,6 +203,11 @@ type legacyTable struct {
 // foreign key, links.workspace_id, is dropped first: see legacyColumns.
 var legacyTables = []legacyTable{
 	{Table: "workspaces", SQL: "DROP TABLE IF EXISTS workspaces"},
+	// The sign-in tables. Phone numbers, SMS codes, captchas and failed-password counts all existed to let a
+	// visitor claim an account, and the site is free now: there is nothing to claim and nobody to verify.
+	{Table: "sms_codes", SQL: "DROP TABLE IF EXISTS sms_codes"},
+	{Table: "login_captchas", SQL: "DROP TABLE IF EXISTS login_captchas"},
+	{Table: "login_attempts", SQL: "DROP TABLE IF EXISTS login_attempts"},
 }
 
 // LegacyTableStatements returns the idempotent DDL that removes the tables the models no longer declare.

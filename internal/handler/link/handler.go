@@ -111,13 +111,10 @@ func (h *Handler) Targets(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"targets": targets})
 }
 
-// operatorPhone is who a change is attributed to. An API token carries no number, and the audit says so
-// rather than guessing.
+// operatorPhone is who a change is attributed to. There is no name to give any more - the site has no
+// accounts - so the audit says the owner made it, which is who edits their own targets.
 func operatorPhone(c *gin.Context) string {
-	if phone := middleware.GetUserPhone(c); phone != nil {
-		return *phone
-	}
-	return ""
+	return "owner"
 }
 
 // Create creates a short link.

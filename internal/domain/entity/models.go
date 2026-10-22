@@ -148,69 +148,6 @@ type ClickLog struct {
 	Link *Link `gorm:"foreignKey:LinkID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
-// SMSVerificationCode is a pending SMS login code.
-//
-// Nothing is read back through this model yet (auth_service issues raw SQL for the atomic
-// consume/attempt statements), but it is the schema definition for the table.
-type SMSVerificationCode struct {
-	ID    int64  `gorm:"primaryKey" json:"id"`
-	Phone string `gorm:"type:varchar(20);not null;index:idx_sms_codes_phone,priority:1" json:"phone"`
-	// CodeHash stores sha256(code); the plaintext code is never persisted.
-	CodeHash *string `gorm:"type:varchar(64);index" json:"code_hash"`
-	// Indexed because the per-IP send quota counts rows by IP over a time window, and that count runs
-	// before every send.
-	IP        *string   `gorm:"type:varchar(45);index" json:"ip"`
-	Used      bool      `gorm:"default:false" json:"used"`
-	Attempts  int       `gorm:"not null;default:0" json:"attempts"`
-	ExpiresAt time.Time `gorm:"not null" json:"expires_at"`
-	CreatedAt time.Time `gorm:"index:idx_sms_codes_phone,priority:2" json:"created_at"`
-}
-
-// TableName pins the table name: GORM's pluralizer would produce "sms_verification_codes", but the table
-// has been called sms_codes since the first migration and auth_service still writes it with raw SQL.
-func (SMSVerificationCode) TableName() string { return "sms_codes" }
-
-// LoginCaptcha is a one-time graphical challenge that has to be answered before an SMS code is sent.
-//
-// It is stored in PostgreSQL rather than Redis on purpose: Redis is optional in this deployment (rate
-// limiting fails open when it is down), and a captcha that silently stops being enforced is worse than
-// no captcha at all, because the endpoint still looks protected. The database is not optional.
-//
-// Only sha256(answer) is kept, so a leaked table cannot be replayed against the service.
-type LoginCaptcha struct {
-	// ID is the handle the client sends back; 32 hex characters from crypto/rand, not a UUID, because
-	// nothing here needs the version bits.
-	ID        string    `gorm:"type:varchar(32);primaryKey" json:"id"`
-	CodeHash  string    `gorm:"type:varchar(64);not null" json:"-"`
-	IP        *string   `gorm:"type:varchar(45)" json:"ip"`
-	Used      bool      `gorm:"not null;default:false" json:"used"`
-	Attempts  int       `gorm:"not null;default:0" json:"attempts"`
-	ExpiresAt time.Time `gorm:"not null;index" json:"expires_at"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-func (LoginCaptcha) TableName() string { return "login_captchas" }
-
-// LoginAttempt is one failed password sign-in, recorded against the number that was tried.
-//
-// One row per failure rather than a counter on the account, deliberately. The bound has to apply to a number
-// that has no account at all: if only real accounts could be locked, then "was that refused?" would answer
-// "does this number have an account here" - the one question the sign-in response is built not to answer
-// (domain.ErrInvalidCredentials for every mismatch, and a decoy hash so the timing does not answer it either).
-//
-// The rows are only ever read as a count over a window, so nothing here is state: what is left of the window
-// is the retry-after, and a successful sign-in deletes them.
-type LoginAttempt struct {
-	ID int64 `gorm:"primaryKey" json:"id"`
-	// Indexed together with created_at because every read is "how many failures for this number, recently".
-	Phone string `gorm:"type:varchar(20);not null;index:idx_login_attempts_phone,priority:1" json:"phone"`
-	// Also indexed on its own: the housekeeping DELETE filters on this column alone, and a composite index
-	// that leads with phone cannot serve that.
-	CreatedAt time.Time `gorm:"index:idx_login_attempts_phone,priority:2;index:idx_login_attempts_created" json:"created_at"`
-}
-
-func (LoginAttempt) TableName() string { return "login_attempts" }
-
 // User is an account.
 //
 // Accounts are created and signed in by phone number plus an SMS code, and nothing else: email/password
@@ -450,9 +387,6 @@ func Models() []any {
 		&LinkTarget{},
 		&LinkTargetAudit{},
 		&ClickLog{},
-		&SMSVerificationCode{},
-		&LoginCaptcha{},
-		&LoginAttempt{},
 		&Domain{},
 		&BlockedHost{},
 		&Upload{},

@@ -26,26 +26,23 @@ func parse(t *testing.T, model any) *schema.Schema {
 // the same tables it created before. These are the names from the original SQL migrations.
 func TestTableNames(t *testing.T) {
 	want := map[string]string{
-		"User":                "users",
-		"Link":                "links",
-		"ClickLog":            "click_logs",
-		"SMSVerificationCode": "sms_codes",
-		"LoginCaptcha":        "login_captchas",
-		"LoginAttempt":        "login_attempts",
-		"Folder":              "folders",
-		"Tag":                 "tags",
-		"LinkTag":             "link_tags",
-		"LinkTarget":          "link_targets",
-		"LinkTargetAudit":     "link_target_audits",
-		"Domain":              "domains",
-		"BlockedHost":         "blocked_hosts",
-		"Upload":              "uploads",
-		"LinkBlock":           "link_blocks",
-		"AbuseReport":         "abuse_reports",
-		"UTMTemplate":         "utm_templates",
-		"APIToken":            "api_tokens",
-		"AIConversation":      "ai_conversations",
-		"AIMessage":           "ai_messages",
+		"User":            "users",
+		"Link":            "links",
+		"ClickLog":        "click_logs",
+		"Folder":          "folders",
+		"Tag":             "tags",
+		"LinkTag":         "link_tags",
+		"LinkTarget":      "link_targets",
+		"LinkTargetAudit": "link_target_audits",
+		"Domain":          "domains",
+		"BlockedHost":     "blocked_hosts",
+		"Upload":          "uploads",
+		"LinkBlock":       "link_blocks",
+		"AbuseReport":     "abuse_reports",
+		"UTMTemplate":     "utm_templates",
+		"APIToken":        "api_tokens",
+		"AIConversation":  "ai_conversations",
+		"AIMessage":       "ai_messages",
 	}
 	for _, model := range Models() {
 		s := parse(t, model)
@@ -73,12 +70,9 @@ func TestColumns(t *testing.T) {
 			"ios_url", "android_url", "created_at", "updated_at"},
 		"click_logs": {"id", "link_id", "ip", "user_agent", "platform", "kind", "action", "referer",
 			"country", "province", "city", "created_at", "event_id"},
-		"sms_codes":      {"id", "phone", "code_hash", "ip", "used", "attempts", "expires_at", "created_at"},
-		"login_captchas": {"id", "code_hash", "ip", "used", "attempts", "expires_at", "created_at"},
-		"login_attempts": {"id", "phone", "created_at"},
-		"folders":        {"id", "user_id", "name", "created_at", "updated_at"},
-		"tags":           {"id", "user_id", "name", "color", "created_at"},
-		"link_tags":      {"link_id", "tag_id"},
+		"folders":   {"id", "user_id", "name", "created_at", "updated_at"},
+		"tags":      {"id", "user_id", "name", "color", "created_at"},
+		"link_tags": {"link_id", "tag_id"},
 		"domains": {"id", "user_id", "name", "verified", "verified_at", "created_at",
 			"updated_at"},
 		"utm_templates": {"id", "user_id", "name", "utm_source", "utm_medium", "utm_campaign",
@@ -209,15 +203,6 @@ func TestIndexesExist(t *testing.T) {
 		// Every click aggregate filters on it.
 		{&ClickLog{}, "kind"},
 		{&ClickLog{}, "link_id"},
-		{&SMSVerificationCode{}, "phone"},
-		// The per-IP send quotas count this column before every send.
-		{&SMSVerificationCode{}, "ip"},
-		// Expired challenges are purged by an opportunistic DELETE on every issue.
-		{&LoginCaptcha{}, "expires_at"},
-		// Counting a number's recent failures runs before every password sign-in.
-		{&LoginAttempt{}, "phone"},
-		// ... and the purge that rides on the write filters on this column alone.
-		{&LoginAttempt{}, "created_at"},
 		{&Folder{}, "user_id"},
 		{&Tag{}, "user_id"},
 		{&Domain{}, "user_id"},
@@ -244,12 +229,6 @@ func TestIndexesExist(t *testing.T) {
 // The two indexes on login_attempts exist for two different statements, so neither can stand in for the other:
 // the count leads with phone, and the housekeeping DELETE filters on created_at alone. A field carrying two
 // `index` keys in one tag is also exactly the kind of thing a tag parser can quietly read only once.
-func TestLoginAttemptsHasAnIndexForEachOfItsQueries(t *testing.T) {
-	s := parse(t, &LoginAttempt{})
-	if got := len(s.ParseIndexes()); got != 2 {
-		t.Errorf("login_attempts has %d indexes, want 2 (one for the count, one for the purge)", got)
-	}
-}
 
 // A field that carries both a named and an unnamed index tag (`uniqueIndex;index`, or `uniqueIndex:name`
 // plus `index`) is parsed as two indexes over the same column, and the driver renders the column twice:
