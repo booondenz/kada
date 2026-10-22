@@ -137,11 +137,11 @@ func main() {
 	// The blocked-host list: rows an operator edits, held in memory because the redirect path asks the
 	// question on every request. Failing to load it is a warning and not a refused start - links stay
 	// served, and the reload below picks the table up as soon as the database answers. It never blocks
-	// nothing silently: the list is empty until a load succeeds, and an empty list is the behaviour this
+	// nothing silently: the list is empty until a load succeeds, and an empty list is the behavior this
 	// service had before the table existed.
 	blockList := blocklist.New(db)
-	if err := blockList.Reload(context.Background()); err != nil {
-		log.Printf("load blocked hosts failed, the list stays empty until the next reload: %v", err)
+	if loadErr := blockList.Reload(context.Background()); loadErr != nil {
+		log.Printf("load blocked hosts failed, the list stays empty until the next reload: %v", loadErr)
 	}
 	go blockList.Run(context.Background(), 30*time.Second)
 

@@ -2,7 +2,7 @@
 //
 // A short link is a promise that the URL behind it is safe to open, and the URL is chosen by whoever created
 // the link. The categories that make that promise false - 色情, 赌博, 毒品, 诈骗, 钓鱼 - are not something a
-// code change can recognise, so they are kept in a table that an operator edits, and this package turns that
+// code change can recognize, so they are kept in a table that an operator edits, and this package turns that
 // table into an answer fast enough for the redirect path.
 //
 // The answer is served from an in-memory snapshot rather than a query, because the redirect path asks once
@@ -53,7 +53,7 @@ func (l *List) Reload(ctx context.Context) error {
 	return nil
 }
 
-// Run reloads the list every interval until ctx is cancelled.
+// Run reloads the list every interval until ctx is canceled.
 func (l *List) Run(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
