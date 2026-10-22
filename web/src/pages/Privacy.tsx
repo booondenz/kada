@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { ArrowLeft } from "lucide-react";
 import { IcpNotice } from "@/components/IcpNotice";
+import { PublicSecurityNotice } from "@/components/PublicSecurityNotice";
 import { useI18n, useT } from "@/lib/i18n";
 
 /**
@@ -41,6 +42,8 @@ export default function PrivacyPage() {
             account, and a policy that states who operates the site should say which filing it runs under. */}
         <div className="mt-6 text-center">
           <IcpNotice className="text-xs text-muted hover:text-brand" />
+          <span className="mx-2 text-xs text-faint">·</span>
+          <PublicSecurityNotice className="text-xs text-muted hover:text-brand" />
           <span className="mx-2 text-xs text-faint">·</span>
           <Link to="/report" className="text-xs text-muted hover:text-brand">
             {t("举报")}

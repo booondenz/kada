@@ -4,6 +4,7 @@ import { User, Key, Copy, Trash2, Plus, Monitor, Moon, Sun } from "lucide-react"
 import { toast } from "sonner";
 import useSWR from "swr";
 import { IcpNotice } from "@/components/IcpNotice";
+import { PublicSecurityNotice } from "@/components/PublicSecurityNotice";
 import { buttonClass } from "@/components/ui/Button";
 import { inputClass } from "@/components/ui/Field";
 import { authAPI, tokensAPI } from "@/lib/api";
@@ -384,6 +385,7 @@ export default function SettingsPage() {
         <p className="text-xs text-faint">Kada v0.2</p>
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-faint">
           <IcpNotice className="transition-colors hover:text-muted" />
+          <PublicSecurityNotice className="transition-colors hover:text-muted" />
           <Link to="/privacy" className="transition-colors hover:text-muted">
             {t("隐私政策")}
           </Link>

@@ -319,6 +319,11 @@ between two navigation links, and nothing about it is navigation. `/privacy` car
 one constant in `web/src/components/IcpNotice.tsx` and not a translated string: the filing office checks the
 characters, and a second copy of them could only ever disagree with the first.
 
+The public security filing number sits beside it, in both places, on the same rule - `豫公网安备41138102000392号`
+in `web/src/components/PublicSecurityNotice.tsx`, linking to the bureau's own query page. It is a second
+filing from a second office, granted after the first, and it was added as one component rather than as a copy
+of the ICP one because the two are checked by different offices and can change independently.
+
 The number being one click inside the app rather than on every screen is the weakest point of this
 arrangement, and the filing order is about the bottom of the site rather than the bottom of a page. If the
 annual review objects, the answer is to put a single line back under the link list - the page every
