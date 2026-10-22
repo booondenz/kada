@@ -33,8 +33,6 @@ services:
       GIN_MODE: release
       DATABASE_URL: postgres://kada:${POSTGRES_PASSWORD:-kada123}@postgres:5432/kada?sslmode=disable
       REDIS_URL: redis://redis:6379
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_TOPIC: clicks
       # Requires an explicitly provided strong random secret (copy .env.example to .env and fill it in first);
       # the API also rejects weak secrets such as changeme in release mode
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set, for example openssl rand -hex 32; do not use changeme}
@@ -76,44 +74,6 @@ services:
     depends_on:
       - api
       - web
-    restart: unless-stopped
-
-  kafka:
-    image: apache/kafka:3.8.0
-    ports:
-      # 9092 is for the docker network (the API and the worker use kafka:9092) and is not published to the host
-      # 29092 is for the host (running server/worker locally uses localhost:29092)
-      - "127.0.0.1:29092:29092"
-    environment:
-      KAFKA_NODE_ID: "1"
-      KAFKA_PROCESS_ROLES: "broker,controller"
-      KAFKA_LISTENERS: "PLAINTEXT://:9092,EXTERNAL://:29092,CONTROLLER://:9093"
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092"
-      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT"
-      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
-    healthcheck:
-      test: ["CMD", "/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  kafka-worker:
-    build: .
-    command: ["/worker"]
-    environment:
-      DATABASE_URL: postgres://kada:${POSTGRES_PASSWORD:-kada123}@postgres:5432/kada?sslmode=disable
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_TOPIC: clicks
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
     restart: unless-stopped
 
 volumes:

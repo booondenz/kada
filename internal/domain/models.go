@@ -390,6 +390,11 @@ type ClickEvent struct {
 	Referer string
 	// TargetID is which target of the link this visitor was sent to, nil for a link without a pool.
 	TargetID *int64
+	// EventID is the idempotency key the store writes. It is stamped where the click is recorded rather
+	// than where it is built: the caller knows what happened, and only the writer needs a key.
+	EventID string
+	// CreatedAt is when the click was recorded.
+	CreatedAt time.Time
 }
 
 // DeepLink represents one deeplink fallback option

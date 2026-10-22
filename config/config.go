@@ -38,10 +38,6 @@ type Config struct {
 	WechatAppID     string
 	WechatAppSecret string
 
-	// Kafka (click event stream; empty = disabled)
-	KafkaBrokers string
-	KafkaTopic   string
-
 	// AdminPhones are the phone numbers that may stop and restore links (ADMIN_PHONES, comma separated).
 	//
 	// Numbers rather than user ids: the operator knows the number they sign in with, and an id is only
@@ -75,24 +71,11 @@ func Load() *Config {
 		SMSTemplateCode:    getEnv("SMS_TEMPLATE_CODE", ""),
 		WechatAppID:        getEnv("WECHAT_APP_ID", ""),
 		WechatAppSecret:    getEnv("WECHAT_APP_SECRET", ""),
-		KafkaBrokers:       getEnv("KAFKA_BROKERS", ""),
-		KafkaTopic:         getEnv("KAFKA_TOPIC", "clicks"),
 		AdminPhones:        splitList(getEnv("ADMIN_PHONES", "")),
 	}
 }
 
-// Brokers splits the comma-separated broker list, trimming whitespace and empty entries
-func (c *Config) Brokers() []string {
-	return SplitBrokers(c.KafkaBrokers)
-}
-
-// SplitBrokers splits the comma-separated broker list, trimming whitespace and empty entries (shared by server and worker)
-func SplitBrokers(raw string) []string {
-	return splitList(raw)
-}
-
-// splitList splits a comma-separated setting, trimming whitespace and empty entries. The broker list and the
-// operator list want exactly this, and the parsing should not be written twice.
+// splitList splits a comma-separated setting, trimming whitespace and empty entries.
 func splitList(raw string) []string {
 	var out []string
 	for _, b := range strings.Split(raw, ",") {

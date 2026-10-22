@@ -239,8 +239,7 @@ func cacheLine(c map[string]float64) string {
 // baseline taken while it was degraded should say so rather than look quiet.
 func clickLine(c map[string]float64) string {
 	results := []string{
-		metrics.ClickPublished, metrics.ClickDirectWrite,
-		metrics.ClickPublishFailed, metrics.ClickDirectWriteFailed, metrics.ClickPanicked,
+		metrics.ClickWritten, metrics.ClickWriteFailed, metrics.ClickPanicked,
 	}
 	parts := make([]string, 0, len(results))
 	for _, result := range results {

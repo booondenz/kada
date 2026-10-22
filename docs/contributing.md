@@ -1,5 +1,7 @@
 # Contributing to Kada
 
+**English** | [简体中文](contributing.zh.md)
+
 Thanks for taking the time to contribute. This document covers how to set the project up, how work
 is expected to flow, and what a good pull request looks like.
 
@@ -26,12 +28,10 @@ Read [design.md](design.md) first for how the system fits together, and
 |---|---|---|
 | Go | 1.26+ | Backend; the module declares `go 1.26.4` |
 | Node.js | 22+ | Frontend |
-| Docker + Compose | recent | PostgreSQL, Redis, Kafka, and the full stack |
+| Docker + Compose | recent | PostgreSQL, Redis, and the full stack |
 | `make` | any | Task shortcuts (optional, the commands work standalone) |
 
-You do not need Docker for backend work if PostgreSQL and Redis are already reachable; only Kafka is
-genuinely awkward to install by hand, and every part of the product works without it (clicks fall
-back to a direct database write).
+You do not need Docker for backend work if PostgreSQL and Redis are already reachable.
 
 ## 2. Local setup
 
@@ -70,7 +70,7 @@ unformatted while CI sees it as clean.
 ### Everything in Docker
 
 ```bash
-docker compose up -d      # nginx :80, PostgreSQL :5432, Kafka :29092
+docker compose up -d      # nginx :80, PostgreSQL :5432, Redis :6379 (internal)
 docker compose logs -f
 docker compose down
 ```
@@ -81,7 +81,7 @@ ready to use. Nginx serves the app at `http://localhost`.
 ### The API and the web app on the host
 
 ```bash
-docker compose up -d postgres redis   # kafka is optional
+docker compose up -d postgres redis
 go run ./cmd/migrate/   # apply the schema
 go run ./cmd/server/main.go   # API on :8080
 cd web && npm run dev         # web app on :3000
@@ -350,9 +350,9 @@ as deliberate operations with a backup, not as part of a normal change.
 |---|---|
 | `README.md` | What the project is, how to run it |
 | `README.zh.md` | The same README in Chinese; `README.md` is the source, so the two change together |
-| `docs/design.md` | Architecture, data model, flows, decisions, limitations |
-| `docs/contributing.md` | This file: workflow, commits, issues, pull requests |
-| `docs/code-style.md` | Conventions for Go, TypeScript and SQL |
+| `docs/design.md` | Architecture, data model, flows, decisions, limitations (Chinese: `docs/design.zh.md`) |
+| `docs/contributing.md` | This file: workflow, commits, issues, pull requests (Chinese: `docs/contributing.zh.md`) |
+| `docs/code-style.md` | Conventions for Go, TypeScript and SQL (Chinese: `docs/code-style.zh.md`) |
 
 Documentation is part of the change, not a follow-up. If you make a decision a future reader would
 question, write the reason next to the code (`why`, not `what`) and mention it in `design.md` if it

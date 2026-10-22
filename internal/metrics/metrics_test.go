@@ -106,7 +106,8 @@ func TestTheRedirectSeriesCarryCountAndLatency(t *testing.T) {
 }
 
 // The cache and click series are the ones a claim about behavior rests on: "the cache serves most
-// requests" and "clicks survive Kafka being down" are both numbers this exposes or does not.
+// requests" and "every click is written or the failure is visible" are both numbers this exposes or does
+// not.
 func TestTheCacheAndClickSeriesCarryTheirResults(t *testing.T) {
 	before := seriesValues(t, exposition(t))
 
@@ -116,9 +117,8 @@ func TestTheCacheAndClickSeriesCarryTheirResults(t *testing.T) {
 	CacheLookup(CacheNegativeHit)
 	CacheLookup(CacheNegativeStored)
 
-	ClickEvent(ClickPublished)
-	ClickEvent(ClickPublishFailed)
-	ClickEvent(ClickDirectWrite)
+	ClickEvent(ClickWritten)
+	ClickEvent(ClickWriteFailed)
 
 	after := seriesValues(t, exposition(t))
 
@@ -130,10 +130,9 @@ func TestTheCacheAndClickSeriesCarryTheirResults(t *testing.T) {
 		{`kada_link_cache_total{result="miss"}`, 1},
 		{`kada_link_cache_total{result="negative_hit"}`, 1},
 		{`kada_link_cache_total{result="negative_stored"}`, 1},
-		{`kada_click_events_total{result="published"}`, 1},
-		{`kada_click_events_total{result="publish_failed"}`, 1},
-		{`kada_click_events_total{result="direct_write"}`, 1},
-		{`kada_click_events_total{result="direct_write_failed"}`, 0},
+		{`kada_click_events_total{result="written"}`, 1},
+		{`kada_click_events_total{result="write_failed"}`, 1},
+		{`kada_click_events_total{result="panicked"}`, 0},
 	} {
 		assertMoved(t, before, after, tc.series, tc.want)
 	}

@@ -18,7 +18,7 @@ import (
 // NewDB opens the PostgreSQL connection pool through GORM and verifies it with a ping.
 //
 // AutoMigrate is deliberately NOT called here: the caller decides (see Migrate) so that the API server,
-// the Kafka worker and any future CLI can each choose whether they are allowed to change the schema.
+// the migration command and any future tool can each choose whether they are allowed to change the schema.
 func NewDB(databaseURL string) (*gorm.DB, error) {
 	if databaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is empty")

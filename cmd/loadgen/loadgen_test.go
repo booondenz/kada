@@ -27,7 +27,7 @@ func TestParseMetricsReadsOnlyTheSeriesItReports(t *testing.T) {
 		`kada_redirect_requests_total{outcome="not_found"} 10`,
 		`kada_redirect_duration_seconds_bucket{outcome="redirect",le="0.0001"} 5`,
 		`kada_redirect_duration_seconds_count{outcome="redirect"} 19990`,
-		`kada_click_events_total{result="direct_write"} 20000`,
+		`kada_click_events_total{result="written"} 20000`,
 		`go_goroutines 42`,
 		``,
 	}, "\n")
@@ -47,8 +47,8 @@ func TestParseMetricsReadsOnlyTheSeriesItReports(t *testing.T) {
 	if got := c.cache[metrics.CacheMiss]; got != 200 {
 		t.Errorf("cache misses = %v, want 200", got)
 	}
-	if got := c.clicks[metrics.ClickDirectWrite]; got != 20000 {
-		t.Errorf("direct writes = %v, want 20000", got)
+	if got := c.clicks[metrics.ClickWritten]; got != 20000 {
+		t.Errorf("writes = %v, want 20000", got)
 	}
 
 	// The hit ratio is the number the issue asked for, so it is checked against the parsed series rather
@@ -75,7 +75,7 @@ func TestDeltaOfASeriesThatAppearedMidRunIsItsWholeValue(t *testing.T) {
 	after := counters{
 		redirects: 7,
 		cache:     map[string]float64{metrics.CacheMiss: 3, metrics.CacheNegativeStored: 3},
-		clicks:    map[string]float64{metrics.ClickDirectWrite: 5},
+		clicks:    map[string]float64{metrics.ClickWritten: 5},
 	}
 
 	got := after.delta(before)
@@ -85,7 +85,7 @@ func TestDeltaOfASeriesThatAppearedMidRunIsItsWholeValue(t *testing.T) {
 	if got.cache[metrics.CacheMiss] != 3 || got.cache[metrics.CacheNegativeStored] != 3 {
 		t.Errorf("cache delta = %v, want the whole values", got.cache)
 	}
-	if got.clicks[metrics.ClickDirectWrite] != 5 {
+	if got.clicks[metrics.ClickWritten] != 5 {
 		t.Errorf("click delta = %v, want 5", got.clicks)
 	}
 }
@@ -136,7 +136,7 @@ func TestReportReadsBackWhatTheServerCounted(t *testing.T) {
 		server: counters{
 			redirects: 100,
 			cache:     map[string]float64{metrics.CacheHit: 90, metrics.CacheMiss: 10},
-			clicks:    map[string]float64{metrics.ClickDirectWrite: 99},
+			clicks:    map[string]float64{metrics.ClickWritten: 99},
 		},
 	}
 
@@ -146,7 +146,7 @@ func TestReportReadsBackWhatTheServerCounted(t *testing.T) {
 		"302: 100",
 		"hit 90  miss 10",
 		"90.0% of 100 lookups",
-		"direct_write 99",
+		"written 99",
 		"counted 100 redirects",
 	} {
 		if !strings.Contains(got, want) {

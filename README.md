@@ -4,7 +4,7 @@
 
 A short link management and analytics platform. Supports link folders and tags, custom domains, access passwords, expiry times, UTM templates, a click analytics dashboard, and an AI assistant that answers questions about your own links.
 
-The backend is written in Go, the frontend is a Vite single-page app served as static files, click events are processed asynchronously through Kafka, and the AI assistant runs inside the API process.
+The backend is written in Go, the frontend is a Vite single-page app served as static files, and the AI assistant runs inside the API process.
 
 ## Features
 
@@ -28,16 +28,17 @@ The backend is written in Go, the frontend is a Vite single-page app served as s
 |-------|------------|
 | Backend | Go 1.26, Gin, GORM |
 | Storage | PostgreSQL 16, Redis 7 |
-| Messaging | Kafka 3.8 |
 | Frontend | Vite, React 19, React Router, TypeScript, SWR, Tailwind |
 | AI assistant | Go (Eino), DeepSeek |
 | Deployment | Docker Compose, Nginx, systemd, GitHub Actions |
 
 ## Architecture
 
-Layered as Handler -> Service -> Infra, using a modular monolith plus a standalone Kafka worker.
+Layered as Handler -> Service -> Infra, as a modular monolith.
 
-Click events are persisted asynchronously through Kafka and increment counters; when Kafka is unavailable this degrades to writing directly to the database.
+A click is recorded by a goroutine of its own, so the redirect never waits for a database write. It used to
+be published to Kafka and written by a second binary; that pipeline was never deployed (the host had no
+broker and no worker unit), so it was removed and there is now one write path.
 
 The database schema is defined by the GORM models in `internal/domain/entity` and applied by
 `cmd/migrate` (AutoMigrate). There are no SQL migration files: the structs are the single source
@@ -74,7 +75,7 @@ do not.
 
 ```bash
 go run ./cmd/migrate           # schema only; the API applies it on startup too
-KAFKA_BROKERS= go run ./cmd/server   # PostgreSQL and Redis, no broker: clicks take the direct write
+go run ./cmd/server            # PostgreSQL and Redis
 
 # in another shell
 go run ./cmd/loadgen -codes 200 -absent 2000 -requests 20000 -clients 4000 -concurrency 50
@@ -93,9 +94,8 @@ numbers are from one run: throughput reproduces within a few percent, the tail m
 Two things in that table are not about the cache:
 
 - **The two rows differ by the click write.** A 302 records a click; an absent code records nothing, because
-  there is no link to attach it to. This stack has no Kafka, so every click takes the degraded direct write -
-  an insert and a counter update in one transaction - at roughly 1,600-1,800 a second, and that is what the
-  working set is limited by. In production the API publishes to Kafka and the worker does the writing.
+  there is no link to attach it to. Every click is an insert and a counter update in one transaction, at
+  roughly 1,600-1,800 a second, and that is what the working set is limited by.
 - **Neither the cache nor the working set is the limit.** Raising the working set to 2,000 codes moved
   throughput from 1,610 to 1,776 req/s. The 90% in the second row is the first pass, in which 2,000 codes
   reach PostgreSQL once each; every request after that was a hit.
@@ -117,7 +117,7 @@ the deploy job; the deployment section of [docs/design.md](docs/design.md) expla
 ## Layout
 
 ```text
-cmd/       entry points: the API, the Kafka worker, the migration and the load generator
+cmd/       entry points: the API, the migration and the load generator
 config/    environment parsing (the single source of configuration)
 internal/  the application: domain, handler, service, infra, middleware, mq, metrics, assistant
 web/       Vite single-page app, built to static files and served by nginx

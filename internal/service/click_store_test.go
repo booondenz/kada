@@ -15,84 +15,32 @@ import (
 
 	"github.com/booondenz/kada/internal/domain"
 	"github.com/booondenz/kada/internal/metrics"
-	"github.com/booondenz/kada/internal/mq"
 )
-
-type fakePublisher struct {
-	calls  int
-	events []mq.ClickEvent
-	err    error
-}
-
-func (f *fakePublisher) PublishClick(_ context.Context, e mq.ClickEvent) error {
-	f.calls++
-	f.events = append(f.events, e)
-	return f.err
-}
 
 type fakeWriter struct {
 	calls  int
-	events []mq.ClickEvent
+	events []domain.ClickEvent
 }
 
-func (f *fakeWriter) WriteClick(_ context.Context, e mq.ClickEvent) error {
+func (f *fakeWriter) WriteClick(_ context.Context, e domain.ClickEvent) error {
 	f.calls++
 	f.events = append(f.events, e)
 	return nil
 }
 
-// panickingPublisher is a publisher that crashes instead of returning an error. It stands for every way that
-// can happen - a driver bug, a nil receiver, a library that panics on unexpected input - because the property
-// being tested belongs to the caller: whatever the publisher does, recording a click must not be able to end
-// the process.
-type panickingPublisher struct{}
-
-func (panickingPublisher) PublishClick(context.Context, mq.ClickEvent) error {
-	panic("the publisher crashed")
-}
-
-// The production failure, in one line: NewKafkaClickPublisher returns a nil *KafkaClickPublisher when no broker
-// is configured, and storing that in the mq.ClickPublisher interface makes the interface non-nil - so the
-// service's `kafka != nil` guard passed and every click called a method on a nil receiver. The panic happened
-// on the goroutine the redirect handler spawns, which Gin's recovery does not cover, so the API died on the
-// first click it served: systemd restarted it and nginx answered 502 in between. The click was lost as well,
-// because the direct-write fallback sits *after* the publish call.
-func TestLogClickSurvivesANilPublisher(t *testing.T) {
-	w := &fakeWriter{}
-	svc := &LinkService{kafka: (*mq.KafkaClickPublisher)(nil), clickWriter: w}
-
-	svc.LogClick(context.Background(), domain.ClickEvent{LinkID: 3, Kind: domain.ClickVisit})
-
-	if w.calls != 1 {
-		t.Fatalf("the click was not written directly after the publisher failed (writes=%d)", w.calls)
-	}
-}
-
-// The same property, one level more general: a publisher that panics must leave the click written and the
-// process alive, not only a nil one.
-func TestLogClickSurvivesAPanickingPublisher(t *testing.T) {
-	before := testutil.ToFloat64(metrics.ClickEvents.WithLabelValues(metrics.ClickPanicked))
-
-	w := &fakeWriter{}
-	svc := &LinkService{kafka: panickingPublisher{}, clickWriter: w}
-
-	svc.LogClick(context.Background(), domain.ClickEvent{LinkID: 3, Kind: domain.ClickVisit})
-
-	if w.calls != 1 {
-		t.Fatalf("a panic lost the click instead of falling back (writes=%d)", w.calls)
-	}
-	if got := testutil.ToFloat64(metrics.ClickEvents.WithLabelValues(metrics.ClickPanicked)) - before; got != 1 {
-		t.Errorf("the panic was not counted (moved by %v)", got)
-	}
-}
-
-// panickingWriter crashes in the store instead. There is no fallback left at that point - the row is the last
-// step - so all that is left to guarantee is that the process survives it: this test fails by dying if the
-// panic escapes, which is exactly what used to happen when a nil publisher escaped instead.
+// panickingWriter crashes in the store. There is no second route left to fall back to, so all that is left
+// to guarantee is that the process survives it: this test fails by dying if the panic escapes.
 type panickingWriter struct{}
 
-func (panickingWriter) WriteClick(context.Context, mq.ClickEvent) error {
+func (panickingWriter) WriteClick(context.Context, domain.ClickEvent) error {
 	panic("the store crashed")
+}
+
+// failingWriter is a store that says no, which is the ordinary failure - a deadlock, a dropped connection.
+type failingWriter struct{}
+
+func (failingWriter) WriteClick(context.Context, domain.ClickEvent) error {
+	return errors.New("the store is down")
 }
 
 func TestLogClickSurvivesAPanickingStore(t *testing.T) {
@@ -106,76 +54,56 @@ func TestLogClickSurvivesAPanickingStore(t *testing.T) {
 	}
 }
 
-// ========== LogClick: queued, or written directly when the queue is down ==========
-
-func TestLogClick_PublishSuccess(t *testing.T) {
-	pub := &fakePublisher{}
+// One write, with the key the store deduplicates on and the kind the handler decided. The kind cannot be
+// decided here: only the caller knows whether the client was sent to the target or served the guide page.
+func TestLogClickWritesOnceWithAKeyAndTheHandlersKind(t *testing.T) {
 	w := &fakeWriter{}
-	svc := &LinkService{kafka: pub, clickWriter: w}
-	svc.LogClick(context.Background(), domain.ClickEvent{LinkID: 1, Platform: domain.PlatformBrowser, Kind: domain.ClickVisit})
-	if pub.calls != 1 {
-		t.Fatalf("expected publisher called once, got %d", pub.calls)
-	}
-	if w.calls != 0 {
-		t.Fatalf("expected no direct write when publish succeeds, got %d", w.calls)
-	}
-}
+	svc := &LinkService{clickWriter: w}
 
-func TestLogClick_PublishErrorFallsBack(t *testing.T) {
-	pub := &fakePublisher{err: assertErr("kafka down")}
-	w := &fakeWriter{}
-	svc := &LinkService{kafka: pub, clickWriter: w}
-	svc.LogClick(context.Background(), domain.ClickEvent{LinkID: 1, Platform: domain.PlatformBrowser, Kind: domain.ClickVisit})
-	if pub.calls != 1 || w.calls != 1 {
-		t.Fatalf("expected publish 1 + fallback 1, got publish=%d write=%d", pub.calls, w.calls)
-	}
-}
+	targetID := int64(9)
+	svc.LogClick(context.Background(), domain.ClickEvent{
+		LinkID:   3,
+		Platform: domain.PlatformWechat,
+		Kind:     domain.ClickRequest,
+		TargetID: &targetID,
+	})
 
-func TestLogClick_NoKafkaDirectWrite(t *testing.T) {
-	w := &fakeWriter{}
-	svc := &LinkService{kafka: nil, clickWriter: w}
-	svc.LogClick(context.Background(), domain.ClickEvent{LinkID: 1, Platform: domain.PlatformBrowser, Kind: domain.ClickVisit})
 	if w.calls != 1 {
-		t.Fatalf("expected direct write, got %d", w.calls)
+		t.Fatalf("writes = %d, want exactly one", w.calls)
+	}
+
+	written := w.events[0]
+	if written.EventID == "" {
+		t.Error("the click was written without an idempotency key")
+	}
+	if written.CreatedAt.IsZero() {
+		t.Error("the click was written without a timestamp")
+	}
+	if written.Kind != domain.ClickRequest || written.Platform != domain.PlatformWechat {
+		t.Errorf("written kind/platform = %v/%v, want the handler's", written.Kind, written.Platform)
+	}
+	if written.TargetID == nil || *written.TargetID != targetID {
+		t.Errorf("written target = %v, want %d", written.TargetID, targetID)
 	}
 }
 
-// The fallback is the same event, not a second one. The worker deduplicates on event_id, so an event that
-// both reached Kafka and was written directly - which is what a publish that times out looks like from
-// here - is counted once rather than twice.
-func TestLogClick_FallbackKeepsTheEventID(t *testing.T) {
-	pub := &fakePublisher{err: assertErr("kafka down")}
-	w := &fakeWriter{}
-	svc := &LinkService{kafka: pub, clickWriter: w}
-	svc.LogClick(context.Background(), domain.ClickEvent{LinkID: 7, Platform: domain.PlatformBrowser, Kind: domain.ClickVisit})
+// A service without a store has nowhere to put the click. Saying so must not be a nil dereference on the
+// goroutine the redirect spawns, where a panic would end the process.
+func TestLogClickWithoutAStoreDoesNothing(t *testing.T) {
+	svc := &LinkService{}
 
-	if len(pub.events) != 1 || len(w.events) != 1 {
-		t.Fatalf("expected one publish and one write, got %d and %d", len(pub.events), len(w.events))
-	}
-	if pub.events[0].EventID == "" || pub.events[0].EventID != w.events[0].EventID {
-		t.Errorf("the fallback wrote a different event: published %q, wrote %q",
-			pub.events[0].EventID, w.events[0].EventID)
-	}
+	svc.LogClick(context.Background(), domain.ClickEvent{LinkID: 3, Kind: domain.ClickVisit})
 }
 
-// The kind is decided in the redirect handler - the only place that knows whether the client was sent to
-// the target or served the guide page - so it has to arrive at the store unchanged, by both routes.
-func TestLogClick_CarriesTheKind(t *testing.T) {
-	pub := &fakePublisher{}
-	w := &fakeWriter{}
-	event := domain.ClickEvent{LinkID: 1, Platform: domain.PlatformWechat, Kind: domain.ClickRequest}
+// A refused write is counted: a store that is failing has to be visible, or it looks like a quiet afternoon.
+func TestLogClickCountsARefusedWrite(t *testing.T) {
+	before := testutil.ToFloat64(metrics.ClickEvents.WithLabelValues(metrics.ClickWriteFailed))
 
-	svc := &LinkService{kafka: pub}
-	svc.LogClick(context.Background(), event)
+	svc := &LinkService{clickWriter: failingWriter{}}
+	svc.LogClick(context.Background(), domain.ClickEvent{LinkID: 3, Kind: domain.ClickVisit})
 
-	svc = &LinkService{kafka: nil, clickWriter: w}
-	svc.LogClick(context.Background(), event)
-
-	if len(pub.events) != 1 || pub.events[0].Kind != string(domain.ClickRequest) {
-		t.Errorf("the publisher received %+v, want one request-kind event", pub.events)
-	}
-	if len(w.events) != 1 || w.events[0].Kind != string(domain.ClickRequest) {
-		t.Errorf("the direct write received %+v, want one request-kind event", w.events)
+	if got := testutil.ToFloat64(metrics.ClickEvents.WithLabelValues(metrics.ClickWriteFailed)) - before; got != 1 {
+		t.Errorf("the refused write was not counted (moved by %v)", got)
 	}
 }
 
@@ -319,8 +247,8 @@ func TestWriteClickCountsOnlyAVisit(t *testing.T) {
 		t.Run("kind="+tt.kind, func(t *testing.T) {
 			store, recorder := newRecordingStore(t, 1)
 
-			err := store.WriteClick(context.Background(), mq.ClickEvent{
-				EventID: "e1", LinkID: 3, Kind: tt.kind, CreatedAt: time.Now(),
+			err := store.WriteClick(context.Background(), domain.ClickEvent{
+				EventID: "e1", LinkID: 3, Kind: domain.ClickKind(tt.kind), CreatedAt: time.Now(),
 			})
 			if err != nil {
 				t.Fatalf("WriteClick returned %v", err)
@@ -338,9 +266,9 @@ func TestWriteClickCountsOnlyAVisit(t *testing.T) {
 func TestWriteClickRecordsTheRowItDoesNotCount(t *testing.T) {
 	store, recorder := newRecordingStore(t, 1)
 
-	err := store.WriteClick(context.Background(), mq.ClickEvent{
-		EventID: "e1", LinkID: 3, IP: "1.2.3.4", Platform: string(domain.PlatformWechat),
-		Kind: string(domain.ClickRequest), CreatedAt: time.Now(),
+	err := store.WriteClick(context.Background(), domain.ClickEvent{
+		EventID: "e1", LinkID: 3, IP: "1.2.3.4", Platform: domain.PlatformWechat,
+		Kind: domain.ClickRequest, CreatedAt: time.Now(),
 	})
 	if err != nil {
 		t.Fatalf("WriteClick returned %v", err)
@@ -359,8 +287,8 @@ func TestWriteClickRecordsTheRowItDoesNotCount(t *testing.T) {
 func TestWriteClickDoesNotCountADuplicateEvent(t *testing.T) {
 	store, recorder := newRecordingStore(t, 0)
 
-	err := store.WriteClick(context.Background(), mq.ClickEvent{
-		EventID: "e1", LinkID: 3, Kind: string(domain.ClickVisit), CreatedAt: time.Now(),
+	err := store.WriteClick(context.Background(), domain.ClickEvent{
+		EventID: "e1", LinkID: 3, Kind: domain.ClickVisit, CreatedAt: time.Now(),
 	})
 	if err != nil {
 		t.Fatalf("WriteClick returned %v", err)
@@ -376,7 +304,7 @@ func TestWriteClickDoesNotCountADuplicateEvent(t *testing.T) {
 func TestWriteClickLabelsAnUnlabeledEventAsARequest(t *testing.T) {
 	store, recorder := newRecordingStore(t, 1)
 
-	err := store.WriteClick(context.Background(), mq.ClickEvent{EventID: "e1", LinkID: 3, CreatedAt: time.Now()})
+	err := store.WriteClick(context.Background(), domain.ClickEvent{EventID: "e1", LinkID: 3, CreatedAt: time.Now()})
 	if err != nil {
 		t.Fatalf("WriteClick returned %v", err)
 	}
@@ -394,9 +322,9 @@ func TestWriteClickLabelsAnUnlabeledEventAsARequest(t *testing.T) {
 func TestWriteClickRecordsTheActionInItsOwnColumn(t *testing.T) {
 	store, recorder := newRecordingStore(t, 1)
 
-	err := store.WriteClick(context.Background(), mq.ClickEvent{
-		EventID: "e1", LinkID: 3, Platform: string(domain.PlatformWechat),
-		Kind: string(domain.ClickAction), Action: string(domain.ActionCopyLink), CreatedAt: time.Now(),
+	err := store.WriteClick(context.Background(), domain.ClickEvent{
+		EventID: "e1", LinkID: 3, Platform: domain.PlatformWechat,
+		Kind: domain.ClickAction, Action: domain.ActionCopyLink, CreatedAt: time.Now(),
 	})
 	if err != nil {
 		t.Fatalf("WriteClick returned %v", err)
@@ -417,9 +345,9 @@ func TestWriteClickStoresNoActionAsNull(t *testing.T) {
 
 	// Every other field is set, so the action is the only value in this insert that could be an empty
 	// string, and the assertion does not have to know which position it occupies.
-	err := store.WriteClick(context.Background(), mq.ClickEvent{
-		EventID: "e1", LinkID: 3, IP: "1.2.3.4", UserAgent: "ua", Platform: string(domain.PlatformWechat),
-		Kind: string(domain.ClickVisit), Referer: "https://example.com/from", CreatedAt: time.Now(),
+	err := store.WriteClick(context.Background(), domain.ClickEvent{
+		EventID: "e1", LinkID: 3, IP: "1.2.3.4", UserAgent: "ua", Platform: domain.PlatformWechat,
+		Kind: domain.ClickVisit, Referer: "https://example.com/from", CreatedAt: time.Now(),
 	})
 	if err != nil {
 		t.Fatalf("WriteClick returned %v", err)

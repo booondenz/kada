@@ -6,16 +6,14 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/booondenz/kada/internal/domain"
-	"github.com/booondenz/kada/internal/mq"
 )
 
 // ClickWriter persists click events.
 //
-// It takes the event itself rather than its columns one at a time: that shape already exists as the
-// payload the producer and the consumer share, and a signature that grows a parameter per column is a
-// signature whose arguments can eventually be passed in the wrong order.
+// It takes the event itself rather than its columns one at a time: a signature that grows a parameter per
+// column is a signature whose arguments can eventually be passed in the wrong order.
 type ClickWriter interface {
-	WriteClick(ctx context.Context, event mq.ClickEvent) error
+	WriteClick(ctx context.Context, event domain.ClickEvent) error
 }
 
 // ClickStore is the GORM implementation of ClickWriter
@@ -28,17 +26,17 @@ func NewClickStore(db *gorm.DB) *ClickStore {
 }
 
 // WriteClick inside a transaction: insert the click log + increment the counter.
-// deduplicates by event_id: when Kafka redelivers, or the degraded direct write races the worker on the same event,
-// the second INSERT hits the unique conflict (RowsAffected=0) and click_count is not incremented again.
+// The event_id is a unique key, so a click that arrives twice - a retried request, a producer that wrote and
+// then reported failure - hits the conflict (RowsAffected=0) and click_count is not incremented again.
 //
 // Only a visit moves the counter. The row is written either way - a request from a platform prefetch is
 // worth recording, it is just not worth counting as a person - so links.click_count and the analytics
 // endpoints agree on what a click is, rather than one of them filtering afterwards.
-func (s *ClickStore) WriteClick(ctx context.Context, event mq.ClickEvent) error {
-	kind := domain.ClickKind(event.Kind)
+func (s *ClickStore) WriteClick(ctx context.Context, event domain.ClickEvent) error {
+	kind := event.Kind
 	if kind == "" {
-		// An event from a producer older than this column carries no kind. It is a request and nothing
-		// more: not being able to say it was a person is the one answer that must never count.
+		// An event built before the kind was decided carries none. It is a request and nothing more: not
+		// being able to say it was a person is the one answer that must never count.
 		kind = domain.ClickRequest
 	}
 
@@ -47,7 +45,7 @@ func (s *ClickStore) WriteClick(ctx context.Context, event mq.ClickEvent) error 
 			INSERT INTO click_logs (link_id, target_id, ip, user_agent, platform, kind, action, referer, created_at, event_id)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT (event_id) DO NOTHING
-		`, event.LinkID, event.TargetID, event.IP, event.UserAgent, event.Platform, string(kind), nullable(event.Action), event.Referer, event.CreatedAt, event.EventID)
+		`, event.LinkID, event.TargetID, event.IP, event.UserAgent, string(event.Platform), string(kind), nullable(string(event.Action)), event.Referer, event.CreatedAt, event.EventID)
 		if res.Error != nil {
 			return res.Error
 		}

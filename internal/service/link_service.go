@@ -21,7 +21,6 @@ import (
 	"github.com/booondenz/kada/internal/domain/entity"
 	"github.com/booondenz/kada/internal/infra/urlcheck"
 	"github.com/booondenz/kada/internal/metrics"
-	"github.com/booondenz/kada/internal/mq"
 )
 
 // shortCodePattern allows only letters, digits, underscores and hyphens in a short code
@@ -41,9 +40,8 @@ type LinkService struct {
 	db          *gorm.DB
 	baseURL     string
 	cache       LinkCache
-	kafka       mq.ClickPublisher // Kafka publisher; nil means disabled
-	clickWriter ClickWriter       // direct write (used by the degraded fallback)
-	blocker     TargetBlocker     // nil means nothing is blocked
+	clickWriter ClickWriter   // where a click is recorded
+	blocker     TargetBlocker // nil means nothing is blocked
 
 	// quota holds today's dispatch count per target, for the targets that cap theirs.
 	quota dispatchQuota
@@ -53,8 +51,8 @@ type LinkService struct {
 	loads singleflight.Group
 }
 
-func NewLinkService(db *gorm.DB, baseURL string, cache LinkCache, kafka mq.ClickPublisher, clickWriter ClickWriter, blocker TargetBlocker) *LinkService {
-	return &LinkService{db: db, baseURL: baseURL, cache: cache, kafka: kafka, clickWriter: clickWriter, blocker: blocker}
+func NewLinkService(db *gorm.DB, baseURL string, cache LinkCache, clickWriter ClickWriter, blocker TargetBlocker) *LinkService {
+	return &LinkService{db: db, baseURL: baseURL, cache: cache, clickWriter: clickWriter, blocker: blocker}
 }
 
 // Blocked reports whether the target is in a blocked category, through the list the create and update paths
@@ -755,7 +753,7 @@ func (s *LinkService) ExportCSV(ctx context.Context, userID int64) (string, erro
 	return sb.String(), nil
 }
 
-// LogClick publishes a click event to Kafka; falls back to a direct write when Kafka is unavailable so clicks are not lost.
+// LogClick records a click.
 //
 // The kind is carried rather than decided here: only the caller knows whether the client was served the
 // guide page (and so may be a prefetch that never confirms) or was sent straight to the target.
@@ -763,7 +761,7 @@ func (s *LinkService) LogClick(ctx context.Context, e domain.ClickEvent) {
 	// Nothing about recording a click may be able to stop the process. This runs on the goroutine the redirect
 	// handler spawns for it - the handler returns its answer without waiting - and Gin's recovery only covers
 	// the goroutine that serves the request, so a panic anywhere below this line would end the API instead of
-	// failing one click. See publishClick for the case that actually happened.
+	// failing one click.
 	defer func() {
 		if r := recover(); r != nil {
 			metrics.ClickEvent(metrics.ClickPanicked)
@@ -771,60 +769,21 @@ func (s *LinkService) LogClick(ctx context.Context, e domain.ClickEvent) {
 		}
 	}()
 
-	// generate an idempotency key: used to deduplicate on Kafka redelivery or degraded direct write
-	event := mq.ClickEvent{
-		EventID:   newEventID(),
-		LinkID:    e.LinkID,
-		IP:        e.IP,
-		UserAgent: e.UserAgent,
-		Platform:  string(e.Platform),
-		Kind:      string(e.Kind),
-		Action:    string(e.Action),
-		Referer:   e.Referer,
-		TargetID:  e.TargetID,
-		CreatedAt: time.Now(),
+	// The key and the time are stamped here, at the moment the click is recorded: the store deduplicates on
+	// the key, and no caller has a reason to think about one.
+	e.EventID = newEventID()
+	e.CreatedAt = time.Now()
+
+	if s.clickWriter == nil {
+		return
 	}
 
-	if s.kafka != nil {
-		if err := s.publishClick(ctx, event); err != nil {
-			// Kafka failed -> fall back to direct write
-			metrics.ClickEvent(metrics.ClickPublishFailed)
-			log.Printf("kafka publish failed, falling back to direct write: %v", err)
-		} else {
-			metrics.ClickEvent(metrics.ClickPublished)
-			return
-		}
+	if err := s.clickWriter.WriteClick(ctx, e); err != nil {
+		metrics.ClickEvent(metrics.ClickWriteFailed)
+		log.Printf("click write failed: %v", err)
+		return
 	}
-	if s.clickWriter != nil {
-		if err := s.clickWriter.WriteClick(ctx, event); err != nil {
-			metrics.ClickEvent(metrics.ClickDirectWriteFailed)
-			log.Printf("click direct write failed: %v", err)
-		} else {
-			metrics.ClickEvent(metrics.ClickDirectWrite)
-		}
-	}
-}
-
-// publishClick hands the event to the publisher, turning a panic into an error.
-//
-// Nothing about recording a click may be able to stop the process. This runs on the goroutine the redirect
-// handler spawns for the click - the handler returns a 302 without waiting for it - and Gin's recovery only
-// covers the goroutine that serves the request, so a panic here ends the API. That is not a theoretical
-// failure: a nil publisher inside a non-nil interface panicked on every click on a host with Kafka disabled,
-// which killed the process, restarted it under systemd, and answered 502 to whatever arrived in between.
-//
-// Recovering rather than letting it go is what also keeps the click: the error returns to the caller, which
-// already falls back to writing the row directly.
-func (s *LinkService) publishClick(ctx context.Context, event mq.ClickEvent) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			metrics.ClickEvent(metrics.ClickPanicked)
-			log.Printf("publishing a click panicked, falling back to a direct write: %v\n%s", r, debug.Stack())
-			err = fmt.Errorf("the click publisher panicked: %v", r)
-		}
-	}()
-
-	return s.kafka.PublishClick(ctx, event)
+	metrics.ClickEvent(metrics.ClickWritten)
 }
 
 // BuildShortURL builds the full short URL

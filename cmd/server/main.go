@@ -31,7 +31,6 @@ import (
 	"github.com/booondenz/kada/internal/infra/blocklist"
 	"github.com/booondenz/kada/internal/infra/sms"
 	"github.com/booondenz/kada/internal/middleware"
-	"github.com/booondenz/kada/internal/mq"
 	"github.com/booondenz/kada/internal/service"
 )
 
@@ -117,20 +116,6 @@ func main() {
 		cacheSvc = service.NewCacheService(redisClient)
 	}
 
-	// Kafka click event publisher (returns nil when there is no broker = disabled).
-	//
-	// The variable is the interface, for the same reason as the cache above - and this one is not a
-	// hypothetical. A nil *KafkaClickPublisher stored in a non-nil interface passed the `kafka != nil` guard
-	// in the service, so every click called a method on a nil receiver, panicked on the goroutine the
-	// redirect handler spawns for it (which Gin's recovery does not cover), and took the whole API down:
-	// systemd restarted it, and nginx answered 502 for whatever arrived in the seconds between. It also meant
-	// the direct-write fallback below never ran on a host without Kafka - the clicks were lost, not degraded.
-	var kafkaPub mq.ClickPublisher
-	if pub := mq.NewKafkaClickPublisher(cfg.Brokers(), cfg.KafkaTopic); pub != nil {
-		defer pub.Close()
-		kafkaPub = pub
-	}
-
 	// Initialize the service layer
 	authSvc := service.NewAuthService(db, cfg.JWTSecret, cfg.JWTExpires, smsSender)
 
@@ -145,7 +130,7 @@ func main() {
 	}
 	go blockList.Run(context.Background(), 30*time.Second)
 
-	linkSvc := service.NewLinkService(db, cfg.BaseURL, cacheSvc, kafkaPub, service.NewClickStore(db), blockList)
+	linkSvc := service.NewLinkService(db, cfg.BaseURL, cacheSvc, service.NewClickStore(db), blockList)
 	domainSvc := service.NewDomainService(db)
 	folderSvc := service.NewFolderService(db)
 	tagSvc := service.NewTagService(db)

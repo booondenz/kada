@@ -51,14 +51,11 @@ const (
 
 // What happened to a click on its way to the store.
 //
-// direct_write is the difference between "the queue is doing its job" and "the queue is down and nothing
-// else says so": the API writes the row itself when publishing fails, so without this counter an outage of
-// the click pipeline looks exactly like a quiet afternoon.
+// There is one route now - the row is written on a goroutine the redirect handler spawns - so these three
+// are the whole story: written, refused, or crashed.
 const (
-	ClickPublished         = "published"
-	ClickPublishFailed     = "publish_failed"
-	ClickDirectWrite       = "direct_write"
-	ClickDirectWriteFailed = "direct_write_failed"
+	ClickWritten     = "written"
+	ClickWriteFailed = "write_failed"
 	// ClickPanicked is the click pipeline crashing rather than returning an error. It should never appear:
 	// recording a click runs on its own goroutine, where a panic would end the process instead of failing a
 	// request - so the counter existing at all is a bug report.

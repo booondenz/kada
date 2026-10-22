@@ -39,21 +39,19 @@ allowed to lag by a second. The architecture is split along that line.
 
 ```text
 Browser → nginx :80 ─┬→ /api/, /r/ → backend :8080 ─┬→ PostgreSQL (source of truth)
-                     │                              ├→ Redis (cache + rate limit)
-                     └→ other → frontend :3000      └→ Kafka (clicks) → worker
+                     │                              └→ Redis (cache + rate limit)
+                     └→ other → frontend :3000
 ```
 
 Components:
 
 | Component | Process | Responsibility |
 |---|---|---|
-| `cmd/server` | `api` | HTTP API, short-link redirection, publishes click events |
-| `cmd/worker` | `kafka-worker` | Consumes the `clicks` topic and persists click rows |
+| `cmd/server` | `api` | HTTP API, short-link redirection, click recording |
 | `cmd/migrate` | one-off | Applies the database schema (GORM AutoMigrate) |
 | `web/` | `web` | Vite single-page app, served as static files; talks to the API over HTTP only |
 | `postgres` | `postgres` | Source of truth; also the analytics store |
 | `redis` | `redis` | Short-code cache and rate-limit counters |
-| `kafka` | `kafka` | Durable buffer between request handling and click persistence |
 | `nginx` | `nginx` | Single entry point, routes `/api/` and `/r/` to the API |
 
 There is exactly one writer of the database schema (see
@@ -64,7 +62,6 @@ The frontend never touches PostgreSQL or Redis.
 
 ```text
 cmd/server/          API entry point: wiring, routes, graceful shutdown
-cmd/worker/          Kafka consumer entry point
 cmd/migrate/         schema application
 config/              environment parsing (single source of configuration)
 internal/
@@ -74,7 +71,6 @@ internal/
   service/           business logic and persistence
   infra/             database, redis, SMS, URL safety, link preview, user-agent
   middleware/        JWT auth, rate limiting, real client IP
-  mq/                Kafka publisher and event payloads
 db/                  (removed) schema used to live here as SQL migrations
 web/
   src/router.tsx     the route table: sign-in, privacy, dashboard/**, r/[code]
@@ -138,7 +134,7 @@ Rules that keep this honest:
 ### 4.2 Request path
 
 `cmd/server/main.go` is the only place where the object graph is built. It creates the database
-handle, Redis client, SMS sender, cache service, Kafka publisher, then every service, then every
+handle, Redis client, SMS sender, cache service, then every service, then every
 handler, and finally registers routes:
 
 ```go
@@ -591,35 +587,32 @@ in for accounts that already exist.
 ```text
 GET /r/:code
   → resolve the link (cache, then database)
-  → build a click event with a random event_id and a kind
-  → publish to Kafka
-      publish fails → write the click row directly (degraded mode, same event_id)
-  → redirect the visitor, or serve the guide page (WeChat, QQ, Xiaohongshu)
+  → answer: 302 to the destination, or the guide page (WeChat, QQ, Xiaohongshu)
+  → a goroutine of its own records the click
 
-worker: FetchMessage → WriteClick → CommitMessages
+WriteClick, in one transaction:
   INSERT click_logs ... ON CONFLICT (event_id) DO NOTHING
       inserted, kind = visit → UPDATE links SET click_count = click_count + 1
       inserted, any other kind → commit only (recorded, not counted)
       conflict → commit only (the click was already counted)
 ```
 
-Kafka is at-least-once, so `event_id` is what makes counting exact. The consumer commits offsets
-only after a successful write, and a poison message (invalid JSON, foreign-key violation) is dropped
-after three attempts rather than blocking the single-partition consumer group forever.
+Recording happens on a goroutine of its own: the redirect handler must not wait for a database round trip
+before answering, so it spawns the work and returns. That has a consequence the code has to be written
+around - Gin's recovery covers only the goroutine that serves the request, so **anything that panics here
+ends the process**. `LogClick` recovers and counts the panic; the click is lost, the API is not.
 
-Recording a click happens on a goroutine of its own: the redirect handler must not wait for Kafka before
-answering, so it spawns the work and returns. That has a consequence the code has to be written around -
-Gin's recovery covers only the goroutine that serves the request, so **anything that panics here ends the
-process**. The publish call is therefore wrapped so that a panic becomes an error and lands in the same
-direct-write fallback as a returned error.
+`event_id` is a unique key and the insert is `ON CONFLICT DO NOTHING`, so a click that arrives twice - a
+retried write, a request that timed out and was answered - is counted once. It survives from the phase when
+the row was written by a queue consumer rather than here, and it costs one column to keep.
 
-This is not defensive programming for its own sake. With no broker configured, `NewKafkaClickPublisher`
-returns a nil `*KafkaClickPublisher`, and the API used to store that in the `mq.ClickPublisher` interface -
-where it is no longer nil, so the service's own `kafka != nil` guard passed and every click called a method
-on a nil receiver. The API died on the first click it served, systemd restarted it, nginx answered 502 for
-whatever arrived in the seconds between, and the click was lost rather than written directly. Two things
-prevent it now: `cmd/server` builds the publisher into an interface variable that stays nil when Kafka is
-off, and `PublishClick` reports an error instead of dereferencing itself.
+**Why there is no queue any more.** The pipeline used to publish to Kafka and have `cmd/worker` write the
+rows, on the argument that the redirect is hot and the click is cold. That argument was never tested by
+reality: the deploy never set `KAFKA_BROKERS` and no worker unit existed, so production ran the direct write
+the whole time, and the broker was a second write path, a second binary and five metrics that only the
+compose stack could exercise. It was removed (see [7.5](#75-what-the-numbers-turned-out-to-be) for what the
+numbers actually showed). The comment that used to explain how a nil publisher took the API down is gone with
+the interface it was about.
 
 #### What counts as a visit
 
@@ -707,10 +700,15 @@ because the limiter keys on the client address: without that, a run from one mac
 The first measurement answered a question the code could not. At 50 concurrent clients the working set ran
 at 1,610 requests a second and the stream of absent codes at 5,105. The difference is the click write: an
 absent code records nothing, because there is no link to attach the click to, so that path is Redis and
-HTTP; a 302 runs the publisher, and in a stack without Kafka that is the degraded direct write, two
-statements in one transaction per click. Raising the working set from 200 to 2,000 codes moved throughput
-to 1,776, which rules the cache and the size of the working set out as the constraint and leaves the write
-volume - the thing Kafka exists to move off the request path.
+HTTP; a 302 runs two statements in one transaction per click. Raising the working set from 200 to 2,000
+codes moved throughput to 1,776, which rules the cache and the size of the working set out as the
+constraint and leaves the write volume as the ceiling - about 1,600-1,800 transactions a second on the
+machine this was measured on.
+
+That number is also the argument against the queue that used to sit here. A broker moves the write off the
+request path, and 1,700 clicks a second is not a volume this product has ever seen; what it cost was a
+second write path, a second binary and a broker in the compose stack. It was removed in favour of the
+direct write, which is what the measurement above was actually made against.
 
 ### 7.6 A blocked target is refused, and the refusal is not cached
 
@@ -924,8 +922,7 @@ existing `/api/*` routes. Four consequences decide the shape of that:
 | `FRONTEND_URL` | `http://localhost:3000` | CORS and redirects |
 | `SMS_ACCESS_KEY_ID`, `SMS_ACCESS_KEY_SECRET` | empty | Alibaba Cloud credentials; empty disables real sending (and, in production, sign-in) |
 | `SMS_SIGN_NAME`, `SMS_TEMPLATE_CODE` | empty | The system-granted signature and template from the PNVS console; both are required, see below |
-| `KAFKA_BROKERS` | empty | Comma-separated brokers; empty disables Kafka (clicks are written directly) |
-| `KAFKA_TOPIC` | `clicks` | Click event topic |
+| `ADMIN_PHONES` | empty | Comma-separated numbers allowed to stop and restore links; empty refuses everybody |
 | `VITE_API_URL` | `""` (same origin) | API base for the browser, fixed at build time |
 | `DEEPSEEK_API_KEY` | empty | The assistant's chat model key (DeepSeek, OpenAI-compatible API) |
 | `AI_CHAT_MODEL`, `DEEPSEEK_BASE_URL`, `AI_MAX_TOKENS` | `deepseek-flash`, `https://api.deepseek.com`, `8192` | Optional overrides for the three values above |
@@ -1042,12 +1039,12 @@ screenshot to end.
 
 Three supported shapes:
 
-1. **Docker Compose** (`docker compose up -d`): nginx, API, worker, web, PostgreSQL, Redis and
-   Kafka on one host. Suitable for a single server or local development.
-2. **systemd + released binaries** (`deploy/`): the API and worker run as native processes, with
-   PostgreSQL, Redis and Kafka provided separately. This is what the GitHub Actions deploy job uses:
-   it builds the binaries, applies the schema with `bin/migrate`, restarts `kada-api`, and verifies
-   the health endpoint, rolling back to the previous binary if the service does not come up.
+1. **Docker Compose** (`docker compose up -d`): nginx, API, web, PostgreSQL and Redis on one host.
+   Suitable for a single server or local development.
+2. **systemd + released binaries** (`deploy/`): the API runs as a native process, with PostgreSQL and
+   Redis provided separately. This is what the GitHub Actions deploy job uses: it builds the binary,
+   applies the schema with `bin/migrate`, restarts `kada-api`, and verifies the health endpoint, rolling
+   back to the previous binary if the service does not come up.
 3. **The assistant inside the API process.** It used to be a Python container of its own with its own
    database, its own env file and its own deploy script; it is a package of the Go binary now
    (`internal/assistant`), which is why none of those exist any more. Its product documentation is
@@ -1244,8 +1241,11 @@ These are deliberate trade-offs, not oversights:
 
 - **Analytics are computed on demand.** `click_logs` is queried directly; there is no rollup table.
   Acceptable at the current volume, and the obvious first thing to change if the tables grow.
-- **Kafka has one partition.** Click ordering is preserved and the throughput ceiling is a single
-  consumer; a single-partition consumer group is also what makes the poison-message logic simple.
+- **The click write is synchronous inside its goroutine.** Each click is two statements in one
+  transaction on a goroutine of its own, which is what caps the redirect path at about 1,600-1,800 a
+  second on the machine the baseline was taken on. A queue was built for that ceiling and removed when it
+  turned out to be deployed nowhere (see [7.3](#73-recording-a-click)); the next version of this is
+  batching the writes, not a broker.
 - **AutoMigrate cannot express every future change.** Renames, type narrowing and data backfills need
   a hand-written statement; there is no down-migration path.
 - **No background job scheduler.** Expiry is evaluated at read time rather than by a sweeper.
