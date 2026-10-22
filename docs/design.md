@@ -653,6 +653,12 @@ Neither the action endpoint nor the visit confirmation stores a referer. Both ar
 this backend served, so the `Referer` header on them is our own URL: storing it would put our own domain at
 the top of every referrer report. Where a visitor came from is recorded on the request row instead.
 
+Nothing on the guide page navigates by itself. It exists because the in-app browser cannot follow the link,
+so an automatic attempt can only land on that browser's blocked-link screen - and it did, two seconds in,
+taking the instructions with it. The page now stays until the visitor taps something: the deeplink button, the
+copy button, or the QR code. The same rule removed the 800ms fallback inside the deeplink attempt, which
+navigated before the failure was even visible.
+
 The column was added with a default of `visit` because of the rows that already existed: they were
 recorded before it did, and they are already counted in `click_count` and in every chart, so `visit` is
 the value that leaves that history alone.
@@ -797,10 +803,12 @@ window, so it says when there is room again instead of "later". A failure to rea
 create: the ceiling exists to stop a script, and a database that cannot answer a count would refuse the
 insert a moment later anyway - turning one bad query into "nobody can make a link" is the worse failure.
 
-`auth/guest` also has a per-address ceiling of its own, ten a minute, and it is **namespaced in the rate
-limiter's key** (`guest:<ip>`). That is not cosmetic: every limiter counts into the same `ratelimit:<ip>`
-window, so a limit attached to one route is really a limit on all of them, and an un-namespaced guest bucket
-would have shared its counter with every other request the address made.
+`auth/guest` also has a per-address ceiling of its own, ten a minute.
+
+Every limiter counts in a key of its own, `ratelimit:<name>:<ip>`. That is not cosmetic: they used to share
+`ratelimit:<ip>`, so the strictest limit - twenty a minute on the auth routes - was really a limit on every
+request the address made, and a visitor who read the dashboard for a minute could not then sign in. The name
+in the key is the whole fix.
 
 ### 7.9 A link can have a pool of destinations
 
@@ -900,10 +908,11 @@ until the client reconnects. Availability of the product is ranked above strictn
 
 ### 8.3 Rate limiting
 
-Sliding-window counters in Redis, in four tiers: a global limit for normal API traffic, a strict limit for
-auth endpoints, a higher-throughput limit for redirection, and a tighter one for the guide page's action
-reports. The client IP comes from `X-Real-IP`, which nginx rewrites. `X-Forwarded-For` is not trusted,
-because a client can forge it.
+Sliding-window counters in Redis, in five tiers: a global limit for normal API traffic, a strict limit for
+auth endpoints, a higher-throughput limit for redirection, a tighter one for the guide page's action reports,
+and a tighter one still for creating an account. Each tier has a key of its own (`ratelimit:<name>:<ip>`);
+they used to share one, which made the strictest tier a limit on all traffic from that address. The client IP
+comes from `X-Real-IP`, which nginx rewrites. `X-Forwarded-For` is not trusted, because a client can forge it.
 
 The action tier is the only one mounted on a single route rather than on a group, and its ceiling is the
 lower one because nothing a visitor sees depends on those reports: they are recorded, never counted, so a

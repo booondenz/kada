@@ -252,6 +252,32 @@ func TestRedirect_UnsafeSchemeBlocked(t *testing.T) {
 
 // A link created before its host was blocked has to stop being served, which is why the list is asked on
 // every request instead of being decided once and cached with the link.
+// ========== The guide page does not redirect itself ==========
+
+// The page is served because the in-app browser cannot follow the link, so nothing on it may navigate on its
+// own: an automatic attempt lands on the platform's blocked-link screen and takes the instructions with it.
+// `tryOpenLink` survives exactly twice - its definition and the button that calls it.
+func TestRedirect_GuidePageWaitsForTheVisitor(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	h := NewHandler(&mockLinkService{})
+	r := gin.New()
+	r.GET("/r/:code", h.Redirect)
+
+	req := httptest.NewRequest("GET", "/r/abc123", nil)
+	req.Header.Set("User-Agent", wechatUA)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if got := strings.Count(body, "tryOpenLink"); got != 2 {
+		t.Errorf("tryOpenLink appears %d times, want 2 (the definition and the button)", got)
+	}
+	if strings.Contains(body, "window.location.href = targetURL;\n            }, 800)") {
+		t.Error("the deeplink fallback still navigates on its own")
+	}
+}
+
 func TestRedirect_BlockedTargetIsNotServed(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

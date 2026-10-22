@@ -696,10 +696,12 @@ const guidePageHTML = `<!DOCTYPE html>
                 setTimeout(function() { document.body.removeChild(iframe); }, 2000);
             } catch(e) {}
 
-            // If we are still on this page after the timeout, the launch failed; fall back to a direct redirect
+            // If we are still on this page, the launch failed. Nothing navigates on its own from here: a
+            // fallback redirect lands on whatever the in-app browser does with a link it blocks, and it
+            // does that before the visitor has read the options below.
             setTimeout(function() {
                 if (Date.now() - startTime > 2500) return;
-                window.location.href = targetURL;
+                showToast('If nothing opened, use the options below');
             }, 800);
 
             showToast('Trying to open browser...');
@@ -786,10 +788,9 @@ const guidePageHTML = `<!DOCTYPE html>
         // when the navigation below takes the page away.
         fetch('/r/' + code + '/visit', { method: 'POST', keepalive: true }).catch(function(){});
 
-        // Automatically try to open the link after the page loads
-        setTimeout(function() {
-            tryOpenLink();
-        }, 2000);
+        // Nothing opens the link on its own. This page is served because the in-app browser cannot follow
+        // the link, so an automatic navigation can only take the visitor away from the instructions that
+        // are the reason the page exists - which is what it used to do, two seconds in.
     </script>
 </body>
 </html>`
