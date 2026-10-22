@@ -273,6 +273,7 @@ users ──┬── links ──┬── click_logs
 
 sms_codes       (standalone, keyed by phone)
 login_captchas  (standalone, keyed by id)
+blocked_hosts   (standalone, keyed by host)
 ```
 
 | Table | Purpose | Notable columns |
@@ -286,6 +287,7 @@ login_captchas  (standalone, keyed by id)
 | `api_tokens` | Programmatic access | `token_hash` (unique); the raw token is shown once |
 | `sms_codes` | Pending SMS logins | `code_hash` (sha256), `ip` (per-IP quotas), `attempts`, `expires_at`; the plaintext code is never stored |
 | `login_captchas` | Pending graphical challenges | `code_hash` (sha256 of the upper-cased answer), `attempts`, `expires_at` |
+| `blocked_hosts` | Targets that are not served | `host` (unique; matched by suffix, so one row covers every subdomain), `category` (why), `note` |
 
 Design rules:
 
@@ -301,6 +303,9 @@ Design rules:
 - **A removed feature is removed from the database too.** AutoMigrate only adds, so `schema.ReconcileLegacyTables`
   drops the tables of features the models no longer declare (`workspaces` is the first), and the column that
   held the foreign key to one is dropped by `schema.ReconcileLegacyColumns` before it.
+- **A target can be refused after the link exists.** The blocked list is data rather than a constant, and
+  the redirect asks it on every request rather than caching the answer with the link, so a row added today
+  stops a link created last year (see [7.6](#76-a-blocked-target-is-refused-and-the-refusal-is-not-cached)).
 - **Timestamps are UTC** (`timestamptz`); the frontend formats for display.
 
 ## 6. Frontend
@@ -722,6 +727,40 @@ HTTP; a 302 runs the publisher, and in a stack without Kafka that is the degrade
 statements in one transaction per click. Raising the working set from 200 to 2,000 codes moved throughput
 to 1,776, which rules the cache and the size of the working set out as the constraint and leaves the write
 volume - the thing Kafka exists to move off the request path.
+
+### 7.6 A blocked target is refused, and the refusal is not cached
+
+A short link is a promise that the URL behind it is safe to open, and that URL is chosen by whoever created
+the link. The categories that break the promise - 色情, 赌博, 毒品, 诈骗, 钓鱼 - are not something a code
+change can recognise, so they live in `blocked_hosts`: a table an operator edits, with the category that
+made the row. Matching is a suffix match on the host, so one row for `example.com` covers every subdomain a
+campaign mints against it.
+
+The list is read into memory (an `atomic.Pointer` swapped whole, so a request sees one list or the next and
+never a half-built map) and refreshed every 30 seconds. That matters because the redirect path is the hot
+path and cannot afford a query per request - but it also decides *where* the question is asked. It is asked
+on every redirect, not folded into the cached link: a link cached while its host was allowed must stop being
+served the moment the host is blocked, and a decision cached with the link would keep serving it. The same
+question is asked on `Create` and `Update`, before a short code is allocated, and in `VerifyPassword`, because
+a correct password is not permission to reach a blocked target.
+
+The answer is a `403` with the category named, not a `404`. The link exists and the visitor did reach it, and
+"not found" would leave whoever reported it unable to tell a takedown from a mistyped code. A false positive
+is a complaint that has to be argued with, and "blocked" alone gives nobody anything to argue about.
+
+Private and reserved addresses are a different rule in the same place: `urlcheck.IsSafeTarget` refuses a
+target that is loopback, RFC 1918, link-local or one of the other reserved ranges, because a short link
+aimed at `192.168.1.1` asks the *visitor's* browser - not ours - to open their router or an internal panel.
+The ranges are shared with the preview fetcher, which also resolves the host before dialling; the create
+path does not resolve, because a DNS lookup that can fail, be slow or answer differently later has no place
+in the path that allocates a short code.
+
+Adding a row is an insert, and needs no deploy:
+
+```sql
+INSERT INTO blocked_hosts (host, category, note, created_at)
+VALUES ('casino.example', 'gambling', 'reported 2026-10-22', now());
+```
 
 ## 8. Cross-cutting decisions
 

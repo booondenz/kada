@@ -1,6 +1,7 @@
 package link
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -44,6 +45,13 @@ func (h *Handler) Create(c *gin.Context) {
 
 	link, err := h.svc.Create(c.Request.Context(), middleware.GetUserID(c), req)
 	if err != nil {
+		// A blocked target is the caller's fault, not a server failure: answering 500 would tell the
+		// frontend to retry the one request that can never succeed.
+		var blocked *domain.BlockedTargetError
+		if errors.As(err, &blocked) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -107,6 +115,13 @@ func (h *Handler) Update(c *gin.Context) {
 
 	link, err := h.svc.Update(c.Request.Context(), id, middleware.GetUserID(c), req)
 	if err != nil {
+		// Pointing an existing link at a blocked host is refused the same way as creating one, and it is
+		// not a 404: the link was found and the request was understood.
+		var blocked *domain.BlockedTargetError
+		if errors.As(err, &blocked) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}

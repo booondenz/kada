@@ -228,6 +228,24 @@ type Domain struct {
 	User *User `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
+// BlockedHost is one host whose links are not served, and why.
+//
+// It is a table rather than a constant in the code so a host can be refused without a deploy, and so the
+// reason survives as a row instead of in a changelog nobody reads at 3am. Matching is a suffix match: a row
+// for example.com refuses example.com and every subdomain of it, which is what a campaign that keeps
+// minting subdomains requires.
+//
+// Nothing references this table by foreign key: the list is read into memory and the pointer swapped,
+// because the redirect path asks the question on every request and cannot afford a query.
+type BlockedHost struct {
+	ID   int64  `gorm:"primaryKey" json:"id"`
+	Host string `gorm:"type:varchar(253);not null;uniqueIndex:idx_blocked_hosts_host" json:"host"`
+	// Category is which rule the host broke: porn, gambling, drugs, fraud, phishing, malware, or custom.
+	Category  string    `gorm:"type:varchar(32);not null" json:"category"`
+	Note      string    `gorm:"type:text" json:"note"`
+	CreatedAt time.Time `gorm:"index" json:"created_at"`
+}
+
 // UTMTemplate is a reusable set of UTM parameters.
 type UTMTemplate struct {
 	ID          int64     `gorm:"primaryKey" json:"id"`
@@ -298,6 +316,7 @@ func Models() []any {
 		&LoginCaptcha{},
 		&LoginAttempt{},
 		&Domain{},
+		&BlockedHost{},
 		&UTMTemplate{},
 		&APIToken{},
 		&AIConversation{},

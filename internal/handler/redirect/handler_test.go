@@ -22,6 +22,7 @@ type mockLinkService struct {
 	checkPassword func(ctx context.Context, code, password string) (bool, *domain.LinkInfo, error)
 	logClick      func(ctx context.Context, event domain.ClickEvent)
 	buildShortURL func(domain, code string) string
+	blocked       func(targetURL string) (string, bool)
 }
 
 func (m *mockLinkService) GetByCode(ctx context.Context, code string) (*domain.LinkInfo, error) {
@@ -57,6 +58,13 @@ func (m *mockLinkService) BuildShortURL(domain, code string) string {
 		return m.buildShortURL(domain, code)
 	}
 	return "https://" + domain + "/r/" + code
+}
+
+func (m *mockLinkService) Blocked(targetURL string) (string, bool) {
+	if m.blocked != nil {
+		return m.blocked(targetURL)
+	}
+	return "", false
 }
 
 // The User-Agents these tests use. The WeChat one is the interesting case: it is what the in-app browser
@@ -229,6 +237,87 @@ func TestRedirect_UnsafeSchemeBlocked(t *testing.T) {
 	}
 	if body := w.Body.String(); !strings.Contains(body, "not supported") && !strings.Contains(body, "Link unavailable") {
 		t.Errorf("expected blocked page, got: %s", body)
+	}
+}
+
+// ========== Blocked targets ==========
+
+// A link created before its host was blocked has to stop being served, which is why the list is asked on
+// every request instead of being decided once and cached with the link.
+func TestRedirect_BlockedTargetIsNotServed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := &mockLinkService{
+		blocked: func(string) (string, bool) { return "gambling", true },
+	}
+	h := NewHandler(svc)
+
+	r := gin.New()
+	r.GET("/r/:code", h.Redirect)
+
+	req := httptest.NewRequest("GET", "/r/abc123", nil)
+	req.Header.Set("User-Agent", browserUA)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for a blocked target, got %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "" {
+		t.Errorf("a blocked target must not redirect, got Location %q", loc)
+	}
+	if body := w.Body.String(); !strings.Contains(body, "Link stopped") || !strings.Contains(body, "gambling") {
+		t.Errorf("expected the stopped page naming the category, got: %s", body)
+	}
+}
+
+// The check is on the target, so a guide page - the branch that would otherwise show the target's host and
+// a button that opens it - must not be served either.
+func TestRedirect_BlockedTargetIsNotServedAsAGuidePage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := &mockLinkService{
+		blocked: func(string) (string, bool) { return "phishing", true },
+	}
+	h := NewHandler(svc)
+
+	r := gin.New()
+	r.GET("/r/:code", h.Redirect)
+
+	req := httptest.NewRequest("GET", "/r/abc123", nil)
+	req.Header.Set("User-Agent", wechatUA)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 inside the WeChat browser too, got %d", w.Code)
+	}
+	if body := w.Body.String(); strings.Contains(body, "example.com") {
+		t.Error("the guide page leaked the blocked target's host")
+	}
+}
+
+func TestVerifyPassword_BlockedTargetIsNotServed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := &mockLinkService{
+		checkPassword: func(ctx context.Context, code, password string) (bool, *domain.LinkInfo, error) {
+			return true, &domain.LinkInfo{ID: 1, OriginalURL: "https://evil.example/"}, nil
+		},
+		blocked: func(string) (string, bool) { return "drugs", true },
+	}
+	h := NewHandler(svc)
+
+	r := gin.New()
+	r.POST("/r/:code/verify-password", h.VerifyPassword)
+
+	req := httptest.NewRequest("POST", "/r/abc123/verify-password", strings.NewReader("password=x"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("a correct password is not permission to reach a blocked target: got %d", w.Code)
 	}
 }
 

@@ -27,6 +27,10 @@ const (
 	OutcomePasswordPage = "password_page"
 	OutcomeNotFound     = "not_found"
 	OutcomeUnsafeTarget = "unsafe_target"
+	// OutcomeBlockedTarget is a target on the blocked list. It is counted apart from unsafe_target because
+	// the two call for different reactions: an unsafe scheme is a bug or an old row, while a blocked
+	// target is a decision somebody made and may have to defend.
+	OutcomeBlockedTarget = "blocked_target"
 )
 
 // What the short-code cache did with a lookup.

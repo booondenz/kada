@@ -27,26 +27,53 @@ import (
 // shortCodePattern allows only letters, digits, underscores and hyphens in a short code
 var shortCodePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{4,20}$`)
 
+// TargetBlocker reports whether a target URL is in a blocked category, and which one.
+//
+// It is an interface so the service does not know whether the list came from a table, a file or a test, and
+// nil so a service without one blocks nothing. The same instance answers the create path, the update path
+// and the redirect path, which is the point: a link already created is refused by the redirect that would
+// have served it, not only by the write that created it.
+type TargetBlocker interface {
+	Blocked(targetURL string) (category string, blocked bool)
+}
+
 type LinkService struct {
 	db          *gorm.DB
 	baseURL     string
 	cache       LinkCache
 	kafka       mq.ClickPublisher // Kafka publisher; nil means disabled
 	clickWriter ClickWriter       // direct write (used by the degraded fallback)
+	blocker     TargetBlocker     // nil means nothing is blocked
 
 	// loads collapses concurrent cache misses for one short code into a single database read. A key that
 	// is absent is exactly when a burst of requests for it arrives together.
 	loads singleflight.Group
 }
 
-func NewLinkService(db *gorm.DB, baseURL string, cache LinkCache, kafka mq.ClickPublisher, clickWriter ClickWriter) *LinkService {
-	return &LinkService{db: db, baseURL: baseURL, cache: cache, kafka: kafka, clickWriter: clickWriter}
+func NewLinkService(db *gorm.DB, baseURL string, cache LinkCache, kafka mq.ClickPublisher, clickWriter ClickWriter, blocker TargetBlocker) *LinkService {
+	return &LinkService{db: db, baseURL: baseURL, cache: cache, kafka: kafka, clickWriter: clickWriter, blocker: blocker}
+}
+
+// Blocked reports whether the target is in a blocked category, through the list the create and update paths
+// consult. The redirect handler calls it per request rather than trusting a decision cached with the link,
+// because the list changes after the link was cached.
+func (s *LinkService) Blocked(targetURL string) (string, bool) {
+	if s.blocker == nil {
+		return "", false
+	}
+	return s.blocker.Blocked(targetURL)
 }
 
 // Create creates a short link
 func (s *LinkService) Create(ctx context.Context, userID int64, req domain.CreateLinkRequest) (*domain.LinkInfo, error) {
 	if !urlcheck.IsSafeTarget(req.OriginalURL) {
 		return nil, errors.New("target URL must use http or https")
+	}
+
+	// The list is consulted before anything is written or allocated, so a refused target leaves no short
+	// code behind.
+	if category, blocked := s.Blocked(req.OriginalURL); blocked {
+		return nil, &domain.BlockedTargetError{Category: category}
 	}
 
 	// validate folder ownership (previously any ID could be attached, leaking names across users)
@@ -372,6 +399,14 @@ func (s *LinkService) linkListQuery(ctx context.Context, where string, args []an
 func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req domain.UpdateLinkRequest) (*domain.LinkInfo, error) {
 	if req.OriginalURL != nil && *req.OriginalURL != "" && !urlcheck.IsSafeTarget(*req.OriginalURL) {
 		return nil, errors.New("target URL must use http or https")
+	}
+
+	// A link that already exists can be pointed somewhere new, so the edit is checked exactly like the
+	// creation - otherwise the list only stops what was written after it was written.
+	if req.OriginalURL != nil && *req.OriginalURL != "" {
+		if category, blocked := s.Blocked(*req.OriginalURL); blocked {
+			return nil, &domain.BlockedTargetError{Category: category}
+		}
 	}
 
 	// validate folder ownership

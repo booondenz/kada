@@ -13,52 +13,8 @@ import (
 	"golang.org/x/net/html"
 
 	"github.com/booondenz/kada/internal/domain"
+	"github.com/booondenz/kada/internal/infra/urlcheck"
 )
-
-// blockedCIDRs lists private/reserved address ranges: blocks SSRF access to localhost, cloud metadata, and internal services
-var blockedCIDRs = []string{
-	"0.0.0.0/8",       // this network
-	"10.0.0.0/8",      // RFC1918 private
-	"100.64.0.0/10",   // CGNAT
-	"127.0.0.0/8",     // loopback
-	"169.254.0.0/16",  // link-local (includes cloud metadata 169.254.169.254)
-	"172.16.0.0/12",   // RFC1918 private
-	"192.0.0.0/24",    // IETF reserved
-	"192.0.2.0/24",    // TEST-NET-1
-	"192.168.0.0/16",  // RFC1918 private
-	"198.18.0.0/15",   // benchmarking
-	"198.51.100.0/24", // TEST-NET-2
-	"203.0.113.0/24",  // TEST-NET-3
-	"224.0.0.0/4",     // multicast
-	"240.0.0.0/4",     // reserved
-	"::/128",          // unspecified
-	"::1/128",         // loopback v6
-	"fc00::/7",        // ULA
-	"fe80::/10",       // link-local v6
-	"ff00::/8",        // multicast v6
-}
-
-var blockedNets = func() []*net.IPNet {
-	nets := make([]*net.IPNet, 0, len(blockedCIDRs))
-	for _, cidr := range blockedCIDRs {
-		_, n, err := net.ParseCIDR(cidr)
-		if err != nil {
-			continue
-		}
-		nets = append(nets, n)
-	}
-	return nets
-}()
-
-// isBlockedIP reports whether the IP falls in a private/reserved address range
-func isBlockedIP(ip net.IP) bool {
-	for _, n := range blockedNets {
-		if n.Contains(ip) {
-			return true
-		}
-	}
-	return false
-}
 
 // validateHost validates a host: a literal IP is checked against the address ranges; a domain is resolved
 // and every resulting address is checked (first line of defense against DNS rebinding)
@@ -68,7 +24,7 @@ func validateHost(ctx context.Context, host string) error {
 		return fmt.Errorf("empty host")
 	}
 	if ip := net.ParseIP(host); ip != nil {
-		if isBlockedIP(ip) {
+		if urlcheck.IsBlockedIP(ip) {
 			return fmt.Errorf("host %s is a private/reserved address, access blocked", host)
 		}
 		return nil
@@ -81,7 +37,7 @@ func validateHost(ctx context.Context, host string) error {
 		return fmt.Errorf("domain %s did not resolve to any address", host)
 	}
 	for _, a := range ips {
-		if isBlockedIP(a.IP) {
+		if urlcheck.IsBlockedIP(a.IP) {
 			return fmt.Errorf("domain %s resolved to private address %s, access blocked", host, a.IP)
 		}
 	}

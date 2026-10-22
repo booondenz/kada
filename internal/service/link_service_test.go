@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/booondenz/kada/internal/domain"
 )
 
 func TestGenerateShortCode(t *testing.T) {
@@ -180,5 +183,51 @@ func TestLinkListQueryCountCarriesTheAliasTheFiltersUse(t *testing.T) {
 	}
 	if len(stmt.Vars) != 1 || stmt.Vars[0] != int64(7) {
 		t.Errorf("the filter value must be bound, got: %v", stmt.Vars)
+	}
+}
+
+// fakeBlocker is the list as the service sees it: one category, or none.
+type fakeBlocker struct{ category string }
+
+func (f fakeBlocker) Blocked(string) (string, bool) { return f.category, f.category != "" }
+
+// The refusal has to come before anything is written, and that is also what makes it testable without a
+// database: this service has no db and no cache, so reaching either one would panic instead of failing the
+// assertion.
+func TestCreateRefusesABlockedTarget(t *testing.T) {
+	svc := &LinkService{blocker: fakeBlocker{category: "gambling"}}
+
+	_, err := svc.Create(context.Background(), 1, domain.CreateLinkRequest{OriginalURL: "https://casino.example/room"})
+
+	var blocked *domain.BlockedTargetError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("Create error = %v, want a BlockedTargetError", err)
+	}
+	if blocked.Category != "gambling" {
+		t.Errorf("category = %q, want gambling", blocked.Category)
+	}
+}
+
+// An existing link can be pointed somewhere new, so the edit is checked exactly like the creation.
+func TestUpdateRefusesABlockedTarget(t *testing.T) {
+	svc := &LinkService{blocker: fakeBlocker{category: "phishing"}}
+	target := "https://phish.example/login"
+
+	_, err := svc.Update(context.Background(), 1, 1, domain.UpdateLinkRequest{OriginalURL: &target})
+
+	var blocked *domain.BlockedTargetError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("Update error = %v, want a BlockedTargetError", err)
+	}
+	if blocked.Category != "phishing" {
+		t.Errorf("category = %q, want phishing", blocked.Category)
+	}
+}
+
+func TestAServiceWithoutABlockerBlocksNothing(t *testing.T) {
+	svc := &LinkService{}
+
+	if _, ok := svc.Blocked("https://evil.example/"); ok {
+		t.Error("a nil list must block nothing")
 	}
 }

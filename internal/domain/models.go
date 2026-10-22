@@ -20,6 +20,20 @@ type RateLimitError struct {
 
 func (e *RateLimitError) Error() string { return e.Message }
 
+// BlockedTargetError is the refusal for a target whose host is in a blocked category.
+//
+// It is a type rather than a sentinel because two things have to travel with it: the category, which the
+// message names, and the fact that this refusal is the caller's fault. The link handlers turn it into a 400
+// while every other failure from the service stays a 500, and telling them apart by substring would be the
+// alternative.
+type BlockedTargetError struct {
+	Category string
+}
+
+func (e *BlockedTargetError) Error() string {
+	return "this target is in a blocked category (" + e.Category + ") and cannot be shortened"
+}
+
 // ==================== Request/Response models ====================
 
 // ---- Auth ----

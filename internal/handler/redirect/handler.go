@@ -3,6 +3,8 @@ package redirect
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"html"
 	"html/template"
 	"log"
 	"net/http"
@@ -24,6 +26,10 @@ type LinkService interface {
 	CheckPassword(ctx context.Context, shortCode, password string) (bool, *domain.LinkInfo, error)
 	LogClick(ctx context.Context, event domain.ClickEvent)
 	BuildShortURL(domain, code string) string
+	// Blocked reports whether a target URL is in a blocked category. It is asked on every request rather
+	// than cached with the link: the list changes after a link is cached, and a link cached while its host
+	// was allowed would keep being served after the host was blocked.
+	Blocked(targetURL string) (category string, blocked bool)
 }
 
 type Handler struct {
@@ -127,6 +133,14 @@ func (h *Handler) Redirect(c *gin.Context) {
 	if !urlcheck.IsSafeTarget(link.OriginalURL) {
 		outcome = metrics.OutcomeUnsafeTarget
 		h.renderUnsafeTargetPage(c)
+		return
+	}
+
+	// The blocked list is consulted here, after the link cache, so adding a host stops the links that
+	// already point at it - the rule is about the target, and the target is only known once the link is.
+	if category, blocked := h.svc.Blocked(link.OriginalURL); blocked {
+		outcome = metrics.OutcomeBlockedTarget
+		h.renderBlockedTargetPage(c, category)
 		return
 	}
 
@@ -257,6 +271,12 @@ func (h *Handler) VerifyPassword(c *gin.Context) {
 	// Guard against legacy dirty data: the target URL must be http/https.
 	if !urlcheck.IsSafeTarget(info.OriginalURL) {
 		h.renderUnsafeTargetPage(c)
+		return
+	}
+
+	// A correct password is not permission to reach a blocked target.
+	if category, blocked := h.svc.Blocked(info.OriginalURL); blocked {
+		h.renderBlockedTargetPage(c, category)
 		return
 	}
 
@@ -679,6 +699,23 @@ func (h *Handler) renderUnsafeTargetPage(c *gin.Context) {
 </head>
 <body><div class="card"><div class="icon">⚠️</div><div class="title">Link unavailable</div><div class="subtitle">The target URL scheme of this short link is not supported, so the redirect was blocked</div></div></body>
 </html>`)
+}
+
+// renderBlockedTargetPage is the answer for a target on the blocked list.
+//
+// 403 rather than 404: the link exists and the visitor did reach it, and "not found" would leave whoever
+// reported it unable to tell a takedown from a mistyped code. The category is named for the same reason -
+// a false positive is a complaint that has to be argued with, and "blocked" alone gives nobody anything to
+// argue about.
+func (h *Handler) renderBlockedTargetPage(c *gin.Context, category string) {
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.String(http.StatusForbidden, fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Link stopped - Kada</title>
+<style>body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f8fafc;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}.card{background:#fff;border-radius:20px;padding:40px 32px;max-width:400px;width:100%%;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06)}.icon{font-size:48px;margin-bottom:16px}.title{font-size:20px;font-weight:700;color:#1e293b;margin-bottom:8px}.subtitle{font-size:14px;color:#64748b;line-height:1.6}.category{font-weight:600;color:#b45309}</style>
+</head>
+<body><div class="card"><div class="icon">🚫</div><div class="title">Link stopped</div><div class="subtitle">This short link points at a target in a blocked category (<span class="category">%s</span>), so it is not being served.</div></div></body>
+</html>`, html.EscapeString(category)))
 }
 
 func passwordPageHTML(code string) string {

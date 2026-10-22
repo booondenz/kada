@@ -2,37 +2,12 @@ package preview
 
 import (
 	"context"
-	"net"
 	"strings"
 	"testing"
 )
 
-func TestIsBlockedIP(t *testing.T) {
-	blocked := []string{"127.0.0.1", "10.0.0.5", "172.16.0.1", "192.168.1.1", "169.254.169.254", "0.0.0.0", "::1", "fe80::1", "fc00::1"}
-	for _, s := range blocked {
-		ip := parseIP(t, s)
-		if !isBlockedIP(ip) {
-			t.Errorf("expected %s to be blocked", s)
-		}
-	}
-	allowed := []string{"8.8.8.8", "1.1.1.1", "93.184.216.34", "2606:4700:4700::1111"}
-	for _, s := range allowed {
-		ip := parseIP(t, s)
-		if isBlockedIP(ip) {
-			t.Errorf("expected %s to be allowed", s)
-		}
-	}
-}
-
-func parseIP(t *testing.T, s string) (ip net.IP) {
-	t.Helper()
-	ip = net.ParseIP(s)
-	if ip == nil {
-		t.Fatalf("invalid test IP: %s", s)
-	}
-	return ip
-}
-
+// The address ranges themselves are urlcheck.IsBlockedIP's business, and are tested there. What is left to
+// this package is that it asks before it dials.
 func TestValidateTarget(t *testing.T) {
 	ctx := context.Background()
 	blocked := []string{
