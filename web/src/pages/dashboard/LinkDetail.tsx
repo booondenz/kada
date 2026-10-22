@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useParams, useSearchParams } from "react-router";
 import {
   Copy, ExternalLink, Pencil, Save, X, Check, QrCode, Download,
   BarChart3, Globe, Clock, Shield, Smartphone, Tags, ArrowLeft, Folder,
@@ -45,6 +45,10 @@ interface LinkDetail {
 
 export default function LinkDetailPage() {
   const { id = "" } = useParams<{ id: string }>();
+  // A link card's click total arrives with ?analytics=1: the block starts open and is scrolled to once the
+  // page has replaced its skeleton.
+  const [searchParams] = useSearchParams();
+  const wantsAnalytics = searchParams.get("analytics") === "1";
   const t = useT();
   const { locale } = useI18n();
   const dateLocale = locale === "en" ? "en-US" : "zh-CN";
@@ -84,7 +88,7 @@ export default function LinkDetailPage() {
   const [qrURL, setQrURL] = useState<string | null>(null);
 
   // Analytics
-  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(wantsAnalytics);
   const [clickData, setClickData] = useState<{ daily: { date: string; count: number }[]; platforms: { platform: string; count: number }[] } | null>(null);
 
   const token = getToken();
@@ -140,6 +144,12 @@ export default function LinkDetailPage() {
       }).catch((e: unknown) => toast.error(e instanceof Error ? e.message : t("加载统计数据失败")));
     }
   }, [showAnalytics, link, token, t]);
+
+  // Runs after the skeleton is gone, because the block only exists once `link` has arrived.
+  useEffect(() => {
+    if (!wantsAnalytics || !link) return;
+    document.getElementById("analytics")?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [wantsAnalytics, link]);
 
   // QR code
   useEffect(() => {
@@ -325,7 +335,7 @@ export default function LinkDetailPage() {
 
         {/* Per-link analytics */}
         {showAnalytics && (
-          <div className="p-6 border-b border-line bg-subtle space-y-4">
+          <div id="analytics" className="scroll-mt-4 p-6 border-b border-line bg-subtle space-y-4">
             <h3 className="text-sm font-semibold text-strong">{t("点击统计")}</h3>
             {clickData ? (
               <>

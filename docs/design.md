@@ -418,6 +418,11 @@ stat tiles, and the two shared nothing but a colour. What the pages are held to 
   aim at; a stat tile, an empty state and a wordmark may not, because there is nothing there to hit and the
   glyph is describing itself. The four tinted chips on 分析's tiles reported no status - four numbers are
   four numbers - and the filled indigo square beside "Kada" was the one accent spent on a name.
+- **A count that opens its own breakdown is a control.** The click total on a link card was a paragraph
+  inside the card's link, so it opened the page the card opened, with the analysis folded away, and it
+  looked like a statistic - nothing said it could be clicked at all. A number that is the entry point to
+  the numbers behind it carries a control's affordances (hover, tooltip) and lands on the breakdown
+  instead of on the summary one click above it.
 - **An empty state is a line of text.** The first page a visitor saw used to be a 64px icon tile, a
   heading, a marketing line and a second create button, centred where a list should be - on a page whose
   toolbar already said `0 条链接` and already carried the action. "Nothing here yet" is one sentence, set

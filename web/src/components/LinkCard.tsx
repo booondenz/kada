@@ -1,5 +1,5 @@
 import { Copy, ExternalLink, Pencil, Trash2, BarChart3, Check, QrCode, Download, X } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useT } from "@/lib/i18n";
@@ -29,6 +29,7 @@ interface LinkCardProps {
 
 export function LinkCard({ link, onDelete, selectable, selected, onSelect }: LinkCardProps) {
   const t = useT();
+  const navigate = useNavigate();
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showQR, setShowQR] = useState(false);
@@ -61,6 +62,14 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
     e.preventDefault();
     e.stopPropagation();
     setShowQR(true);
+  };
+
+  // The rest of the card already opens the link; a click on the total asks the same page for the numbers
+  // behind it, which are folded away by default.
+  const handleAnalytics = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    navigate(`/dashboard/links/${link.id}?analytics=1`);
   };
 
   // Generate QR code when modal opens
@@ -146,12 +155,17 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
 
             {/* Right: Stats & Actions */}
             <div className="flex items-center gap-3 shrink-0">
-              <div className="hidden sm:flex items-center gap-1 text-sm">
-                <BarChart3 className="w-3.5 h-3.5 text-faint" />
-                <span className="font-semibold text-body tabular-nums">
+              <button
+                type="button"
+                onClick={handleAnalytics}
+                title={t("点击统计")}
+                className="group hidden sm:flex items-center gap-1 rounded-lg px-1.5 py-1 text-sm transition-colors hover:bg-brand-soft"
+              >
+                <BarChart3 className="w-3.5 h-3.5 text-faint transition-colors group-hover:text-brand-ink" />
+                <span className="font-semibold text-body tabular-nums transition-colors group-hover:text-brand-ink">
                   {link.click_count.toLocaleString()}
                 </span>
-              </div>
+              </button>
 
               <button
                 onClick={handleShowQR}
