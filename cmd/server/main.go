@@ -15,6 +15,7 @@ import (
 
 	"github.com/booondenz/kada/config"
 	"github.com/booondenz/kada/internal/assistant"
+	adminHandler "github.com/booondenz/kada/internal/handler/admin"
 	aiHandler "github.com/booondenz/kada/internal/handler/ai"
 	analyticsHandler "github.com/booondenz/kada/internal/handler/analytics"
 	authHandler "github.com/booondenz/kada/internal/handler/auth"
@@ -22,6 +23,7 @@ import (
 	folderHandler "github.com/booondenz/kada/internal/handler/folder"
 	linkHandler "github.com/booondenz/kada/internal/handler/link"
 	redirectHandler "github.com/booondenz/kada/internal/handler/redirect"
+	reportHandler "github.com/booondenz/kada/internal/handler/report"
 	tagHandler "github.com/booondenz/kada/internal/handler/tag"
 	tokenHandler "github.com/booondenz/kada/internal/handler/token"
 	utmHandler "github.com/booondenz/kada/internal/handler/utm"
@@ -150,6 +152,7 @@ func main() {
 	utmSvc := service.NewUTMTemplateService(db)
 	tokenSvc := service.NewAPITokenService(db)
 	analyticsSvc := service.NewAnalyticsService(db)
+	reportSvc := service.NewReportService(db)
 
 	// Initialize the handler layer
 	authH := authHandler.NewHandler(authSvc)
@@ -161,6 +164,8 @@ func main() {
 	utmH := utmHandler.NewHandler(utmSvc)
 	tokenH := tokenHandler.NewHandler(tokenSvc)
 	analyticsH := analyticsHandler.NewHandler(db, analyticsSvc)
+	adminH := adminHandler.NewHandler(linkSvc, reportSvc)
+	reportH := reportHandler.NewHandler(reportSvc)
 
 	// The assistant: it used to be a separate Python service that this binary reverse-proxied to, and it
 	// runs in this process now. Both halves are optional on purpose - a missing key is a warning rather
@@ -252,6 +257,10 @@ func main() {
 		}
 		authH.RegisterRoutes(v1, authMW, strictMW)
 		linkH.RegisterRoutes(v1, authMW)
+		// Always mounted, never conditionally: RequireAdmin refuses everybody when ADMIN_PHONES is empty,
+		// and a middleware left out of the chain would allow everybody.
+		adminH.RegisterRoutes(v1, authMW, middleware.RequireAdmin(cfg.AdminPhones))
+		reportH.RegisterRoutes(v1, strictMW)
 		domainH.RegisterRoutes(v1, authMW)
 		folderH.RegisterRoutes(v1, authMW)
 		tagH.RegisterRoutes(v1, authMW)

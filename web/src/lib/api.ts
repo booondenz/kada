@@ -226,6 +226,18 @@ export const linksAPI = {
 
 // ========== Analytics API ==========
 
+// ========== Reports API ==========
+
+/**
+ * Files a complaint about a short link.
+ *
+ * Unauthenticated on purpose: the caller is a visitor who was sent somewhere illegal, not an account here.
+ */
+export const reportsAPI = {
+  create: (body: { short_code: string; reason: string; detail?: string; contact?: string }) =>
+    fetchAPI("/api/reports", { method: "POST", body: JSON.stringify(body) }),
+};
+
 export const analyticsAPI = {
   overview: (token: string) =>
     fetchAPI("/api/analytics/overview", { token }),

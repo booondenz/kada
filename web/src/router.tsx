@@ -15,6 +15,7 @@ import Tags from "@/pages/dashboard/Tags";
 import Utm from "@/pages/dashboard/Utm";
 import Privacy from "@/pages/Privacy";
 import Redirect from "@/pages/Redirect";
+import Report from "@/pages/Report";
 
 /**
  * The route table.
@@ -32,6 +33,8 @@ export const router = createBrowserRouter([
   { path: "/login", element: <Navigate to="/dashboard" replace /> },
   { path: "/register", element: <Navigate to="/dashboard" replace /> },
   { path: "/privacy", element: <Privacy /> },
+  // The complaint form a stopped link offers. Public, because the visitor who needs it has no account.
+  { path: "/report", element: <Report /> },
   // The interstitial the backend redirects to when a short link needs a password or a deep-link hop.
   { path: "/r/:code", element: <Redirect /> },
   {

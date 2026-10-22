@@ -41,6 +41,10 @@ export default function PrivacyPage() {
             account, and a policy that states who operates the site should say which filing it runs under. */}
         <div className="mt-6 text-center">
           <IcpNotice className="text-xs text-muted hover:text-brand" />
+          <span className="mx-2 text-xs text-faint">·</span>
+          <Link to="/report" className="text-xs text-muted hover:text-brand">
+            {t("举报")}
+          </Link>
         </div>
       </div>
     </div>

@@ -1,5 +1,7 @@
 # Kada Design
 
+**English** | [简体中文](design.zh.md)
+
 Kada is a short-link management and analytics platform. Users create short links, organise them, and
 watch how they are clicked. This document explains how the system is put together and why.
 
@@ -265,7 +267,9 @@ the response does not.
 
 ```text
 users ──┬── links ──┬── click_logs
-        │           └── link_tags ── tags
+        │           ├── link_tags ── tags
+        │           ├── link_blocks
+        │           └── abuse_reports ──┘ (links.id, nullable)
         ├── folders ──┘ (links.folder_id)
         ├── domains
         ├── utm_templates
@@ -279,7 +283,7 @@ blocked_hosts   (standalone, keyed by host)
 | Table | Purpose | Notable columns |
 |---|---|---|
 | `users` | Accounts | `phone` (unique, and the whole profile); `email`, `name`, `avatar`, `password_hash`, `wechat_openid` are retained legacy columns nothing reads |
-| `links` | Short links | `short_code` (unique), `original_url`, `domain`, `password_hash`, `expires_at`, `is_active`, `click_count` |
+| `links` | Short links | `short_code` (unique), `original_url`, `domain`, `password_hash`, `expires_at`, `is_active`, `click_count`, `blocked_at` (an operator stopped it) |
 | `click_logs` | One row per click request | `kind` (what the row is evidence of, and the only thing the counters read), `action` (which guide page interaction, NULL otherwise), `platform`, `ip`, `referer`, `event_id` (unique, idempotency) |
 | `folders`, `tags`, `link_tags` | Organisation | `link_tags` is a plain junction table; `links.folder_id` is the other grouping |
 | `domains` | Custom domains | `verified`, unique per `(user_id, name)` |
@@ -288,6 +292,8 @@ blocked_hosts   (standalone, keyed by host)
 | `sms_codes` | Pending SMS logins | `code_hash` (sha256), `ip` (per-IP quotas), `attempts`, `expires_at`; the plaintext code is never stored |
 | `login_captchas` | Pending graphical challenges | `code_hash` (sha256 of the upper-cased answer), `attempts`, `expires_at` |
 | `blocked_hosts` | Targets that are not served | `host` (unique; matched by suffix, so one row covers every subdomain), `category` (why), `note` |
+| `link_blocks` | One takedown of one link | `short_code` (copied, so the row outlives the link), `reason`, `evidence`, `operator` (the phone number that decided), `lifted_at`, `lift_reason`, `lifted_by` |
+| `abuse_reports` | Complaints from visitors | `short_code`, `link_id` (nullable - a report about a deleted link is still evidence), `reason`, `detail`, `contact`, `ip` (not published) |
 
 Design rules:
 
@@ -761,6 +767,39 @@ Adding a row is an insert, and needs no deploy:
 INSERT INTO blocked_hosts (host, category, note, created_at)
 VALUES ('casino.example', 'gambling', 'reported 2026-10-22', now());
 ```
+
+### 7.7 A takedown is a column and a history row
+
+The host list stops whole domains. It cannot stop *one* link on a legitimate host, which is what most
+reports are about - a shared blog, a file host, a page that turned. That decision belongs to a person, so it
+is stored in two places with two different jobs:
+
+- `links.blocked_at` is the state. The redirect already reads that row (or its cached copy) to answer "may
+  this be served", so the check costs nothing extra, and `Block` drops the cached copy after it commits -
+  which is what makes a takedown take effect on the next request instead of at the end of the TTL.
+- `link_blocks` is the history: who stopped it, when, why, on what evidence, and when and by whom it was put
+  back. A column that is nulled on unblock answers none of that, and the owner whose link went down asks
+  first. The two are written in one transaction, so they cannot disagree about the present.
+
+`abuse_reports` is where a takedown usually starts. `POST /api/reports` is public - the person who needs it
+was sent somewhere illegal by a short link and has no account here, and asking them to sign in first is
+asking them to do our paperwork - so it is rate limited on the strict bucket and bounded in what it accepts.
+The report outlives the link: `LinkID` is nullable and the short code is copied onto the row, because
+evidence that disappears when the reported thing is deleted is not evidence. `GET /api/admin/reports`
+returns each report with whether its link is stopped now, which answers "has this been dealt with" without a
+second status column that could disagree with it.
+
+The operator routes are `POST /api/admin/links/:code/block`, `.../unblock`, `GET .../blocks` and
+`GET /api/admin/reports`, mounted behind `ADMIN_PHONES` (comma separated). The list holds phone numbers
+rather than user ids because that is what the operator signs in with, and it is checked against the phone
+claim rather than by looking the account up - so a `kada_` API token cannot moderate anything, because it
+carries no number. An empty list refuses everybody: a missing environment variable must not be the thing
+that hands out the takedown routes.
+
+What this deliberately does not do: there is no admin page (four curl commands, and a console is the sort of
+thing that grows), no automatic category detection (that is a third-party URL-safety API, and a wrong
+verdict from one is a link pulled for no reason), and the 24-hour response time the report page states is a
+promise made by whoever runs the deployment, not a job that runs by itself.
 
 ## 8. Cross-cutting decisions
 

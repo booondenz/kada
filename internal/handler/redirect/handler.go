@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -136,11 +137,19 @@ func (h *Handler) Redirect(c *gin.Context) {
 		return
 	}
 
+	// A link an operator stopped is not served, and that is decided before the target is looked at: the
+	// decision is about the link, and its target may since have been edited to something perfectly fine.
+	if link.BlockedAt != nil {
+		outcome = metrics.OutcomeBlockedLink
+		h.renderBlockedPage(c, code, "")
+		return
+	}
+
 	// The blocked list is consulted here, after the link cache, so adding a host stops the links that
 	// already point at it - the rule is about the target, and the target is only known once the link is.
 	if category, blocked := h.svc.Blocked(link.OriginalURL); blocked {
 		outcome = metrics.OutcomeBlockedTarget
-		h.renderBlockedTargetPage(c, category)
+		h.renderBlockedPage(c, code, category)
 		return
 	}
 
@@ -274,9 +283,13 @@ func (h *Handler) VerifyPassword(c *gin.Context) {
 		return
 	}
 
-	// A correct password is not permission to reach a blocked target.
+	// A correct password is not permission to reach a link an operator stopped, or a blocked target.
+	if info.BlockedAt != nil {
+		h.renderBlockedPage(c, code, "")
+		return
+	}
 	if category, blocked := h.svc.Blocked(info.OriginalURL); blocked {
-		h.renderBlockedTargetPage(c, category)
+		h.renderBlockedPage(c, code, category)
 		return
 	}
 
@@ -701,21 +714,28 @@ func (h *Handler) renderUnsafeTargetPage(c *gin.Context) {
 </html>`)
 }
 
-// renderBlockedTargetPage is the answer for a target on the blocked list.
+// renderBlockedPage is the answer for a link that is not being served.
 //
 // 403 rather than 404: the link exists and the visitor did reach it, and "not found" would leave whoever
-// reported it unable to tell a takedown from a mistyped code. The category is named for the same reason -
-// a false positive is a complaint that has to be argued with, and "blocked" alone gives nobody anything to
-// argue about.
-func (h *Handler) renderBlockedTargetPage(c *gin.Context, category string) {
+// reported it unable to tell a takedown from a mistyped code. `detail` names the blocked category when the
+// stop came from the target list, and is empty when an operator stopped the link itself - the operator's
+// note is not the visitor's business, but the category is: it is the one thing that makes a false positive
+// arguable.
+func (h *Handler) renderBlockedPage(c *gin.Context, code, detail string) {
+	message := "This short link has been stopped, so it is not being served."
+	if detail != "" {
+		message = `This short link points at a target in a blocked category (<span class="category">` +
+			html.EscapeString(detail) + `</span>), so it is not being served.`
+	}
+
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.String(http.StatusForbidden, fmt.Sprintf(`<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Link stopped - Kada</title>
-<style>body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f8fafc;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}.card{background:#fff;border-radius:20px;padding:40px 32px;max-width:400px;width:100%%;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06)}.icon{font-size:48px;margin-bottom:16px}.title{font-size:20px;font-weight:700;color:#1e293b;margin-bottom:8px}.subtitle{font-size:14px;color:#64748b;line-height:1.6}.category{font-weight:600;color:#b45309}</style>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>链接已停止访问 - Kada</title>
+<style>body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f8fafc;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}.card{background:#fff;border-radius:20px;padding:40px 32px;max-width:420px;width:100%%;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06)}.icon{font-size:48px;margin-bottom:16px}.title{font-size:20px;font-weight:700;color:#1e293b;margin-bottom:8px}.subtitle{font-size:14px;color:#64748b;line-height:1.7}.category{font-weight:600;color:#b45309}.report{margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:13px;color:#94a3b8;line-height:1.6}.report a{color:#4f46e5;text-decoration:none;font-weight:600}</style>
 </head>
-<body><div class="card"><div class="icon">🚫</div><div class="title">Link stopped</div><div class="subtitle">This short link points at a target in a blocked category (<span class="category">%s</span>), so it is not being served.</div></div></body>
-</html>`, html.EscapeString(category)))
+<body><div class="card"><div class="icon">🚫</div><div class="title">链接已停止访问</div><div class="subtitle">%s</div><p class="report">该链接已被停止访问。如果你认为这是误判，或者它出现在不该出现的地方，<a href="/report?code=%s">点此举报</a>，我们会在 24 小时内核查。</p></div></body>
+</html>`, message, url.QueryEscape(code)))
 }
 
 func passwordPageHTML(code string) string {

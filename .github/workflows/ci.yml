@@ -342,6 +342,11 @@ jobs:
           SMS_ACCESS_KEY_SECRET: ${{ secrets.SMS_ACCESS_KEY_SECRET }}
           SMS_SIGN_NAME: ${{ secrets.SMS_SIGN_NAME }}
           SMS_TEMPLATE_CODE: ${{ secrets.SMS_TEMPLATE_CODE }}
+          # Optional, and not required below: moderation can wait, and a deployment that refused to run
+          # because the operator's number was not set would be a deployment held hostage by a feature it
+          # does not need. Empty means the host file keeps whatever it already holds, and an empty list in
+          # the service refuses everybody.
+          ADMIN_PHONES: ${{ secrets.ADMIN_PHONES }}
           # The public origin, so the check below can ask this host's nginx for the site without DNS.
           # Same variable and same default as the runner-side verification further down.
           SITE_ORIGIN: ${{ vars.SITE_URL || 'https://kada.click' }}
@@ -354,7 +359,7 @@ jobs:
           # default of 10m is generous for that. It was 30m when the Python image was built here, which
           # took minutes on a small server.
           command_timeout: 10m
-          envs: DATABASE_URL,DEEPSEEK_API_KEY,SMS_ACCESS_KEY_ID,SMS_ACCESS_KEY_SECRET,SMS_SIGN_NAME,SMS_TEMPLATE_CODE,SITE_ORIGIN
+          envs: DATABASE_URL,DEEPSEEK_API_KEY,SMS_ACCESS_KEY_ID,SMS_ACCESS_KEY_SECRET,SMS_SIGN_NAME,SMS_TEMPLATE_CODE,ADMIN_PHONES,SITE_ORIGIN
           script: |
             set -euo pipefail
 
@@ -390,6 +395,7 @@ jobs:
               --set "SMS_ACCESS_KEY_SECRET=$SMS_ACCESS_KEY_SECRET" \
               --set "SMS_SIGN_NAME=$SMS_SIGN_NAME" \
               --set "SMS_TEMPLATE_CODE=$SMS_TEMPLATE_CODE" \
+              --set "ADMIN_PHONES=$ADMIN_PHONES" \
               --require DEEPSEEK_API_KEY \
               --require SMS_ACCESS_KEY_ID \
               --require SMS_ACCESS_KEY_SECRET \

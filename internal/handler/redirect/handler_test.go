@@ -266,10 +266,59 @@ func TestRedirect_BlockedTargetIsNotServed(t *testing.T) {
 	if loc := w.Header().Get("Location"); loc != "" {
 		t.Errorf("a blocked target must not redirect, got Location %q", loc)
 	}
-	if body := w.Body.String(); !strings.Contains(body, "Link stopped") || !strings.Contains(body, "gambling") {
+	if body := w.Body.String(); !strings.Contains(body, "链接已停止访问") || !strings.Contains(body, "gambling") {
 		t.Errorf("expected the stopped page naming the category, got: %s", body)
 	}
+	if body := w.Body.String(); !strings.Contains(body, "/report?code=abc123") {
+		t.Errorf("the stopped page must offer a way to report it, got: %s", body)
+	}
 }
+
+// A link an operator stopped is refused whatever its target is, and without naming a category: the note
+// the operator wrote is not the visitor's business.
+func TestRedirect_LinkStoppedByAnOperatorIsNotServed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	blockedAt := time.Now()
+	svc := &mockLinkService{
+		getByCode: func(ctx context.Context, code string) (*domain.LinkInfo, error) {
+			return &domain.LinkInfo{
+				ID:            1,
+				ShortCode:     code,
+				OriginalURL:   "https://example.com/",
+				Domain:        "kada.click",
+				IsActive:      true,
+				BlockedAt:     &blockedAt,
+				BlockedReason: stringPtr("operator note"),
+			}, nil
+		},
+	}
+	h := NewHandler(svc)
+
+	r := gin.New()
+	r.GET("/r/:code", h.Redirect)
+
+	req := httptest.NewRequest("GET", "/r/abc123", nil)
+	req.Header.Set("User-Agent", browserUA)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for a stopped link, got %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "" {
+		t.Errorf("a stopped link must not redirect, got Location %q", loc)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "链接已停止访问") {
+		t.Errorf("expected the stopped page, got: %s", body)
+	}
+	if strings.Contains(body, "operator note") {
+		t.Error("the operator's note must not be shown to the visitor")
+	}
+}
+
+func stringPtr(s string) *string { return &s }
 
 // The check is on the target, so a guide page - the branch that would otherwise show the target's host and
 // a button that opens it - must not be served either.

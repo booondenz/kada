@@ -31,6 +31,10 @@ const (
 	// the two call for different reactions: an unsafe scheme is a bug or an old row, while a blocked
 	// target is a decision somebody made and may have to defend.
 	OutcomeBlockedTarget = "blocked_target"
+	// OutcomeBlockedLink is a link an operator stopped. It is counted apart from blocked_target because
+	// the two are decided by different things - one by the target's host, one by a person - and the second
+	// is the one that ends up in a complaint.
+	OutcomeBlockedLink = "blocked_link"
 )
 
 // What the short-code cache did with a lookup.

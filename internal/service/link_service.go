@@ -592,6 +592,110 @@ func (s *LinkService) BatchTag(ctx context.Context, ids []int64, tagID int64, us
 	return nil
 }
 
+// Block stops a link from being served, and records the decision.
+//
+// The column and the history row are written in one transaction, and the cached copy is dropped after it
+// commits. That second step is not an optimisation: the redirect reads the flag from that cache, so a block
+// that did not invalidate would keep serving the link for the rest of the TTL - which is the one thing a
+// takedown may not do.
+func (s *LinkService) Block(ctx context.Context, shortCode, operator, reason, evidence string) (*domain.LinkInfo, error) {
+	var row entity.Link
+	if err := s.db.WithContext(ctx).Where("short_code = ?", shortCode).First(&row).Error; err != nil {
+		return nil, domain.ErrLinkNotFound
+	}
+	if row.BlockedAt != nil {
+		return nil, domain.ErrLinkAlreadyBlocked
+	}
+
+	now := time.Now().UTC()
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&entity.Link{}).Where("id = ?", row.ID).
+			Updates(map[string]any{"blocked_at": now, "blocked_reason": reason, "updated_at": now}).Error; err != nil {
+			return err
+		}
+		return tx.Create(&entity.LinkBlock{
+			LinkID:    row.ID,
+			ShortCode: row.ShortCode,
+			Reason:    reason,
+			Evidence:  evidence,
+			Operator:  operator,
+			CreatedAt: now,
+		}).Error
+	})
+	if err != nil {
+		return nil, errors.New("failed to stop the link")
+	}
+
+	if s.cache != nil {
+		s.cache.InvalidateLink(ctx, row.ShortCode)
+	}
+
+	row.BlockedAt = &now
+	row.BlockedReason = &reason
+	return linkInfoFromEntity(row), nil
+}
+
+// Unblock restores a link that was stopped, and closes the open history row.
+func (s *LinkService) Unblock(ctx context.Context, shortCode, operator, reason string) error {
+	var row entity.Link
+	if err := s.db.WithContext(ctx).Where("short_code = ?", shortCode).First(&row).Error; err != nil {
+		return domain.ErrLinkNotFound
+	}
+	if row.BlockedAt == nil {
+		return domain.ErrLinkNotBlocked
+	}
+
+	now := time.Now().UTC()
+	var liftedBy *string
+	if operator != "" {
+		liftedBy = &operator
+	}
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&entity.Link{}).Where("id = ?", row.ID).
+			Updates(map[string]any{"blocked_at": nil, "blocked_reason": nil, "updated_at": now}).Error; err != nil {
+			return err
+		}
+		// The open row is the one that was never lifted; only it can be. Block refuses to write a second
+		// while the first is open, so there is at most one.
+		return tx.Model(&entity.LinkBlock{}).
+			Where("link_id = ? AND lifted_at IS NULL", row.ID).
+			Updates(map[string]any{"lifted_at": now, "lift_reason": reason, "lifted_by": liftedBy}).Error
+	})
+	if err != nil {
+		return errors.New("failed to restore the link")
+	}
+
+	if s.cache != nil {
+		s.cache.InvalidateLink(ctx, row.ShortCode)
+	}
+	return nil
+}
+
+// Blocks returns a link's takedown history, newest first.
+func (s *LinkService) Blocks(ctx context.Context, shortCode string) ([]domain.LinkBlockInfo, error) {
+	var rows []entity.LinkBlock
+	if err := s.db.WithContext(ctx).Where("short_code = ?", shortCode).
+		Order("created_at DESC").Limit(50).Find(&rows).Error; err != nil {
+		return nil, errors.New("failed to read the takedown history")
+	}
+
+	out := make([]domain.LinkBlockInfo, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, domain.LinkBlockInfo{
+			ID:         r.ID,
+			ShortCode:  r.ShortCode,
+			Reason:     r.Reason,
+			Evidence:   r.Evidence,
+			Operator:   r.Operator,
+			CreatedAt:  r.CreatedAt,
+			LiftedAt:   r.LiftedAt,
+			LiftReason: r.LiftReason,
+			LiftedBy:   r.LiftedBy,
+		})
+	}
+	return out, nil
+}
+
 // validateOwnedFolder validates that the folder belongs to the current user (nil or 0 means unset)
 func (s *LinkService) validateOwnedFolder(ctx context.Context, userID int64, folderID *int64) error {
 	if folderID != nil && *folderID != 0 {
@@ -808,27 +912,29 @@ func attachOwnedTagsTx(tx *gorm.DB, userID, linkID int64, tagIDs []int64) error 
 // linkInfoFromEntity maps a persistence row onto the API model.
 func linkInfoFromEntity(row entity.Link) *domain.LinkInfo {
 	info := &domain.LinkInfo{
-		ID:          row.ID,
-		ShortCode:   row.ShortCode,
-		OriginalURL: row.OriginalURL,
-		Title:       row.Title,
-		Description: row.Description,
-		ImageURL:    row.ImageURL,
-		Domain:      row.Domain,
-		ClickCount:  row.ClickCount,
-		IsActive:    row.IsActive,
-		ExpiresAt:   row.ExpiresAt,
-		CreatedAt:   row.CreatedAt,
-		UpdatedAt:   row.UpdatedAt,
-		FolderID:    row.FolderID,
-		HasPassword: row.PasswordHash != nil && *row.PasswordHash != "",
-		UTMSource:   row.UTMSource,
-		UTMMedium:   row.UTMMedium,
-		UTMCampaign: row.UTMCampaign,
-		UTMTerm:     row.UTMTerm,
-		UTMContent:  row.UTMContent,
-		IosURL:      row.IosURL,
-		AndroidURL:  row.AndroidURL,
+		ID:            row.ID,
+		ShortCode:     row.ShortCode,
+		OriginalURL:   row.OriginalURL,
+		Title:         row.Title,
+		Description:   row.Description,
+		ImageURL:      row.ImageURL,
+		Domain:        row.Domain,
+		ClickCount:    row.ClickCount,
+		IsActive:      row.IsActive,
+		BlockedAt:     row.BlockedAt,
+		BlockedReason: row.BlockedReason,
+		ExpiresAt:     row.ExpiresAt,
+		CreatedAt:     row.CreatedAt,
+		UpdatedAt:     row.UpdatedAt,
+		FolderID:      row.FolderID,
+		HasPassword:   row.PasswordHash != nil && *row.PasswordHash != "",
+		UTMSource:     row.UTMSource,
+		UTMMedium:     row.UTMMedium,
+		UTMCampaign:   row.UTMCampaign,
+		UTMTerm:       row.UTMTerm,
+		UTMContent:    row.UTMContent,
+		IosURL:        row.IosURL,
+		AndroidURL:    row.AndroidURL,
 	}
 	info.ShortURL = "https://" + row.Domain + "/r/" + row.ShortCode
 	return info

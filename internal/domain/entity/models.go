@@ -28,7 +28,12 @@ type Link struct {
 	PasswordHash *string    `gorm:"type:varchar(255)" json:"password_hash,omitempty"`
 	ExpiresAt    *time.Time `json:"expires_at"`
 	IsActive     bool       `gorm:"default:true" json:"is_active"`
-	ClickCount   int64      `gorm:"default:0" json:"click_count"`
+	// BlockedAt is the takedown. The redirect already reads this row or its cached copy, so "may this be
+	// served" costs no second query; an operator's block writes the column and drops that cached copy,
+	// which is what makes the block take effect on the next request rather than when the TTL runs out.
+	BlockedAt     *time.Time `json:"blocked_at"`
+	BlockedReason *string    `gorm:"type:text" json:"blocked_reason"`
+	ClickCount    int64      `gorm:"default:0" json:"click_count"`
 	// ON DELETE SET NULL: deleting an account must not delete the links that were created with it.
 	UserID   *int64 `gorm:"index" json:"user_id"`
 	FolderID *int64 `gorm:"index" json:"folder_id"`
@@ -246,6 +251,55 @@ type BlockedHost struct {
 	CreatedAt time.Time `gorm:"index" json:"created_at"`
 }
 
+// LinkBlock is one takedown: who stopped a link, when, why, and when it was put back.
+//
+// It exists beside links.blocked_at rather than instead of it. The column is the state the redirect reads;
+// this table is the history, and the two are written in one transaction so they cannot disagree about the
+// present. A decision that stops somebody's link has to be answerable later - "who did this and on what
+// evidence" is the first question the owner asks - and a column that is nulled on unblock answers nothing.
+type LinkBlock struct {
+	ID int64 `gorm:"primaryKey" json:"id"`
+	// ON DELETE CASCADE: the history of a deleted link goes with it.
+	LinkID int64 `gorm:"not null;index" json:"link_id"`
+	// ShortCode is copied at block time: the row still says what was stopped after the link is deleted,
+	// and it is the only handle an operator has when they are working from a report.
+	ShortCode string `gorm:"type:varchar(20);not null;index" json:"short_code"`
+	Reason    string `gorm:"type:text;not null" json:"reason"`
+	// Evidence is what the decision rested on: a report id and its claim, a blocklist hit, or a URL.
+	Evidence string `gorm:"type:text" json:"evidence"`
+	// Operator is the phone number of the account that made the decision, not its id: the number is what
+	// the operator signs in with, and an id would need a second lookup to be read by a person.
+	Operator   string     `gorm:"type:varchar(20);not null" json:"operator"`
+	CreatedAt  time.Time  `gorm:"index" json:"created_at"`
+	LiftedAt   *time.Time `json:"lifted_at"`
+	LiftReason *string    `gorm:"type:text" json:"lift_reason"`
+	// LiftedBy is the operator who put it back, which is asked for by the owner whose link was stopped in
+	// error and by nobody else.
+	LiftedBy *string `gorm:"type:varchar(20)" json:"lifted_by"`
+
+	Link *Link `gorm:"foreignKey:LinkID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+// AbuseReport is a complaint about a short link, filed by anyone who can open one.
+//
+// The row survives the link it is about. A report is evidence, and evidence that disappears when somebody
+// deletes the thing being complained about is not evidence - so LinkID is nullable and the short code is
+// copied onto the row.
+type AbuseReport struct {
+	ID        int64  `gorm:"primaryKey" json:"id"`
+	ShortCode string `gorm:"type:varchar(20);not null;index" json:"short_code"`
+	// LinkID is NULL when the code did not resolve. That is worth keeping: a report about a link that is
+	// already gone is the only trace of what it pointed at.
+	LinkID    *int64    `gorm:"index" json:"link_id"`
+	Reason    string    `gorm:"type:varchar(32);not null" json:"reason"`
+	Detail    string    `gorm:"type:text" json:"detail"`
+	Contact   *string   `gorm:"type:varchar(255)" json:"contact"`
+	IP        *string   `gorm:"type:varchar(45)" json:"ip"`
+	CreatedAt time.Time `gorm:"index" json:"created_at"`
+
+	Link *Link `gorm:"foreignKey:LinkID;constraint:OnDelete:SET NULL" json:"-"`
+}
+
 // UTMTemplate is a reusable set of UTM parameters.
 type UTMTemplate struct {
 	ID          int64     `gorm:"primaryKey" json:"id"`
@@ -317,6 +371,8 @@ func Models() []any {
 		&LoginAttempt{},
 		&Domain{},
 		&BlockedHost{},
+		&LinkBlock{},
+		&AbuseReport{},
 		&UTMTemplate{},
 		&APIToken{},
 		&AIConversation{},

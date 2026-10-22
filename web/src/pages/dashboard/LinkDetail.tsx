@@ -38,6 +38,9 @@ interface LinkDetail {
   android_url?: string;
   has_password?: boolean;
   expires_at?: string;
+  // Set when an operator stopped the link; the reason is shown to the owner and nobody else.
+  blocked_at?: string | null;
+  blocked_reason?: string | null;
   folder_id?: number;
   folder_name?: string;
   tags?: TagInfo[];
@@ -310,6 +313,14 @@ export default function LinkDetailPage() {
           <a href={link.short_url} target="_blank" rel="noopener noreferrer"
             className="p-1.5 rounded-lg text-indigo-400 hover:text-brand-ink transition shrink-0"><ExternalLink className="size-3.5" /></a>
         </div>
+
+        {/* The owner is the one person entitled to the reason: it is the answer to "why is my link down". */}
+        {link.blocked_at && (
+          <div className="border-b border-line bg-red-50 px-6 py-3">
+            <p className="text-sm font-medium text-red-700">{t("该链接已被停止访问")}</p>
+            {link.blocked_reason && <p className="mt-1 text-xs text-red-700">{link.blocked_reason}</p>}
+          </div>
+        )}
 
         {/* Stats row */}
         <div className="grid grid-cols-3 divide-x border-b border-line">

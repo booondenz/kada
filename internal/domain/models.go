@@ -8,6 +8,14 @@ import (
 
 var ErrLinkNotFound = errors.New("link not found")
 
+// ErrLinkAlreadyBlocked and ErrLinkNotBlocked refuse a no-op. An operator who blocks a link twice has
+// probably lost track of what is already stopped, and answering "done" would leave them believing a second
+// decision was recorded.
+var (
+	ErrLinkAlreadyBlocked = errors.New("link is already stopped")
+	ErrLinkNotBlocked     = errors.New("link is not stopped")
+)
+
 // RateLimitError is a refusal caused by a quota rather than by anything wrong with the request.
 //
 // It is a type rather than a sentinel because the caller needs two things a bare error cannot carry: the
@@ -166,30 +174,34 @@ type LinkTagInfo struct {
 // hash field would put it in both. HasPassword carries the only fact either needs. users.password_hash
 // is tagged json:"-" for the same reason (see TestUserHidesPasswordHash).
 type LinkInfo struct {
-	ID          int64         `json:"id"`
-	ShortCode   string        `json:"short_code"`
-	ShortURL    string        `json:"short_url"`
-	OriginalURL string        `json:"original_url"`
-	Title       *string       `json:"title"`
-	Description *string       `json:"description"`
-	ImageURL    *string       `json:"image_url"`
-	Domain      string        `json:"domain"`
-	ClickCount  int64         `json:"click_count"`
-	IsActive    bool          `json:"is_active"`
-	ExpiresAt   *time.Time    `json:"expires_at"`
-	CreatedAt   time.Time     `json:"created_at"`
-	UpdatedAt   time.Time     `json:"updated_at"`
-	FolderID    *int64        `json:"folder_id"`
-	FolderName  *string       `json:"folder_name"`
-	Tags        []LinkTagInfo `json:"tags"`
-	HasPassword bool          `json:"has_password"`
-	UTMSource   *string       `json:"utm_source,omitempty"`
-	UTMMedium   *string       `json:"utm_medium,omitempty"`
-	UTMCampaign *string       `json:"utm_campaign,omitempty"`
-	UTMTerm     *string       `json:"utm_term,omitempty"`
-	UTMContent  *string       `json:"utm_content,omitempty"`
-	IosURL      *string       `json:"ios_url,omitempty"`
-	AndroidURL  *string       `json:"android_url,omitempty"`
+	ID          int64   `json:"id"`
+	ShortCode   string  `json:"short_code"`
+	ShortURL    string  `json:"short_url"`
+	OriginalURL string  `json:"original_url"`
+	Title       *string `json:"title"`
+	Description *string `json:"description"`
+	ImageURL    *string `json:"image_url"`
+	Domain      string  `json:"domain"`
+	ClickCount  int64   `json:"click_count"`
+	IsActive    bool    `json:"is_active"`
+	// BlockedAt is set when an operator stopped the link. It reaches two readers: the owner, whose link
+	// page has to say why it is not being served, and the redirect, which refuses to serve it.
+	BlockedAt     *time.Time    `json:"blocked_at"`
+	BlockedReason *string       `json:"blocked_reason"`
+	ExpiresAt     *time.Time    `json:"expires_at"`
+	CreatedAt     time.Time     `json:"created_at"`
+	UpdatedAt     time.Time     `json:"updated_at"`
+	FolderID      *int64        `json:"folder_id"`
+	FolderName    *string       `json:"folder_name"`
+	Tags          []LinkTagInfo `json:"tags"`
+	HasPassword   bool          `json:"has_password"`
+	UTMSource     *string       `json:"utm_source,omitempty"`
+	UTMMedium     *string       `json:"utm_medium,omitempty"`
+	UTMCampaign   *string       `json:"utm_campaign,omitempty"`
+	UTMTerm       *string       `json:"utm_term,omitempty"`
+	UTMContent    *string       `json:"utm_content,omitempty"`
+	IosURL        *string       `json:"ios_url,omitempty"`
+	AndroidURL    *string       `json:"android_url,omitempty"`
 }
 
 type PaginatedLinks struct {
@@ -197,6 +209,64 @@ type PaginatedLinks struct {
 	TotalCount int64      `json:"total_count"`
 	Page       int        `json:"page"`
 	PageSize   int        `json:"page_size"`
+}
+
+// ==================== Moderation ====================
+
+// BlockLinkRequest stops a link from being served.
+//
+// Reason is required on purpose. A takedown nobody can explain is one nobody can defend when the owner
+// asks, and it is one that cannot be undone correctly either - so the reason is asked for at the moment
+// the decision is made, when it is still known.
+type BlockLinkRequest struct {
+	Reason   string `json:"reason" binding:"required"`
+	Evidence string `json:"evidence"`
+}
+
+// UnblockLinkRequest puts a link back.
+type UnblockLinkRequest struct {
+	Reason string `json:"reason"`
+}
+
+// LinkBlockInfo is one row of a link's takedown history.
+type LinkBlockInfo struct {
+	ID         int64      `json:"id"`
+	ShortCode  string     `json:"short_code"`
+	Reason     string     `json:"reason"`
+	Evidence   string     `json:"evidence"`
+	Operator   string     `json:"operator"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LiftedAt   *time.Time `json:"lifted_at"`
+	LiftReason *string    `json:"lift_reason"`
+	LiftedBy   *string    `json:"lifted_by"`
+}
+
+// ReportReasons are the categories a report may name. They are the same strings blocked_hosts.category
+// uses, because a report is usually what creates the row.
+var ReportReasons = []string{"porn", "gambling", "drugs", "fraud", "phishing", "malware", "other"}
+
+// CreateReportRequest is a complaint filed by a visitor who followed a short link somewhere it should not
+// have gone.
+type CreateReportRequest struct {
+	ShortCode string  `json:"short_code" binding:"required"`
+	Reason    string  `json:"reason" binding:"required"`
+	Detail    string  `json:"detail"`
+	Contact   *string `json:"contact"`
+}
+
+// AbuseReportInfo is a complaint as the operator sees it.
+//
+// LinkBlocked answers "has this one been dealt with" without a status column of its own: the state that
+// matters is whether the link it names is stopped now, and a separate flag could disagree with that.
+type AbuseReportInfo struct {
+	ID          int64     `json:"id"`
+	ShortCode   string    `json:"short_code"`
+	LinkID      *int64    `json:"link_id"`
+	Reason      string    `json:"reason"`
+	Detail      string    `json:"detail"`
+	Contact     *string   `json:"contact"`
+	CreatedAt   time.Time `json:"created_at"`
+	LinkBlocked bool      `json:"link_blocked"`
 }
 
 // ==================== Platform detection ====================

@@ -387,6 +387,9 @@ export default function SettingsPage() {
           <Link to="/privacy" className="transition-colors hover:text-muted">
             {t("隐私政策")}
           </Link>
+          <Link to="/report" className="transition-colors hover:text-muted">
+            {t("举报")}
+          </Link>
         </div>
       </footer>
     </div>

@@ -37,6 +37,8 @@ func TestTableNames(t *testing.T) {
 		"LinkTag":             "link_tags",
 		"Domain":              "domains",
 		"BlockedHost":         "blocked_hosts",
+		"LinkBlock":           "link_blocks",
+		"AbuseReport":         "abuse_reports",
 		"UTMTemplate":         "utm_templates",
 		"APIToken":            "api_tokens",
 		"AIConversation":      "ai_conversations",
