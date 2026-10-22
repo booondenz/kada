@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { adminAPI, type AbuseReport } from "@/lib/api";
 import type { LinkBlockRecord } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import { getAdminSecret, setAdminSecret } from "@/lib/adminSecret";
 import { buttonClass } from "@/components/ui/Button";
 import { inputClass } from "@/components/ui/Field";
 import { useT } from "@/lib/i18n";
@@ -44,11 +45,17 @@ export default function ModerationPage() {
     }
   };
 
-  const { data, error, mutate, isLoading } = useSWR(token ? "admin-reports" : null, () =>
-    adminAPI.reports(token!),
+  // The operator proves who they are with the deployment's secret, typed here once. Without it the routes
+  // answer 403, so there is nothing to ask for until one is present.
+  const [secret, setSecret] = useState(getAdminSecret());
+  const [secretInput, setSecretInput] = useState("");
+
+  const { data, error, mutate, isLoading } = useSWR(
+    token && secret ? ["admin-reports", secret] : null,
+    () => adminAPI.reports(token!),
   );
   const reports: AbuseReport[] = data?.reports ?? [];
-  const notOperator = error instanceof Error && /not an operator/.test(error.message);
+  const notOperator = Boolean(secret) && error instanceof Error && /not an operator/.test(error.message);
 
   const { data: history } = useSWR(
     token && historyCode ? ["admin-blocks", historyCode] : null,
@@ -86,13 +93,38 @@ export default function ModerationPage() {
     }
   };
 
-  if (notOperator) {
+  if (!secret || notOperator) {
     return (
-      <div className="max-w-2xl">
-        <h1 className="text-2xl font-bold text-strong">{t("运营")}</h1>
-        <p className="mt-3 text-sm text-muted">
-          {t("这个账号不是运营。把手机号加进 ADMIN_PHONES 之后才会看到这里的举报。")}
-        </p>
+      <div className="max-w-md space-y-4">
+        <div>
+          <h1 className="text-2xl font-bold text-strong">{t("运营")}</h1>
+          <p className="mt-1 text-sm text-muted">
+            {t("输入部署时设置的 ADMIN_SECRET，它只保存在这个浏览器里。")}
+          </p>
+        </div>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            setAdminSecret(secretInput.trim());
+            setSecret(secretInput.trim());
+            setSecretInput("");
+          }}
+          className="space-y-2"
+        >
+          <input
+            type="password"
+            value={secretInput}
+            onChange={(e) => setSecretInput(e.target.value)}
+            placeholder={t("运营密钥")}
+            className={`${inputClass()} w-full`}
+          />
+          <button type="submit" disabled={!secretInput.trim()} className={buttonClass()}>
+            {t("进入")}
+          </button>
+        </form>
+
+        {notOperator && <p className="text-sm text-danger">{t("密钥不对。")}</p>}
       </div>
     );
   }

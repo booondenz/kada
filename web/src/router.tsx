@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate, Outlet } from "react-router";
 import { AppLayout } from "@/components/AppLayout";
 import Ai from "@/pages/dashboard/Ai";
 import Analytics from "@/pages/dashboard/Analytics";
+import Api from "@/pages/dashboard/Api";
 import Customers from "@/pages/dashboard/Customers";
 import Domains from "@/pages/dashboard/Domains";
 import Events from "@/pages/dashboard/Events";
@@ -11,7 +12,6 @@ import LinkDetail from "@/pages/dashboard/LinkDetail";
 import LinkNew from "@/pages/dashboard/LinkNew";
 import Links from "@/pages/dashboard/Links";
 import Moderation from "@/pages/dashboard/Moderation";
-import Settings from "@/pages/dashboard/Settings";
 import Tags from "@/pages/dashboard/Tags";
 import Utm from "@/pages/dashboard/Utm";
 import Privacy from "@/pages/Privacy";
@@ -52,11 +52,16 @@ export const router = createBrowserRouter([
       { path: "links/:id", element: <LinkDetail /> },
       { path: "analytics", element: <Analytics /> },
       { path: "ai", element: <Ai /> },
+      // The API page carries the documentation and the tokens that reach it, which is where the token
+      // management used to live: the user page it was on no longer exists, because there are no users.
+      { path: "api", element: <Api /> },
       { path: "customers", element: <Customers /> },
       { path: "domains", element: <Domains /> },
       { path: "events", element: <Events /> },
       { path: "folders", element: <Folders /> },
-      { path: "settings", element: <Settings /> },
+      // The user page was deleted with the sign-in it belonged to. The URL was shared and may be bookmarked,
+      // and the two things on it - tokens and the theme - live on the API page and in the top bar now.
+      { path: "settings", element: <Navigate to="/dashboard/api" replace /> },
       // The operator console. It lives behind the same shell as everything else and the API refuses it to
       // anybody who is not in ADMIN_PHONES; the sidebar only shows the entry when that check passes.
       { path: "moderation", element: <Moderation /> },

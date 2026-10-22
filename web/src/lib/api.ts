@@ -1,5 +1,6 @@
 // Resolves the API base URL.
 import { getToken, type User } from "./auth";
+import { getAdminSecret } from "./adminSecret";
 //
 // The three cases:
 //
@@ -27,6 +28,8 @@ const API_URL = resolveAPIURL();
 
 interface FetchOptions extends RequestInit {
   token?: string;
+  /** The operator secret, for the admin routes. Sent as X-Admin-Secret when present. */
+  adminSecret?: string;
 }
 
 /**
@@ -52,7 +55,7 @@ async function readJSON(res: Response, url: string) {
 }
 
 async function fetchAPI(path: string, options: FetchOptions = {}) {
-  const { token, ...fetchOptions } = options;
+  const { token, adminSecret, ...fetchOptions } = options;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string>),
@@ -60,6 +63,9 @@ async function fetchAPI(path: string, options: FetchOptions = {}) {
 
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
+  }
+  if (adminSecret) {
+    headers["X-Admin-Secret"] = adminSecret;
   }
 
   const url = `${API_URL}${path}`;
@@ -148,32 +154,9 @@ export async function fetchCSV(path: string, token: string): Promise<string> {
 // would abandon.
 
 export const authAPI = {
-  /** Opens a session for a visitor who has not given any identity yet. */
+  /** Opens a session for a visitor. There is no other way in: the site is free. */
   guest: (): Promise<{ token: string; user: User }> =>
     fetchAPI("/api/auth/guest", { method: "POST" }),
-
-  /** Issues the graphical challenge that sending an SMS code requires. */
-  captcha: (): Promise<{ captcha_id: string; image: string }> =>
-    fetchAPI("/api/auth/captcha"),
-
-  /** Sends the verification code, once the challenge above has been answered. */
-  sendCode: (phone: string, captchaId: string, captchaCode: string): Promise<unknown> =>
-    fetchAPI("/api/auth/send-sms-code", {
-      method: "POST",
-      body: JSON.stringify({ phone, captcha_id: captchaId, captcha_code: captchaCode }),
-    }),
-
-  /**
-   * Names the account this browser is already using: the phone number is written onto the guest row, or -
-   * when the number already has an account - the session becomes that account's. Both outcomes answer a
-   * token, because both are a sign-in.
-   */
-  claim: (token: string, phone: string, code: string): Promise<{ token: string; user: User }> =>
-    fetchAPI("/api/auth/claim", {
-      method: "POST",
-      token,
-      body: JSON.stringify({ phone, code }),
-    }),
 };
 
 // ========== Links API ==========
@@ -384,12 +367,13 @@ export interface LinkBlockRecord {
  */
 export const adminAPI = {
   reports: (token: string, limit = 50): Promise<{ reports: AbuseReport[] }> =>
-    fetchAPI(`/api/admin/reports?limit=${limit}`, { token }),
+    fetchAPI(`/api/admin/reports?limit=${limit}`, { token, adminSecret: getAdminSecret() }),
 
   block: (token: string, code: string, reason: string, evidence: string) =>
     fetchAPI(`/api/admin/links/${encodeURIComponent(code)}/block`, {
       method: "POST",
       token,
+      adminSecret: getAdminSecret(),
       body: JSON.stringify({ reason, evidence }),
     }),
 
@@ -397,11 +381,12 @@ export const adminAPI = {
     fetchAPI(`/api/admin/links/${encodeURIComponent(code)}/unblock`, {
       method: "POST",
       token,
+      adminSecret: getAdminSecret(),
       body: JSON.stringify({ reason }),
     }),
 
   blocks: (token: string, code: string): Promise<{ blocks: LinkBlockRecord[] }> =>
-    fetchAPI(`/api/admin/links/${encodeURIComponent(code)}/blocks`, { token }),
+    fetchAPI(`/api/admin/links/${encodeURIComponent(code)}/blocks`, { token, adminSecret: getAdminSecret() }),
 };
 
 // ========== Folders API ==========

@@ -11,15 +11,18 @@ import {
   ArrowRightLeft,
   Sparkles,
   ShieldCheck,
-  User,
+  Braces,
   X,
   type LucideIcon,
 } from "lucide-react";
 import useSWR from "swr";
 import { adminAPI } from "@/lib/api";
-import { getToken, getUser } from "@/lib/auth";
+import { getToken } from "@/lib/auth";
+import { getAdminSecret } from "@/lib/adminSecret";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
+import { IcpNotice } from "@/components/IcpNotice";
+import { PublicSecurityNotice } from "@/components/PublicSecurityNotice";
 
 interface NavItem {
   name: string;
@@ -64,6 +67,7 @@ const NAV_SECTIONS: NavSection[] = [
     name: "AI",
     items: [
       { name: "AI 助手", href: "/dashboard/ai", icon: Sparkles },
+      { name: "API", href: "/dashboard/api", icon: Braces },
     ],
   },
 ];
@@ -77,10 +81,11 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
   const t = useT();
   const token = getToken();
 
-  // Whether this account is an operator. The probe is the cheapest of the operator routes, the answer is
-  // cached for the session, and a refusal is not an error state: it means the entry does not appear.
+  // Whether this browser holds the operator secret. Without one the routes answer 403, so there is nothing
+  // to ask; with one, the cheapest operator route is the check, and its answer is cached for the session.
+  const secret = getAdminSecret();
   const { data: isOperator } = useSWR(
-    token ? "admin-probe" : null,
+    token && secret ? "admin-probe" : null,
     async () => {
       try {
         await adminAPI.reports(token!, 1);
@@ -97,10 +102,6 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
   const sections = NAV_SECTIONS.map((section) =>
     isOperator && section.name === "AI" ? { ...section, items: [...section.items, MODERATION_ITEM] } : section,
   );
-  // The account the app is running as. A guest row has no phone number yet, and "游客" is what that
-  // state is called here rather than an absence: the account exists from the first page load, so the row
-  // names who it belongs to instead of reporting a missing field.
-  const identity = getUser()?.phone || t("游客");
 
   const handleClick = () => {
     // Close mobile sidebar after navigation
@@ -158,24 +159,21 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
         ))}
       </nav>
 
-      {/* The account, where "设置" used to be. The row is the only place in the shell that can say which
-          account the links below belong to, and it says the same thing the user page does: 游客 until the
-          guest row is claimed, the phone number after. The version string and the filing number are not
-          navigation, so they moved to the bottom of that page. */}
-      <div className="border-t border-line px-3 py-3">
-        <Link
-          to="/dashboard/settings"
-          onClick={handleClick}
-          className={cn(
-            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-            pathname === "/dashboard/settings"
-              ? "bg-brand-soft text-brand-ink"
-              : "text-muted hover:bg-muted-surface hover:text-strong"
-          )}
-        >
-          <User className={cn("size-4 shrink-0", pathname === "/dashboard/settings" && "text-brand-ink")} />
-          <span className="truncate">{identity}</span>
-        </Link>
+      {/* The bottom of the sidebar is the one place every page reaches, so it is where the filings sit -
+          the account row that used to be here named an identity the product no longer has. The links are
+          above the numbers because a filing is not navigation: the two things a visitor might act on come
+          first, and the two things a regulator checks come after. */}
+      <div className="space-y-1.5 border-t border-line px-4 py-3 text-xs">
+        <div className="flex flex-wrap items-center gap-x-3">
+          <Link to="/privacy" className="text-muted transition-colors hover:text-strong">
+            {t("隐私政策")}
+          </Link>
+          <Link to="/report" className="text-muted transition-colors hover:text-strong">
+            {t("举报")}
+          </Link>
+        </div>
+        <IcpNotice className="block text-faint transition-colors hover:text-muted" />
+        <PublicSecurityNotice className="block text-faint transition-colors hover:text-muted" />
       </div>
     </aside>
   );
