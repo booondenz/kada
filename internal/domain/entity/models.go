@@ -76,6 +76,13 @@ type LinkTarget struct {
 	Weight     int     `gorm:"not null;default:1" json:"weight"`
 	DailyQuota int     `gorm:"not null;default:0" json:"daily_quota"`
 	Enabled    bool    `gorm:"not null;default:true" json:"enabled"`
+	// Kind is what the target is: "url" for a plain destination, "wechat_group" for a group code, which is
+	// shown as a page rather than redirected to because a QR code has to be looked at to be used.
+	Kind string `gorm:"type:varchar(16);not null;default:url" json:"kind"`
+	// ExpiresAt is when this target stops taking visitors. A WeChat group's QR code dies seven days after
+	// it is generated, so the pool has to be able to skip it - the short link and the printed poster do not
+	// change, which is the whole product.
+	ExpiresAt *time.Time `json:"expires_at"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

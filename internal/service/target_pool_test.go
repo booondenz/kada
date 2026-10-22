@@ -63,6 +63,36 @@ func TestPickTarget_ReturnsNothingWithoutAPool(t *testing.T) {
 	}
 }
 
+func TestPickTarget_SkipsAnExpiredTarget(t *testing.T) {
+	svc := &LinkService{}
+	past := time.Now().Add(-time.Hour)
+	future := time.Now().Add(time.Hour)
+
+	link := &domain.LinkInfo{Targets: []domain.LinkTargetInfo{
+		{ID: 1, Weight: 1, Enabled: true, Kind: domain.TargetWechatGroup, ExpiresAt: &past},
+		{ID: 2, Weight: 1, Enabled: true, Kind: domain.TargetWechatGroup, ExpiresAt: &future},
+	}}
+
+	for i := 0; i < 20; i++ {
+		got := svc.PickTarget(link)
+		if got == nil || got.ID != 2 {
+			t.Fatalf("PickTarget = %v, want the target that has not expired", got)
+		}
+	}
+}
+
+func TestPickTarget_ReturnsNothingWhenEveryTargetExpired(t *testing.T) {
+	svc := &LinkService{}
+	past := time.Now().Add(-time.Minute)
+	link := &domain.LinkInfo{Targets: []domain.LinkTargetInfo{
+		{ID: 1, Weight: 1, Enabled: true, Kind: domain.TargetWechatGroup, ExpiresAt: &past},
+	}}
+
+	if got := svc.PickTarget(link); got != nil {
+		t.Errorf("PickTarget = %v, want nil when every target expired", got)
+	}
+}
+
 func TestDispatchQuota_CapsATargetForTheDay(t *testing.T) {
 	var q dispatchQuota
 	now := time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC)

@@ -96,6 +96,11 @@ func (s *LinkService) PickTarget(link *domain.LinkInfo) *domain.LinkTargetInfo {
 		if !t.Enabled || t.Weight <= 0 {
 			continue
 		}
+		// An expired target is skipped rather than deleted: the row is still the record of what that code
+		// was, and the owner replaces it by editing the row.
+		if t.ExpiresAt != nil && t.ExpiresAt.Before(now) {
+			continue
+		}
 		if !s.quota.available(t.ID, t.DailyQuota, now) {
 			continue
 		}
@@ -155,6 +160,23 @@ func (s *LinkService) ReplaceTargets(ctx context.Context, linkID, userID int64, 
 			enabled = *in.Enabled
 		}
 
+		kind := domain.TargetKind(in.Kind)
+		if in.Kind == "" {
+			kind = domain.TargetURL
+		}
+		if !kind.Known() {
+			return nil, errors.New("unknown target kind")
+		}
+
+		var expiresAt *time.Time
+		if in.ExpiresAt != nil && *in.ExpiresAt != "" {
+			parsed, parseErr := time.Parse(time.RFC3339, *in.ExpiresAt)
+			if parseErr != nil {
+				return nil, errors.New("invalid expiry format, use RFC 3339 (for example 2025-01-01T00:00:00Z)")
+			}
+			expiresAt = &parsed
+		}
+
 		targets = append(targets, entity.LinkTarget{
 			LinkID:     link.ID,
 			URL:        url,
@@ -162,6 +184,8 @@ func (s *LinkService) ReplaceTargets(ctx context.Context, linkID, userID int64, 
 			Weight:     weight,
 			DailyQuota: quota,
 			Enabled:    enabled,
+			Kind:       string(kind),
+			ExpiresAt:  expiresAt,
 		})
 	}
 
@@ -256,6 +280,8 @@ func targetInfos(rows []entity.LinkTarget) []domain.LinkTargetInfo {
 			Weight:     r.Weight,
 			DailyQuota: r.DailyQuota,
 			Enabled:    r.Enabled,
+			Kind:       domain.TargetKind(r.Kind),
+			ExpiresAt:  r.ExpiresAt,
 		})
 	}
 	return out

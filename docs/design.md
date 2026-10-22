@@ -266,7 +266,7 @@ blocked_hosts   (standalone, keyed by host)
 | `blocked_hosts` | Targets that are not served | `host` (unique; matched by suffix, so one row covers every subdomain), `category` (why), `note` |
 | `link_blocks` | One takedown of one link | `short_code` (copied, so the row outlives the link), `reason`, `evidence`, `operator` (the phone number that decided), `lifted_at`, `lift_reason`, `lifted_by` |
 | `abuse_reports` | Complaints from visitors | `short_code`, `link_id` (nullable - a report about a deleted link is still evidence), `reason`, `detail`, `contact`, `ip` (not published) |
-| `link_targets` | One destination of a link's pool | `url`, `weight` (share of the draw; 0 means never), `daily_quota` (0 means unlimited), `enabled`, `label` |
+| `link_targets` | One destination of a link's pool | `url`, `weight` (share of the draw; 0 means never), `daily_quota` (0 means unlimited), `enabled`, `label`, `kind` (`url` or `wechat_group`), `expires_at` |
 | `link_target_audits` | One replacement of a pool | `operator`, `before` and `after` as JSON arrays |
 | `uploads` | Files behind file links | `public_id` (unguessable, in the URL), `filename`, `content_type`, `size`, `sha256`, `storage_path` (relative to `UPLOAD_DIR`) |
 
@@ -859,6 +859,28 @@ Deleting a link does not delete its file. It orphans it, and an hourly sweep rem
 refers to once they are a day old. Sweeping rather than deleting at the point of deletion keeps the link
 code out of the file business, and the grace period is what stops a link being created right now from losing
 its file to a sweep that ran in between.
+
+### 7.11 A group code is a target that expires
+
+A WeChat group's QR code dies seven days after it is generated and stops admitting people once the group is
+full. That is the product behind `kind` and `expires_at` on a target: the short link and the printed poster
+never change, and what changes is which group the pool is pointing at.
+
+A target whose kind is `wechat_group` is **shown, not redirected to**. The page puts the code on screen with
+the instruction that makes it work (long-press to recognize, or screenshot and scan from the album) - a 302
+would hand the visitor an image file with nothing telling them what to do with it. The page confirms the
+visit with the same handshake the guide page uses, because WeChat fetches a link to build a preview card
+without showing it to anybody, and running the script is the only evidence a person opened it.
+
+An expired target is skipped by the draw rather than deleted: the row is still the record of what that code
+was, and replacing it is editing the row. The owner sees `有效期至 <date>` on the target, in amber inside the
+last three days - which is the warning, on the row where the replacement happens.
+
+When a group pool has nothing left to serve, the answer is a 200 page saying the group is full or the code
+has expired. A 404 was right for a plain pool (#42): the link said where its traffic goes and nothing there
+was usable, so it is broken. Here "every group filled up" is a state the owner asked for, and telling the
+visitor their link is broken would be a lie they cannot act on - so the metric counts `group_empty` apart
+from `not_found`.
 
 ## 8. Cross-cutting decisions
 

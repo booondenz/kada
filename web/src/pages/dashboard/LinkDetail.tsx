@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
-import { linksAPI, foldersAPI, tagsAPI, domainsAPI, analyticsAPI } from "@/lib/api";
+import { linksAPI, foldersAPI, tagsAPI, domainsAPI, analyticsAPI, uploadsAPI } from "@/lib/api";
 import type { LinkTarget } from "@/lib/api";
 import { buttonClass } from "@/components/ui/Button";
 import { inputClass } from "@/components/ui/Field";
@@ -99,7 +99,15 @@ export default function LinkDetailPage() {
 
   // Target pool
   const [targets, setTargets] = useState<
-    { url: string; weight: number; dailyQuota: number; enabled: boolean; clicks: number }[]
+    {
+      url: string;
+      weight: number;
+      dailyQuota: number;
+      enabled: boolean;
+      clicks: number;
+      kind: "url" | "wechat_group";
+      expiresAt: string;
+    }[]
   >([]);
   const [editingTargets, setEditingTargets] = useState(false);
   const [savingTargets, setSavingTargets] = useState(false);
@@ -199,6 +207,9 @@ export default function LinkDetailPage() {
           dailyQuota: target.daily_quota,
           enabled: target.enabled,
           clicks: target.clicks,
+          kind: target.kind === "wechat_group" ? "wechat_group" : "url",
+          // The date input speaks days, the API speaks RFC 3339: the date is the part a person sets.
+          expiresAt: target.expires_at ? target.expires_at.slice(0, 10) : "",
         })),
       );
     } catch {
@@ -212,10 +223,31 @@ export default function LinkDetailPage() {
 
   const updateTarget = (
     index: number,
-    patch: Partial<{ url: string; weight: number; dailyQuota: number; enabled: boolean }>,
+    patch: Partial<{ url: string; weight: number; dailyQuota: number; enabled: boolean; kind: "url" | "wechat_group"; expiresAt: string }>,
   ) => {
     setTargets((prev) => prev.map((target, i) => (i === index ? { ...target, ...patch } : target)));
   };
+
+  // A group code is an image, and the image has to be hosted somewhere the visitor can see it - which is
+  // what the upload route is for. The target keeps the file's URL, so replacing the code later is editing
+  // the row rather than reprinting anything.
+  const uploadTargetImage = async (index: number, file: File) => {
+    if (!token) return;
+    try {
+      const data = await uploadsAPI.create(token, file);
+      updateTarget(index, { url: data.upload.url, kind: "wechat_group" });
+      toast.success(t("文件已上传"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("上传失败"));
+    }
+  };
+
+  // A group code runs out: WeChat's last seven days, and the QR itself stops admitting anyone once the
+  // group is full. The pool skips an expired target on its own; these two say so to the one person who can
+  // replace it, on the row where the replacement happens.
+  const expired = (date: string) => new Date(`${date}T23:59:59Z`).getTime() <= Date.now();
+  const expiresWithin = (date: string, days: number) =>
+    !expired(date) && new Date(`${date}T23:59:59Z`).getTime() - Date.now() <= days * 86_400_000;
 
   const saveTargets = async () => {
     if (!token || !link) return;
@@ -230,6 +262,10 @@ export default function LinkDetailPage() {
           weight: target.weight,
           daily_quota: target.dailyQuota,
           enabled: target.enabled,
+          kind: target.kind,
+          // The end of the chosen day, in UTC: the owner picks a date rather than a time, and the target
+          // stays live through it.
+          expires_at: target.expiresAt ? `${target.expiresAt}T23:59:59Z` : undefined,
         })),
       );
       toast.success(t("分流目标已保存"));
@@ -436,55 +472,98 @@ export default function LinkDetailPage() {
           {editingTargets ? (
             <div className="space-y-2">
               {targets.map((target, index) => (
-                <div key={index} className="grid gap-2 sm:grid-cols-[1fr_4.5rem_5rem_auto_auto]">
-                  <input
-                    value={target.url}
-                    onChange={(e) => updateTarget(index, { url: e.target.value })}
-                    placeholder="https://"
-                    className={`${inputClass()} font-mono text-xs`}
-                  />
-                  <input
-                    type="number"
-                    min={0}
-                    value={target.weight}
-                    onChange={(e) => updateTarget(index, { weight: Number(e.target.value) })}
-                    title={t("权重")}
-                    className={inputClass()}
-                  />
-                  <input
-                    type="number"
-                    min={0}
-                    value={target.dailyQuota}
-                    onChange={(e) => updateTarget(index, { dailyQuota: Number(e.target.value) })}
-                    title={t("每日上限")}
-                    className={inputClass()}
-                  />
-                  <label className="flex items-center gap-1 text-xs text-muted">
+                <div key={index} className="space-y-2 rounded-lg border border-line p-2">
+                  <div className="flex gap-2">
                     <input
-                      type="checkbox"
-                      checked={target.enabled}
-                      onChange={(e) => updateTarget(index, { enabled: e.target.checked })}
+                      value={target.url}
+                      onChange={(e) => updateTarget(index, { url: e.target.value })}
+                      placeholder="https://"
+                      className={`${inputClass()} min-w-0 flex-1 font-mono text-xs`}
                     />
-                    {t("启用")}
-                  </label>
-                  <button
-                    onClick={() => setTargets((prev) => prev.filter((_, i) => i !== index))}
-                    className="text-xs text-danger"
-                  >
-                    {t("删除")}
-                  </button>
+                    <label
+                      className={buttonClass({
+                        variant: "secondary",
+                        size: "sm",
+                        className: "shrink-0 cursor-pointer",
+                      })}
+                    >
+                      {t("上传二维码")}
+                      <input
+                        type="file"
+                        accept=".png,.jpg,.jpeg"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) void uploadTargetImage(index, file);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                    <select
+                      value={target.kind}
+                      onChange={(e) => updateTarget(index, { kind: e.target.value as "url" | "wechat_group" })}
+                      className={inputClass()}
+                      title={t("目标类型")}
+                    >
+                      <option value="url">{t("普通链接")}</option>
+                      <option value="wechat_group">{t("微信群二维码")}</option>
+                    </select>
+                    <input
+                      type="number"
+                      min={0}
+                      value={target.weight}
+                      onChange={(e) => updateTarget(index, { weight: Number(e.target.value) })}
+                      title={t("权重")}
+                      className={`${inputClass()} w-20`}
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      value={target.dailyQuota}
+                      onChange={(e) => updateTarget(index, { dailyQuota: Number(e.target.value) })}
+                      title={t("每日上限")}
+                      className={`${inputClass()} w-24`}
+                    />
+                    <input
+                      type="date"
+                      value={target.expiresAt}
+                      onChange={(e) => updateTarget(index, { expiresAt: e.target.value })}
+                      title={t("有效期")}
+                      className={inputClass()}
+                    />
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={target.enabled}
+                        onChange={(e) => updateTarget(index, { enabled: e.target.checked })}
+                      />
+                      {t("启用")}
+                    </label>
+                    <button
+                      onClick={() => setTargets((prev) => prev.filter((_, i) => i !== index))}
+                      className="ml-auto text-danger"
+                    >
+                      {t("删除")}
+                    </button>
+                  </div>
                 </div>
               ))}
 
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() =>
-                    setTargets((prev) => [...prev, { url: "", weight: 1, dailyQuota: 0, enabled: true, clicks: 0 }])
-                  }
-                  className={buttonClass({ variant: "secondary", size: "sm" })}
-                >
-                  {t("添加目标")}
-                </button>
+                    <button
+                      onClick={() =>
+                        setTargets((prev) => [
+                          ...prev,
+                          { url: "", weight: 1, dailyQuota: 0, enabled: true, clicks: 0, kind: "url", expiresAt: "" },
+                        ])
+                      }
+                      className={buttonClass({ variant: "secondary", size: "sm" })}
+                    >
+                      {t("添加目标")}
+                    </button>
                 <button
                   onClick={saveTargets}
                   disabled={savingTargets}
@@ -512,6 +591,22 @@ export default function LinkDetailPage() {
                       className={`size-1.5 shrink-0 rounded-full ${target.enabled ? "bg-emerald-500" : "bg-muted-surface"}`}
                     />
                     <span className="min-w-0 flex-1 truncate font-mono text-xs text-body">{target.url}</span>
+                    {target.kind === "wechat_group" && (
+                      <span className="shrink-0 rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700">
+                        {t("微信群二维码")}
+                      </span>
+                    )}
+                    {target.expiresAt && (
+                      <span
+                        className={`shrink-0 text-xs tabular-nums ${
+                          expiresWithin(target.expiresAt, 3) ? "font-medium text-amber-600" : "text-muted"
+                        }`}
+                      >
+                        {expired(target.expiresAt)
+                          ? t("已过期")
+                          : `${t("有效期至")} ${target.expiresAt}`}
+                      </span>
+                    )}
                     <span className="shrink-0 text-xs text-muted tabular-nums">
                       {t("权重")} {target.weight}
                     </span>

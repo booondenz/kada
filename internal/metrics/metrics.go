@@ -35,6 +35,11 @@ const (
 	// the two are decided by different things - one by the target's host, one by a person - and the second
 	// is the one that ends up in a complaint.
 	OutcomeBlockedLink = "blocked_link"
+	// OutcomeGroupPage is a WeChat group code shown to the visitor, and OutcomeGroupEmpty is a group pool
+	// with nothing left to show. The second is not a failure of the link: it is the state a group reaches
+	// when it is full, and it is counted apart so the owner can see it happening.
+	OutcomeGroupPage  = "group_page"
+	OutcomeGroupEmpty = "group_empty"
 )
 
 // What the short-code cache did with a lookup.

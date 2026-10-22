@@ -356,6 +356,13 @@ export const zh = {
   "上传失败": "上传失败",
   "文件已上传": "文件已上传",
   "图片或文档，上传后得到一个短链": "图片或文档，上传后得到一个短链",
+  "上传二维码": "上传二维码",
+  "目标类型": "目标类型",
+  "普通链接": "普通链接",
+  "微信群二维码": "微信群二维码",
+  "有效期": "有效期",
+  "有效期至": "有效期至",
+  "已过期": "已过期",
 } as const;
 
 export type MessageKey = keyof typeof zh;
@@ -715,4 +722,11 @@ export const en: Messages = {
   "上传失败": "Upload failed",
   "文件已上传": "File uploaded",
   "图片或文档，上传后得到一个短链": "An image or a document - you get a short link for it",
+  "上传二维码": "Upload code",
+  "目标类型": "Target type",
+  "普通链接": "Plain link",
+  "微信群二维码": "WeChat group code",
+  "有效期": "Expires",
+  "有效期至": "Valid until",
+  "已过期": "Expired",
 };

@@ -328,7 +328,102 @@ func TestRedirect_LinkStoppedByAnOperatorIsNotServed(t *testing.T) {
 
 func stringPtr(s string) *string { return &s }
 
-// ========== Target pools ==========
+// ========== Group codes ==========
+
+// A group code is shown rather than redirected to: the visitor has to scan it with a second device, and a
+// 302 would hand them an image file with no instruction.
+func TestRedirect_ShowsAGroupCodeAsAPage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := newClickRecorder()
+	target := domain.LinkTargetInfo{
+		ID:    5,
+		URL:   "https://kada.click/f/abc123",
+		Kind:  domain.TargetWechatGroup,
+		Label: stringPtr("三群"),
+	}
+	svc := &mockLinkService{
+		getByCode: func(ctx context.Context, code string) (*domain.LinkInfo, error) {
+			return &domain.LinkInfo{
+				ID:          1,
+				ShortCode:   code,
+				OriginalURL: "https://example.com/fallback",
+				Domain:      "kada.click",
+				IsActive:    true,
+				Targets:     []domain.LinkTargetInfo{target},
+			}, nil
+		},
+		pickTarget: func(*domain.LinkInfo) *domain.LinkTargetInfo { return &target },
+		logClick:   rec.record,
+	}
+	h := NewHandler(svc)
+
+	r := gin.New()
+	r.GET("/r/:code", h.Redirect)
+
+	req := httptest.NewRequest("GET", "/r/abc123", nil)
+	req.Header.Set("User-Agent", wechatUA)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "" {
+		t.Errorf("a group code must not redirect, got Location %q", loc)
+	}
+
+	body := w.Body.String()
+	for _, want := range []string{"加入群聊", "https://kada.click/f/abc123", "三群", "/r/abc123/visit"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the group page is missing %q", want)
+		}
+	}
+
+	events := rec.collect(t, 1)
+	if events[0].TargetID == nil || *events[0].TargetID != target.ID {
+		t.Errorf("recorded target = %v, want %d", events[0].TargetID, target.ID)
+	}
+}
+
+// A group pool with nothing left is a state, not a broken link: the page says so with a 200, where a plain
+// pool that cannot serve is still a 404.
+func TestRedirect_AGroupPoolWithNothingLeftSaysSo(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	expired := time.Now().Add(-time.Hour)
+	svc := &mockLinkService{
+		getByCode: func(ctx context.Context, code string) (*domain.LinkInfo, error) {
+			return &domain.LinkInfo{
+				ID:          1,
+				ShortCode:   code,
+				OriginalURL: "https://example.com/fallback",
+				Domain:      "kada.click",
+				IsActive:    true,
+				Targets: []domain.LinkTargetInfo{{
+					ID: 1, URL: "https://kada.click/f/old", Kind: domain.TargetWechatGroup, ExpiresAt: &expired,
+				}},
+			}, nil
+		},
+		pickTarget: func(*domain.LinkInfo) *domain.LinkTargetInfo { return nil },
+	}
+	h := NewHandler(svc)
+
+	r := gin.New()
+	r.GET("/r/:code", h.Redirect)
+
+	req := httptest.NewRequest("GET", "/r/abc123", nil)
+	req.Header.Set("User-Agent", browserUA)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: an exhausted group is not a broken link", w.Code)
+	}
+	if body := w.Body.String(); !strings.Contains(body, "群已满") {
+		t.Errorf("expected the no-group page, got: %s", body)
+	}
+}
 
 // A link with a pool is served from the pool, and the click row says which destination took the visitor -
 // which is the only answer a split can give afterwards.

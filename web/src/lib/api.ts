@@ -185,6 +185,10 @@ export interface LinkTargetInput {
   weight: number;
   daily_quota: number;
   enabled: boolean;
+  /** "url" redirects; "wechat_group" is shown as a page with the code on it. */
+  kind?: "url" | "wechat_group";
+  /** RFC 3339; the target is skipped after this. */
+  expires_at?: string;
 }
 
 /** One destination as the API returns it, with the clicks that reached it. */
@@ -195,6 +199,8 @@ export interface LinkTarget {
   weight: number;
   daily_quota: number;
   enabled: boolean;
+  kind: "url" | "wechat_group";
+  expires_at: string | null;
   clicks: number;
 }
 

@@ -219,18 +219,37 @@ type PaginatedLinks struct {
 
 // ==================== Targets ====================
 
+// TargetKind is what a target of a link's pool is.
+type TargetKind string
+
+const (
+	// TargetURL is a plain destination: the visitor is redirected to it.
+	TargetURL TargetKind = "url"
+	// TargetWechatGroup is a WeChat group QR code. It is served as a page showing the code rather than as a
+	// redirect, because a QR code has to be looked at - and it expires, which is why the pool skips it
+	// instead of the owner having to remember.
+	TargetWechatGroup TargetKind = "wechat_group"
+)
+
+// Known reports whether this is one of the kinds the application defines.
+func (k TargetKind) Known() bool {
+	return k == TargetURL || k == TargetWechatGroup
+}
+
 // LinkTargetInfo is one destination in a link's pool, as the owner and the redirect see it.
 //
 // Clicks is filled only for the owner's listing: the redirect path has no use for it and asking would put a
 // group-by on the hot path.
 type LinkTargetInfo struct {
-	ID         int64   `json:"id"`
-	URL        string  `json:"url"`
-	Label      *string `json:"label,omitempty"`
-	Weight     int     `json:"weight"`
-	DailyQuota int     `json:"daily_quota"`
-	Enabled    bool    `json:"enabled"`
-	Clicks     int64   `json:"clicks"`
+	ID         int64      `json:"id"`
+	URL        string     `json:"url"`
+	Label      *string    `json:"label,omitempty"`
+	Weight     int        `json:"weight"`
+	DailyQuota int        `json:"daily_quota"`
+	Enabled    bool       `json:"enabled"`
+	Kind       TargetKind `json:"kind"`
+	ExpiresAt  *time.Time `json:"expires_at"`
+	Clicks     int64      `json:"clicks"`
 }
 
 // LinkTargetInput is one destination as the owner submits it.
@@ -240,6 +259,9 @@ type LinkTargetInput struct {
 	Weight     int     `json:"weight"`
 	DailyQuota int     `json:"daily_quota"`
 	Enabled    *bool   `json:"enabled"`
+	Kind       string  `json:"kind"`
+	// ExpiresAt is RFC 3339, like every other timestamp the API accepts.
+	ExpiresAt *string `json:"expires_at"`
 }
 
 // ReplaceTargetsRequest replaces the whole pool in one request.

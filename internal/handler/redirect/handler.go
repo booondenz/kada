@@ -165,11 +165,13 @@ func (h *Handler) Redirect(c *gin.Context) {
 		return
 	}
 
-	destination, targetID, refusal := h.resolveDestination(c, link)
+	target, refusal := h.resolveTarget(c, link)
 	if refusal != "" {
 		outcome = refusal
 		return
 	}
+
+	destination, targetID := destinationOf(link, target)
 
 	userAgent := c.GetHeader("User-Agent")
 	platform := ua.Detect(userAgent)
@@ -185,6 +187,14 @@ func (h *Handler) Redirect(c *gin.Context) {
 		TargetID:  targetID,
 	})
 
+	// A group code is shown before it is used: it has to be scanned by a second device, so a redirect would
+	// hand the visitor an image file and lose the instruction that makes it work.
+	if target != nil && target.Kind == domain.TargetWechatGroup {
+		outcome = metrics.OutcomeGroupPage
+		h.renderGroupPage(c, code, target)
+		return
+	}
+
 	// Check whether an intermediate guide page is needed.
 	if ua.NeedsIntermediatePage(platform) {
 		outcome = metrics.OutcomeGuidePage
@@ -197,36 +207,64 @@ func (h *Handler) Redirect(c *gin.Context) {
 	c.Redirect(http.StatusFound, destination)
 }
 
-// resolveDestination decides where this visitor goes, and which target of the pool that was.
+// destinationOf is where this visitor is sent, and which target of the pool that was.
 //
-// The returned outcome is empty when a destination came back, and otherwise names what was written to the
-// client so the caller can count it. A link whose pool cannot take this visitor is a 404 rather than a
-// fallback: the link has said where its traffic goes, and original_url is no longer one of the answers.
+// A nil target is a link without a pool, and then the answer is the link's own target, exactly as before
+// the pool existed.
+func destinationOf(link *domain.LinkInfo, target *domain.LinkTargetInfo) (string, *int64) {
+	if target == nil {
+		return link.OriginalURL, nil
+	}
+	id := target.ID
+	return target.URL, &id
+}
+
+// resolveTarget draws a target from the link's pool and checks it.
+//
+// The returned refusal is empty when a target came back, or when the link has no pool at all (a nil target
+// with an empty refusal means "serve original_url"). Otherwise it names what was written to the client so
+// the caller can count it.
 //
 // A pool URL is checked again here even though it was checked when it was saved. The pool is what the cache
 // carries, and cached data is exactly what the checks exist to distrust.
-func (h *Handler) resolveDestination(c *gin.Context, link *domain.LinkInfo) (string, *int64, string) {
+func (h *Handler) resolveTarget(c *gin.Context, link *domain.LinkInfo) (*domain.LinkTargetInfo, string) {
 	if len(link.Targets) == 0 {
-		return link.OriginalURL, nil, ""
+		return nil, ""
 	}
 
 	target := h.svc.PickTarget(link)
 	if target == nil {
+		// The pool exists and nothing in it can take this visitor. For a group pool that is an answer the
+		// visitor can act on - the group is full, or the code has expired - so it is a page rather than a
+		// 404, which would say the link itself is broken.
+		if poolHoldsGroup(link.Targets) {
+			h.renderNoGroupPage(c)
+			return nil, metrics.OutcomeGroupEmpty
+		}
 		c.String(http.StatusNotFound, "link not found or expired")
-		return "", nil, metrics.OutcomeNotFound
+		return nil, metrics.OutcomeNotFound
 	}
 
 	if !urlcheck.IsSafeTarget(target.URL) {
 		h.renderUnsafeTargetPage(c)
-		return "", nil, metrics.OutcomeUnsafeTarget
+		return nil, metrics.OutcomeUnsafeTarget
 	}
 	if category, blocked := h.svc.Blocked(target.URL); blocked {
 		h.renderBlockedPage(c, c.Param("code"), category)
-		return "", nil, metrics.OutcomeBlockedTarget
+		return nil, metrics.OutcomeBlockedTarget
 	}
 
-	id := target.ID
-	return target.URL, &id, ""
+	return target, ""
+}
+
+// poolHoldsGroup reports whether a pool is a group pool, which decides what "nothing can serve" means.
+func poolHoldsGroup(targets []domain.LinkTargetInfo) bool {
+	for _, t := range targets {
+		if t.Kind == domain.TargetWechatGroup {
+			return true
+		}
+	}
+	return false
 }
 
 // QRCode generates a QR code for the short link.
@@ -335,11 +373,12 @@ func (h *Handler) VerifyPassword(c *gin.Context) {
 		return
 	}
 
-	// Password is correct: pick where this visitor goes, log the click, and redirect.
-	destination, targetID, refusal := h.resolveDestination(c, info)
+	// Password is correct: pick where this visitor goes, log the click, and answer.
+	target, refusal := h.resolveTarget(c, info)
 	if refusal != "" {
 		return
 	}
+	destination, targetID := destinationOf(info, target)
 
 	userAgent := c.GetHeader("User-Agent")
 	platform := ua.Detect(userAgent)
@@ -351,6 +390,11 @@ func (h *Handler) VerifyPassword(c *gin.Context) {
 		Referer:   c.GetHeader("Referer"),
 		TargetID:  targetID,
 	})
+
+	if target != nil && target.Kind == domain.TargetWechatGroup {
+		h.renderGroupPage(c, code, target)
+		return
+	}
 
 	if ua.NeedsIntermediatePage(platform) {
 		h.renderIntermediatePage(c, destination, code, platform)
@@ -788,6 +832,52 @@ func (h *Handler) renderBlockedPage(c *gin.Context, code, detail string) {
 
 func passwordPageHTML(code string) string {
 	return passwordPageHTMLWithError(code, "")
+}
+
+// renderGroupPage shows a WeChat group code.
+//
+// The page is the product: a QR code has to be scanned by a second device, so the visitor needs the image on
+// screen and the instruction that makes it work - and the short link printed on a poster never changes when
+// the group fills up or the code expires.
+//
+// The confirm script is the same handshake the guide page uses: WeChat fetches this page to build a preview
+// card without showing it to anybody, and running the script is the only evidence a person opened it.
+func (h *Handler) renderGroupPage(c *gin.Context, code string, target *domain.LinkTargetInfo) {
+	label := ""
+	if target.Label != nil && *target.Label != "" {
+		label = `<p class="label">` + html.EscapeString(*target.Label) + `</p>`
+	}
+
+	// Path-escaped, then escaped for the attribute: the code comes from a database row, and this is the one
+	// place it is put inside a script.
+	visit := html.EscapeString("/r/" + url.PathEscape(code) + "/visit")
+
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.String(http.StatusOK, fmt.Sprintf(`<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><title>加入群聊 - Kada</title>
+<style>body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f8fafc;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;padding:16px;box-sizing:border-box}.card{background:#fff;border-radius:20px;padding:32px 24px;max-width:380px;width:100%%;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06)}.title{font-size:20px;font-weight:700;color:#1e293b;margin-bottom:6px}.label{font-size:13px;color:#64748b;margin:0 0 16px}.qr{width:100%%;max-width:260px;height:auto;border-radius:12px;border:1px solid #e2e8f0;background:#fff}.hint{margin:16px 0 0;font-size:13px;color:#64748b;line-height:1.7}</style>
+</head>
+<body><div class="card"><div class="title">加入群聊</div>%s<img class="qr" src="%s" alt="群二维码"><p class="hint">长按识别二维码；若无法识别，请截图后用微信「扫一扫」从相册选择</p></div>
+<script>fetch('%s', { method: 'POST', keepalive: true }).catch(function(){});</script>
+</body>
+</html>`, label, html.EscapeString(target.URL), visit))
+}
+
+// renderNoGroupPage is the answer when a group pool has nothing to show.
+//
+// 200 rather than 404: the link works, and what ran out is the group. A 404 would say the link is broken -
+// and "every group filled up" is a state the owner asked for, not a failure, so the visitor gets a sentence
+// they can act on instead.
+func (h *Handler) renderNoGroupPage(c *gin.Context) {
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.String(http.StatusOK, `<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>群已满 - Kada</title>
+<style>body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f8fafc;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}.card{background:#fff;border-radius:20px;padding:40px 32px;max-width:400px;width:100%;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06)}.icon{font-size:44px;margin-bottom:14px}.title{font-size:19px;font-weight:700;color:#1e293b;margin-bottom:8px}.subtitle{font-size:14px;color:#64748b;line-height:1.7}</style>
+</head>
+<body><div class="card"><div class="icon">👥</div><div class="title">群已满或二维码已过期</div><div class="subtitle">这个群目前进不去了。请联系分享链接的人，换一个新的群二维码。</div></div></body>
+</html>`)
 }
 
 func passwordPageHTMLWithError(code, errorMsg string) string {
