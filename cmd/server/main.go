@@ -250,12 +250,13 @@ func main() {
 	// API v1 route group
 	v1 := r.Group("/api")
 	{
-		// Auth routes (strict rate limit)
-		var strictMW gin.HandlerFunc
+		// Auth routes (strict rate limit, and a tighter one on creating an account)
+		var strictMW, guestMW gin.HandlerFunc
 		if rateLimiter != nil {
 			strictMW = rateLimiter.Strict()
+			guestMW = rateLimiter.Guest()
 		}
-		authH.RegisterRoutes(v1, authMW, strictMW)
+		authH.RegisterRoutes(v1, authMW, strictMW, guestMW)
 		linkH.RegisterRoutes(v1, authMW)
 		// Always mounted, never conditionally: RequireAdmin refuses everybody when ADMIN_PHONES is empty,
 		// and a middleware left out of the chain would allow everybody.

@@ -136,3 +136,17 @@ func (rl *RateLimiter) Action() gin.HandlerFunc {
 func defaultKeyFunc(c *gin.Context) string {
 	return RealIP(c)
 }
+
+// Guest - creating a guest session, the one public route that mints an identity.
+//
+// It is a ceiling of its own rather than a share of somebody else's, and the key says so: every limiter here
+// otherwise counts into the same per-address window, so a limit attached to one route would really be a
+// limit on all of them. Ten a minute from one address covers an office or a carrier NAT opening the site
+// together, and is far less than a farm wants when every account it mints can then create links.
+func (rl *RateLimiter) Guest() gin.HandlerFunc {
+	return rl.Limit(RateLimitConfig{
+		Window:  1 * time.Minute,
+		Limit:   10,
+		KeyFunc: func(c *gin.Context) string { return "guest:" + RealIP(c) },
+	})
+}

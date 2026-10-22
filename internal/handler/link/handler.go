@@ -22,6 +22,35 @@ func NewHandler(svc *service.LinkService) *Handler {
 	return &Handler{svc: svc, fetcher: preview.NewFetcher()}
 }
 
+// respondLinkError maps the service's refusals onto status codes.
+//
+// The fallback is the caller's to choose, because the same error means different things on the two paths: a
+// create that failed is a server fault, while a failed edit is usually a link that is not there. What is not
+// the caller's to choose is the two refusals that are neither - a target in a blocked category is a bad
+// request, and a ceiling that has been reached is a 429 with a retry-after, not a 500 telling the client to
+// try the one request that cannot succeed.
+func respondLinkError(c *gin.Context, err error, fallback int) {
+	var limited *domain.RateLimitError
+	if errors.As(err, &limited) {
+		if limited.RetryAfterSeconds > 0 {
+			c.Header("Retry-After", strconv.Itoa(limited.RetryAfterSeconds))
+		}
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error":               limited.Message,
+			"retry_after_seconds": limited.RetryAfterSeconds,
+		})
+		return
+	}
+
+	var blocked *domain.BlockedTargetError
+	if errors.As(err, &blocked) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(fallback, gin.H{"error": err.Error()})
+}
+
 func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 	r.Use(authMW)
 	r.POST("/links/preview", h.Preview)
@@ -45,14 +74,7 @@ func (h *Handler) Create(c *gin.Context) {
 
 	link, err := h.svc.Create(c.Request.Context(), middleware.GetUserID(c), req)
 	if err != nil {
-		// A blocked target is the caller's fault, not a server failure: answering 500 would tell the
-		// frontend to retry the one request that can never succeed.
-		var blocked *domain.BlockedTargetError
-		if errors.As(err, &blocked) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondLinkError(c, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -115,14 +137,7 @@ func (h *Handler) Update(c *gin.Context) {
 
 	link, err := h.svc.Update(c.Request.Context(), id, middleware.GetUserID(c), req)
 	if err != nil {
-		// Pointing an existing link at a blocked host is refused the same way as creating one, and it is
-		// not a 404: the link was found and the request was understood.
-		var blocked *domain.BlockedTargetError
-		if errors.As(err, &blocked) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		respondLinkError(c, err, http.StatusNotFound)
 		return
 	}
 

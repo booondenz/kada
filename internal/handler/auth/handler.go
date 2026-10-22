@@ -53,17 +53,25 @@ func NewHandler(svc AuthService) *Handler {
 // setting one. It sits in this group, and therefore under the strict limiter, because it is the cheapest
 // endpoint here to abuse - each call is a row - while twenty a minute per address is far more than people
 // opening a page ever need.
-func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc, strictMW ...gin.HandlerFunc) {
+func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc, limiters ...gin.HandlerFunc) {
 	// Public routes (strict rate limiting can be applied).
 	//
 	// The strict limiter is not decoration on the two password routes: they are the only place where
 	// guessing pays, and twenty attempts a minute per address is what stands between a password and a
 	// script.
 	public := r.Group("")
-	if len(strictMW) > 0 && strictMW[0] != nil {
-		public.Use(strictMW[0])
+	if len(limiters) > 0 && limiters[0] != nil {
+		public.Use(limiters[0])
 	}
-	public.POST("/auth/guest", h.CreateGuest)
+
+	// Creating an account is the one public route that writes something, and every account it mints is an
+	// identity that can then create links - so it carries a tighter ceiling of its own on top of the
+	// shared one. The position is fixed: the caller passes the strict limiter first and this one second.
+	guest := []gin.HandlerFunc{h.CreateGuest}
+	if len(limiters) > 1 && limiters[1] != nil {
+		guest = append([]gin.HandlerFunc{limiters[1]}, guest...)
+	}
+	public.POST("/auth/guest", guest...)
 	public.GET("/auth/captcha", h.Captcha)
 	public.POST("/auth/send-sms-code", h.SendSMSCode)
 	public.POST("/auth/register", h.Register)

@@ -76,6 +76,12 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 		return nil, &domain.BlockedTargetError{Category: category}
 	}
 
+	// The ceiling is checked before the folder lookup and before a short code is allocated: a refused
+	// create should cost nothing and leave nothing.
+	if err := s.checkQuota(ctx, userID); err != nil {
+		return nil, err
+	}
+
 	// validate folder ownership (previously any ID could be attached, leaking names across users)
 	if err := s.validateOwnedFolder(ctx, userID, req.FolderID); err != nil {
 		return nil, err

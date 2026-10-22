@@ -38,33 +38,9 @@ allowed to lag by a second. The architecture is split along that line.
 ## 2. System overview
 
 ```text
-                       ┌────────────────────────────────────────────┐
-   browser ──────────► │ nginx :80                                  │
-                       │  /api/  and  /r/  ──► backend             │
-                       │  everything else  ──► frontend            │
-                       └───────┬───────────────────────┬────────────┘
-                               │                       │
-                    ┌──────────▼─────────┐   ┌─────────▼──────────┐
-                    │ backend (Go/Gin)   │   │ frontend (static)  │
-                    │  :8080             │   │  :3000             │
-                    └──┬───────┬─────┬───┘   └────────────────────┘
-                       │       │     │
-          ┌────────────▼─┐ ┌───▼───┐ │
-          │ PostgreSQL   │ │ Redis │ │ publish click
-          │ (source of   │ │ cache │ │
-          │  truth)      │ │ + rate│ │
-          └──────▲───────┘ │ limit │ │
-                 │         └───────┘ │
-                 │                   ▼
-                 │            ┌─────────────┐
-                 └────────────│   Kafka     │
-                    consume   │  topic:     │
-                 ┌────────────│  clicks     │
-                 │            └─────────────┘
-        ┌────────▼─────────┐
-        │ worker (Go)      │
-        │ :no http port    │
-        └──────────────────┘
+Browser ? nginx :80 ??? /api/, /r/ ? backend :8080 ??? PostgreSQL (source of truth)
+                      ?                              ?? Redis (cache + rate limit)
+                      ?? other ? frontend :3000      ?? Kafka (clicks) ? worker
 ```
 
 Components:
@@ -800,6 +776,30 @@ What this deliberately does not do: there is no admin page (four curl commands, 
 thing that grows), no automatic category detection (that is a third-party URL-safety API, and a wrong
 verdict from one is a link pulled for no reason), and the 24-hour response time the report page states is a
 promise made by whoever runs the deployment, not a job that runs by itself.
+
+### 7.8 What one account may create
+
+`auth/guest` writes a real account row on every call, so minting an identity costs one request and minting
+links after that costs nothing - which used to mean one address could turn itself into 120 accounts a minute
+and each account into any number of links, none of them attached to anybody. Two ceilings now apply, and both
+are checked in `Create` before a folder is looked up or a short code allocated:
+
+- **A daily allowance** of 20 links per rolling 24 hours for a guest, 500 for an account that has claimed a
+  phone number. Claiming is what buys the larger allowance, because a phone number is the one thing a farm
+  cannot mint at will.
+- **A burst ceiling** of 5 links per rolling 10 minutes, for everybody. The daily quota bounds a day and this
+  bounds a moment; a script needs the moment, and it is what stops a new account from spending its whole
+  allowance in the minute it was created.
+
+A refusal is a 429 carrying the message and a `Retry-After` computed from the oldest link still inside the
+window, so it says when there is room again instead of "later". A failure to read the counts allows the
+create: the ceiling exists to stop a script, and a database that cannot answer a count would refuse the
+insert a moment later anyway - turning one bad query into "nobody can make a link" is the worse failure.
+
+`auth/guest` also has a per-address ceiling of its own, ten a minute, and it is **namespaced in the rate
+limiter's key** (`guest:<ip>`). That is not cosmetic: every limiter counts into the same `ratelimit:<ip>`
+window, so a limit attached to one route is really a limit on all of them, and an un-namespaced guest bucket
+would have shared its counter with every other request the address made.
 
 ## 8. Cross-cutting decisions
 
