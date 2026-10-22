@@ -304,11 +304,21 @@ service, its systemd unit and a whole deployment step with it.
 | `/dashboard/links`, `/new`, `/[id]` | Link list, creation form, detail/edit |
 | `/dashboard/analytics`, `/events`, `/customers` | Click analytics, raw events, visitors |
 | `/dashboard/folders`, `/tags`, `/domains`, `/utm` | Organisation |
+| `/dashboard/moderation` | The operator console: visitor reports, and stopping or restoring a link by code |
 | `/dashboard/settings` | The user page: identity, appearance, API tokens, and the site's own footer |
 | `/r/[code]` | Client-side fallback page for a short code |
 
 Data fetching uses SWR against `src/lib/api.ts`, which is the single place where the API surface is
 declared and where the bearer token is attached. Components never call `fetch` directly.
+
+The operator console is the one page whose entry the sidebar does not decide on its own: whether an account
+is an operator is a deployment setting (`ADMIN_PHONES`), so the shell asks the cheapest operator route once
+and shows the entry only if the answer is not a 403. The page itself still says so if it is opened directly -
+being added to or removed from that list should be visible, not guessed at.
+
+The new features did not get sections of their own in the sidebar. The operator asked for them under the
+existing AI section while there is one of them, which is why `/dashboard/moderation` appears there rather
+than under a heading called 运营.
 
 State that must survive a reload (session token, profile, locale) lives in `localStorage` behind
 helpers in `src/lib/auth.ts` and `src/lib/i18n`.

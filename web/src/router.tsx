@@ -10,6 +10,7 @@ import Folders from "@/pages/dashboard/Folders";
 import LinkDetail from "@/pages/dashboard/LinkDetail";
 import LinkNew from "@/pages/dashboard/LinkNew";
 import Links from "@/pages/dashboard/Links";
+import Moderation from "@/pages/dashboard/Moderation";
 import Settings from "@/pages/dashboard/Settings";
 import Tags from "@/pages/dashboard/Tags";
 import Utm from "@/pages/dashboard/Utm";
@@ -56,6 +57,9 @@ export const router = createBrowserRouter([
       { path: "events", element: <Events /> },
       { path: "folders", element: <Folders /> },
       { path: "settings", element: <Settings /> },
+      // The operator console. It lives behind the same shell as everything else and the API refuses it to
+      // anybody who is not in ADMIN_PHONES; the sidebar only shows the entry when that check passes.
+      { path: "moderation", element: <Moderation /> },
       { path: "tags", element: <Tags /> },
       { path: "utm", element: <Utm /> },
     ],

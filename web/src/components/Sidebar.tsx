@@ -10,11 +10,14 @@ import {
   Tag,
   ArrowRightLeft,
   Sparkles,
+  ShieldCheck,
   User,
   X,
   type LucideIcon,
 } from "lucide-react";
-import { getUser } from "@/lib/auth";
+import useSWR from "swr";
+import { adminAPI } from "@/lib/api";
+import { getToken, getUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 
@@ -65,9 +68,35 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
+// The operator entry. It is not in the table above because whether it belongs there is a question only the
+// server can answer: the operator list is a deployment setting, not a client one.
+const MODERATION_ITEM: NavItem = { name: "运营", href: "/dashboard/moderation", icon: ShieldCheck };
+
 export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
   const pathname = useLocation().pathname;
   const t = useT();
+  const token = getToken();
+
+  // Whether this account is an operator. The probe is the cheapest of the operator routes, the answer is
+  // cached for the session, and a refusal is not an error state: it means the entry does not appear.
+  const { data: isOperator } = useSWR(
+    token ? "admin-probe" : null,
+    async () => {
+      try {
+        await adminAPI.reports(token!, 1);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+
+  // The new entries sit in the existing AI section rather than in a group of their own, which is where the
+  // operator asked for them while there is only one of them.
+  const sections = NAV_SECTIONS.map((section) =>
+    isOperator && section.name === "AI" ? { ...section, items: [...section.items, MODERATION_ITEM] } : section,
+  );
   // The account the app is running as. A guest row has no phone number yet, and "游客" is what that
   // state is called here rather than an absence: the account exists from the first page load, so the row
   // names who it belongs to instead of reporting a missing field.
@@ -93,7 +122,7 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-4">
-        {NAV_SECTIONS.map((section, secIdx) => (
+        {sections.map((section, secIdx) => (
           <div key={secIdx} className={cn(secIdx > 0 && "mt-6")}>
             {section.name && (
               <p className="mb-1.5 px-3 text-xs font-medium text-faint uppercase tracking-wider">

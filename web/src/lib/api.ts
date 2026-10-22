@@ -349,6 +349,61 @@ export const analyticsAPI = {
     fetchAPI("/api/analytics/customers", { token }),
 };
 
+// ========== Admin API ==========
+
+/** One complaint, as the operator sees it. */
+export interface AbuseReport {
+  id: number;
+  short_code: string;
+  link_id: number | null;
+  reason: string;
+  detail: string;
+  contact: string | null;
+  created_at: string;
+  link_blocked: boolean;
+}
+
+/** One row of a link's takedown history. */
+export interface LinkBlockRecord {
+  id: number;
+  short_code: string;
+  reason: string;
+  evidence: string;
+  operator: string;
+  created_at: string;
+  lifted_at: string | null;
+  lift_reason: string | null;
+  lifted_by: string | null;
+}
+
+/**
+ * The operator routes.
+ *
+ * They refuse everybody whose number is not in `ADMIN_PHONES`, so a caller who is not an operator gets a
+ * 403 - which is what the console uses to decide whether the entry belongs in the sidebar at all.
+ */
+export const adminAPI = {
+  reports: (token: string, limit = 50): Promise<{ reports: AbuseReport[] }> =>
+    fetchAPI(`/api/admin/reports?limit=${limit}`, { token }),
+
+  block: (token: string, code: string, reason: string, evidence: string) =>
+    fetchAPI(`/api/admin/links/${encodeURIComponent(code)}/block`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ reason, evidence }),
+    }),
+
+  unblock: (token: string, code: string, reason: string) =>
+    fetchAPI(`/api/admin/links/${encodeURIComponent(code)}/unblock`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ reason }),
+    }),
+
+  blocks: (token: string, code: string): Promise<{ blocks: LinkBlockRecord[] }> =>
+    fetchAPI(`/api/admin/links/${encodeURIComponent(code)}/blocks`, { token }),
+};
+
 // ========== Folders API ==========
 
 export const foldersAPI = {
