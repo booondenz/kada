@@ -2,10 +2,31 @@ package middleware
 
 import (
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 )
+
+// Each limiter has to count in a bucket of its own. They used to share one key, which made the strictest
+// limit - twenty requests a minute on the auth routes - a limit on every request from that address: twenty
+// dashboard reads and the sign-in was refused, for a minute.
+func TestRateLimitKey_SeparatesTheBuckets(t *testing.T) {
+	const subject = "203.0.113.9"
+
+	names := []string{LimiterAPI, LimiterStrict, LimiterRedirect, LimiterAction, LimiterGuest}
+	seen := make(map[string]string, len(names))
+	for _, name := range names {
+		key := rateLimitKey(name, subject)
+		if other, clash := seen[key]; clash {
+			t.Errorf("limiters %q and %q share the key %q", other, name, key)
+		}
+		seen[key] = name
+		if !strings.Contains(key, subject) {
+			t.Errorf("key %q does not name the subject", key)
+		}
+	}
+}
 
 func TestDefaultKeyFunc(t *testing.T) {
 	gin.SetMode(gin.TestMode)

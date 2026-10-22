@@ -31,6 +31,10 @@ type RateLimiter struct {
 
 // RateLimitConfig configures rate limiting
 type RateLimitConfig struct {
+	// Name is which limiter this is. It is part of the Redis key, so two limiters never count into the
+	// same bucket - which they used to, and the consequence was that the strictest bucket throttled
+	// everything else: 20 requests a minute to any route refused a sign-in.
+	Name    string
 	Window  time.Duration               // time window
 	Limit   int                         // max requests within the window
 	KeyFunc func(c *gin.Context) string // custom key generator (defaults to the IP)
@@ -40,6 +44,15 @@ func NewRateLimiter(client *redis.Client) *RateLimiter {
 	return &RateLimiter{client: client}
 }
 
+// rateLimitKey is the key one limiter counts under: the limiter's name, then the subject.
+//
+// Both halves matter. The name is what makes the buckets independent - they used to share one key, so the
+// strictest limit was really a limit on all traffic. The subject is what a limit is usually about, which is
+// the client address unless a limiter names something else.
+func rateLimitKey(name, subject string) string {
+	return "ratelimit:" + name + ":" + subject
+}
+
 // Limit returns the Gin middleware
 func (rl *RateLimiter) Limit(cfg RateLimitConfig) gin.HandlerFunc {
 	if cfg.KeyFunc == nil {
@@ -47,7 +60,7 @@ func (rl *RateLimiter) Limit(cfg RateLimitConfig) gin.HandlerFunc {
 	}
 
 	return func(c *gin.Context) {
-		key := "ratelimit:" + cfg.KeyFunc(c)
+		key := rateLimitKey(cfg.Name, cfg.KeyFunc(c))
 		now := time.Now().UnixNano()
 		windowStart := now - cfg.Window.Nanoseconds()
 
@@ -99,6 +112,7 @@ func (rl *RateLimiter) Limit(cfg RateLimitConfig) gin.HandlerFunc {
 // Strict strict mode - auth endpoints (login, register, send verification code)
 func (rl *RateLimiter) Strict() gin.HandlerFunc {
 	return rl.Limit(RateLimitConfig{
+		Name:   LimiterStrict,
 		Window: 1 * time.Minute,
 		Limit:  20,
 	})
@@ -107,6 +121,7 @@ func (rl *RateLimiter) Strict() gin.HandlerFunc {
 // Normal normal mode - general API
 func (rl *RateLimiter) Normal() gin.HandlerFunc {
 	return rl.Limit(RateLimitConfig{
+		Name:   LimiterAPI,
 		Window: 1 * time.Minute,
 		Limit:  120,
 	})
@@ -115,6 +130,7 @@ func (rl *RateLimiter) Normal() gin.HandlerFunc {
 // Redirect redirect mode - short-link redirection (high frequency)
 func (rl *RateLimiter) Redirect() gin.HandlerFunc {
 	return rl.Limit(RateLimitConfig{
+		Name:   LimiterRedirect,
 		Window: 1 * time.Minute,
 		Limit:  300,
 	})
@@ -128,6 +144,7 @@ func (rl *RateLimiter) Redirect() gin.HandlerFunc {
 // link. It is still far above what one visitor generates, which is one to three reports per page.
 func (rl *RateLimiter) Action() gin.HandlerFunc {
 	return rl.Limit(RateLimitConfig{
+		Name:   LimiterAction,
 		Window: 1 * time.Minute,
 		Limit:  30,
 	})
@@ -137,16 +154,24 @@ func defaultKeyFunc(c *gin.Context) string {
 	return RealIP(c)
 }
 
+// The names of the buckets. They are constants because they appear in Redis, where a typo is not a compile
+// error and a changed name silently starts every client from zero.
+const (
+	LimiterAPI      = "api"
+	LimiterStrict   = "strict"
+	LimiterRedirect = "redirect"
+	LimiterAction   = "action"
+	LimiterGuest    = "guest"
+)
+
 // Guest - creating a guest session, the one public route that mints an identity.
 //
-// It is a ceiling of its own rather than a share of somebody else's, and the key says so: every limiter here
-// otherwise counts into the same per-address window, so a limit attached to one route would really be a
-// limit on all of them. Ten a minute from one address covers an office or a carrier NAT opening the site
-// together, and is far less than a farm wants when every account it mints can then create links.
+// Ten a minute from one address covers an office or a carrier NAT opening the site together, and is far
+// less than a farm wants when every account it mints can then create links.
 func (rl *RateLimiter) Guest() gin.HandlerFunc {
 	return rl.Limit(RateLimitConfig{
-		Window:  1 * time.Minute,
-		Limit:   10,
-		KeyFunc: func(c *gin.Context) string { return "guest:" + RealIP(c) },
+		Name:   LimiterGuest,
+		Window: 1 * time.Minute,
+		Limit:  10,
 	})
 }
