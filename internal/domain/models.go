@@ -202,6 +202,9 @@ type LinkInfo struct {
 	UTMContent    *string       `json:"utm_content,omitempty"`
 	IosURL        *string       `json:"ios_url,omitempty"`
 	AndroidURL    *string       `json:"android_url,omitempty"`
+	// Targets is the pool, empty for a link that still resolves to OriginalURL. It travels with the link
+	// through the cache on purpose: the redirect picks from it on every request and cannot afford a query.
+	Targets []LinkTargetInfo `json:"targets,omitempty"`
 }
 
 type PaginatedLinks struct {
@@ -209,6 +212,39 @@ type PaginatedLinks struct {
 	TotalCount int64      `json:"total_count"`
 	Page       int        `json:"page"`
 	PageSize   int        `json:"page_size"`
+}
+
+// ==================== Targets ====================
+
+// LinkTargetInfo is one destination in a link's pool, as the owner and the redirect see it.
+//
+// Clicks is filled only for the owner's listing: the redirect path has no use for it and asking would put a
+// group-by on the hot path.
+type LinkTargetInfo struct {
+	ID         int64   `json:"id"`
+	URL        string  `json:"url"`
+	Label      *string `json:"label,omitempty"`
+	Weight     int     `json:"weight"`
+	DailyQuota int     `json:"daily_quota"`
+	Enabled    bool    `json:"enabled"`
+	Clicks     int64   `json:"clicks"`
+}
+
+// LinkTargetInput is one destination as the owner submits it.
+type LinkTargetInput struct {
+	URL        string  `json:"url"`
+	Label      *string `json:"label"`
+	Weight     int     `json:"weight"`
+	DailyQuota int     `json:"daily_quota"`
+	Enabled    *bool   `json:"enabled"`
+}
+
+// ReplaceTargetsRequest replaces the whole pool in one request.
+//
+// Replacement rather than row-by-row edits: the pool is a decision ("these three, in this proportion"), and
+// an edit that arrives one row at a time has no moment at which it can be written to the audit as a whole.
+type ReplaceTargetsRequest struct {
+	Targets []LinkTargetInput `json:"targets"`
 }
 
 // ==================== Moderation ====================
@@ -352,6 +388,8 @@ type ClickEvent struct {
 	// which is where it used to live: a report that reads referers had to know some of them were not.
 	Action  Action
 	Referer string
+	// TargetID is which target of the link this visitor was sent to, nil for a link without a pool.
+	TargetID *int64
 }
 
 // DeepLink represents one deeplink fallback option

@@ -35,6 +35,8 @@ func TestTableNames(t *testing.T) {
 		"Folder":              "folders",
 		"Tag":                 "tags",
 		"LinkTag":             "link_tags",
+		"LinkTarget":          "link_targets",
+		"LinkTargetAudit":     "link_target_audits",
 		"Domain":              "domains",
 		"BlockedHost":         "blocked_hosts",
 		"LinkBlock":           "link_blocks",

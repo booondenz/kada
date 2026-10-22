@@ -31,6 +31,9 @@ type LinkService interface {
 	// than cached with the link: the list changes after a link is cached, and a link cached while its host
 	// was allowed would keep being served after the host was blocked.
 	Blocked(targetURL string) (category string, blocked bool)
+	// PickTarget chooses one destination from the link's pool, or nil when there is no pool or none of it
+	// can take this visitor. Called per request: the choice is a draw, and a target's daily cap moves.
+	PickTarget(link *domain.LinkInfo) *domain.LinkTargetInfo
 }
 
 type Handler struct {
@@ -162,6 +165,12 @@ func (h *Handler) Redirect(c *gin.Context) {
 		return
 	}
 
+	destination, targetID, refusal := h.resolveDestination(c, link)
+	if refusal != "" {
+		outcome = refusal
+		return
+	}
+
 	userAgent := c.GetHeader("User-Agent")
 	platform := ua.Detect(userAgent)
 
@@ -173,18 +182,51 @@ func (h *Handler) Redirect(c *gin.Context) {
 		Platform:  platform,
 		Kind:      evidenceKind(userAgent, platform),
 		Referer:   c.GetHeader("Referer"),
+		TargetID:  targetID,
 	})
 
 	// Check whether an intermediate guide page is needed.
 	if ua.NeedsIntermediatePage(platform) {
 		outcome = metrics.OutcomeGuidePage
-		h.renderIntermediatePage(c, link.OriginalURL, code, platform)
+		h.renderIntermediatePage(c, destination, code, platform)
 		return
 	}
 
 	// Regular browsers get a direct 302 redirect.
 	outcome = metrics.OutcomeRedirect
-	c.Redirect(http.StatusFound, link.OriginalURL)
+	c.Redirect(http.StatusFound, destination)
+}
+
+// resolveDestination decides where this visitor goes, and which target of the pool that was.
+//
+// The returned outcome is empty when a destination came back, and otherwise names what was written to the
+// client so the caller can count it. A link whose pool cannot take this visitor is a 404 rather than a
+// fallback: the link has said where its traffic goes, and original_url is no longer one of the answers.
+//
+// A pool URL is checked again here even though it was checked when it was saved. The pool is what the cache
+// carries, and cached data is exactly what the checks exist to distrust.
+func (h *Handler) resolveDestination(c *gin.Context, link *domain.LinkInfo) (string, *int64, string) {
+	if len(link.Targets) == 0 {
+		return link.OriginalURL, nil, ""
+	}
+
+	target := h.svc.PickTarget(link)
+	if target == nil {
+		c.String(http.StatusNotFound, "link not found or expired")
+		return "", nil, metrics.OutcomeNotFound
+	}
+
+	if !urlcheck.IsSafeTarget(target.URL) {
+		h.renderUnsafeTargetPage(c)
+		return "", nil, metrics.OutcomeUnsafeTarget
+	}
+	if category, blocked := h.svc.Blocked(target.URL); blocked {
+		h.renderBlockedPage(c, c.Param("code"), category)
+		return "", nil, metrics.OutcomeBlockedTarget
+	}
+
+	id := target.ID
+	return target.URL, &id, ""
 }
 
 // QRCode generates a QR code for the short link.
@@ -293,7 +335,12 @@ func (h *Handler) VerifyPassword(c *gin.Context) {
 		return
 	}
 
-	// Password is correct: log the click and redirect.
+	// Password is correct: pick where this visitor goes, log the click, and redirect.
+	destination, targetID, refusal := h.resolveDestination(c, info)
+	if refusal != "" {
+		return
+	}
+
 	userAgent := c.GetHeader("User-Agent")
 	platform := ua.Detect(userAgent)
 	h.record(c, domain.ClickEvent{
@@ -302,13 +349,14 @@ func (h *Handler) VerifyPassword(c *gin.Context) {
 		Platform:  platform,
 		Kind:      evidenceKind(userAgent, platform),
 		Referer:   c.GetHeader("Referer"),
+		TargetID:  targetID,
 	})
 
 	if ua.NeedsIntermediatePage(platform) {
-		h.renderIntermediatePage(c, info.OriginalURL, code, platform)
+		h.renderIntermediatePage(c, destination, code, platform)
 		return
 	}
-	c.Redirect(http.StatusFound, info.OriginalURL)
+	c.Redirect(http.StatusFound, destination)
 }
 
 // renderIntermediatePage renders the intermediate guide page (WeChat/QQ, etc.).

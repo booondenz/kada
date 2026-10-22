@@ -342,6 +342,15 @@ export const zh = {
   "如果你打开的短链接指向违规内容，请告诉我们。我们会在 24 小时内核查。": "如果你打开的短链接指向违规内容，请告诉我们。我们会在 24 小时内核查。",
   "感谢你的反馈，我们会在 24 小时内核查。": "感谢你的反馈，我们会在 24 小时内核查。",
   "该链接已被停止访问": "该链接已被停止访问",
+  "分流目标": "分流目标",
+  "设置多个目标后，访客会按权重被分流；全部停用或满额时链接不再跳转": "设置多个目标后，访客会按权重被分流；全部停用或满额时链接不再跳转",
+  "没有分流目标，访客会直接跳到原目标地址": "没有分流目标，访客会直接跳到原目标地址",
+  "权重": "权重",
+  "每日上限": "每日上限",
+  "添加目标": "添加目标",
+  "保存分流": "保存分流",
+  "分流目标已保存": "分流目标已保存",
+  "保存分流失败": "保存分流失败",
 } as const;
 
 export type MessageKey = keyof typeof zh;
@@ -687,4 +696,13 @@ export const en: Messages = {
   "如果你打开的短链接指向违规内容，请告诉我们。我们会在 24 小时内核查。": "If a short link you opened leads somewhere illegal, tell us. We look at reports within 24 hours.",
   "感谢你的反馈，我们会在 24 小时内核查。": "Thank you - we look at reports within 24 hours.",
   "该链接已被停止访问": "This link has been stopped",
+  "分流目标": "Split targets",
+  "设置多个目标后，访客会按权重被分流；全部停用或满额时链接不再跳转": "With more than one target, visitors are split by weight. If every target is disabled or full, the link stops resolving.",
+  "没有分流目标，访客会直接跳到原目标地址": "No split targets - visitors go straight to the original destination.",
+  "权重": "Weight",
+  "每日上限": "Daily cap",
+  "添加目标": "Add target",
+  "保存分流": "Save targets",
+  "分流目标已保存": "Targets saved",
+  "保存分流失败": "Could not save the targets",
 };

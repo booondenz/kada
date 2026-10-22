@@ -24,8 +24,10 @@ type ClickEvent struct {
 	// Action is which guide page interaction this was (domain.Action), empty for anything else. It is a
 	// field of its own: it used to ride in Referer behind an "action:" prefix, so every report that read
 	// referers had to know that some of them were not referers.
-	Action    string    `json:"action,omitempty"`
-	Referer   string    `json:"referer"`
+	Action  string `json:"action,omitempty"`
+	Referer string `json:"referer"`
+	// TargetID is which destination of a pool the visitor was sent to, absent for a link without one.
+	TargetID  *int64    `json:"target_id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

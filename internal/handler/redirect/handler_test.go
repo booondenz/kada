@@ -23,6 +23,7 @@ type mockLinkService struct {
 	logClick      func(ctx context.Context, event domain.ClickEvent)
 	buildShortURL func(domain, code string) string
 	blocked       func(targetURL string) (string, bool)
+	pickTarget    func(link *domain.LinkInfo) *domain.LinkTargetInfo
 }
 
 func (m *mockLinkService) GetByCode(ctx context.Context, code string) (*domain.LinkInfo, error) {
@@ -65,6 +66,13 @@ func (m *mockLinkService) Blocked(targetURL string) (string, bool) {
 		return m.blocked(targetURL)
 	}
 	return "", false
+}
+
+func (m *mockLinkService) PickTarget(link *domain.LinkInfo) *domain.LinkTargetInfo {
+	if m.pickTarget != nil {
+		return m.pickTarget(link)
+	}
+	return nil
 }
 
 // The User-Agents these tests use. The WeChat one is the interesting case: it is what the in-app browser
@@ -319,6 +327,88 @@ func TestRedirect_LinkStoppedByAnOperatorIsNotServed(t *testing.T) {
 }
 
 func stringPtr(s string) *string { return &s }
+
+// ========== Target pools ==========
+
+// A link with a pool is served from the pool, and the click row says which destination took the visitor -
+// which is the only answer a split can give afterwards.
+func TestRedirect_ServesAPoolTargetAndRecordsWhichOne(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := newClickRecorder()
+	target := domain.LinkTargetInfo{ID: 42, URL: "https://example.com/group-b", Weight: 1, Enabled: true}
+	svc := &mockLinkService{
+		getByCode: func(ctx context.Context, code string) (*domain.LinkInfo, error) {
+			return &domain.LinkInfo{
+				ID:          1,
+				ShortCode:   code,
+				OriginalURL: "https://example.com/fallback",
+				Domain:      "kada.click",
+				IsActive:    true,
+				Targets:     []domain.LinkTargetInfo{target},
+			}, nil
+		},
+		pickTarget: func(*domain.LinkInfo) *domain.LinkTargetInfo { return &target },
+		logClick:   rec.record,
+	}
+	h := NewHandler(svc)
+
+	r := gin.New()
+	r.GET("/r/:code", h.Redirect)
+
+	req := httptest.NewRequest("GET", "/r/abc123", nil)
+	req.Header.Set("User-Agent", browserUA)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusFound)
+	}
+	if loc := w.Header().Get("Location"); loc != target.URL {
+		t.Errorf("Location = %q, want the pool target %q", loc, target.URL)
+	}
+
+	events := rec.collect(t, 1)
+	if events[0].TargetID == nil || *events[0].TargetID != target.ID {
+		t.Errorf("recorded target = %v, want %d", events[0].TargetID, target.ID)
+	}
+}
+
+// A pool that cannot take this visitor is not served at all. original_url is where the link pointed before
+// it had a pool, and sending traffic there is the "never the stale URL" half of the rule.
+func TestRedirect_APoolWithNothingToServeDoesNotFallBack(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := &mockLinkService{
+		getByCode: func(ctx context.Context, code string) (*domain.LinkInfo, error) {
+			return &domain.LinkInfo{
+				ID:          1,
+				ShortCode:   code,
+				OriginalURL: "https://example.com/fallback",
+				Domain:      "kada.click",
+				IsActive:    true,
+				Targets:     []domain.LinkTargetInfo{{ID: 7, URL: "https://example.com/full", Enabled: false}},
+			}, nil
+		},
+		pickTarget: func(*domain.LinkInfo) *domain.LinkTargetInfo { return nil },
+	}
+	h := NewHandler(svc)
+
+	r := gin.New()
+	r.GET("/r/:code", h.Redirect)
+
+	req := httptest.NewRequest("GET", "/r/abc123", nil)
+	req.Header.Set("User-Agent", browserUA)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusNotFound)
+	}
+	if loc := w.Header().Get("Location"); loc != "" {
+		t.Errorf("an exhausted pool must not redirect anywhere, got Location %q", loc)
+	}
+}
 
 // The check is on the target, so a guide page - the branch that would otherwise show the target's host and
 // a button that opens it - must not be served either.

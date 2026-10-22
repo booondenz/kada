@@ -55,6 +55,47 @@ type Link struct {
 	Folder *Folder `gorm:"foreignKey:FolderID;constraint:OnDelete:SET NULL" json:"-"`
 }
 
+// LinkTarget is one destination of a link, when the link has more than one.
+//
+// A link with no targets resolves to links.original_url as it always did, which is why the pool is a
+// separate table rather than a "first target" that has to be kept in step with the column. Weight decides
+// the share of visitors: 3 against 1 sends three quarters to the first. daily_quota caps how many one target
+// takes in a day before the pool skips it - that is what a 群活码 needs, where each group fills up and the
+// next one takes over.
+type LinkTarget struct {
+	ID     int64 `gorm:"primaryKey" json:"id"`
+	LinkID int64 `gorm:"not null;index" json:"link_id"`
+	// URL is the destination. For a group code that is the page hosting the image rather than the image
+	// itself: the visitor has to land somewhere that can say "scan this", because an image cannot.
+	URL        string  `gorm:"type:text;not null" json:"url"`
+	Label      *string `gorm:"type:varchar(100)" json:"label"`
+	Weight     int     `gorm:"not null;default:1" json:"weight"`
+	DailyQuota int     `gorm:"not null;default:0" json:"daily_quota"`
+	Enabled    bool    `gorm:"not null;default:true" json:"enabled"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	Link *Link `gorm:"foreignKey:LinkID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+// LinkTargetAudit is one replacement of a link's target pool, kept as before and after.
+//
+// The pool is replaced whole rather than edited row by row, so the unit of history is the replacement. Two
+// JSON arrays answer "from what to what" in one row, which is a smaller record than a row per edit and the
+// one that can be read at the moment somebody asks why their split changed.
+type LinkTargetAudit struct {
+	ID     int64 `gorm:"primaryKey" json:"id"`
+	LinkID int64 `gorm:"not null;index" json:"link_id"`
+	// Operator is the phone number of the account that made the change, empty for an API token.
+	Operator  string    `gorm:"type:varchar(20)" json:"operator"`
+	Before    string    `gorm:"type:text" json:"before"`
+	After     string    `gorm:"type:text" json:"after"`
+	CreatedAt time.Time `gorm:"index" json:"created_at"`
+
+	Link *Link `gorm:"foreignKey:LinkID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
 // ClickLog is one recorded click on a short link.
 type ClickLog struct {
 	ID int64 `gorm:"primaryKey" json:"id"`
@@ -77,7 +118,13 @@ type ClickLog struct {
 	//
 	// Deliberately not indexed: nothing groups by it yet, and the alternative to an unused index here is
 	// nothing, because this is the hottest insert in the system.
-	Action    *string   `gorm:"type:varchar(32)" json:"action"`
+	Action *string `gorm:"type:varchar(32)" json:"action"`
+	// TargetID is which target the visitor was sent to, NULL for a link that has no pool.
+	//
+	// It is the answer to the only question a split raises: which of these five destinations did the
+	// traffic actually go to. Not indexed on its own - the query that asks is always scoped by link_id,
+	// which is - and this is the hottest insert in the system.
+	TargetID  *int64    `json:"target_id"`
 	Referer   *string   `gorm:"type:text" json:"referer"`
 	Country   *string   `gorm:"type:varchar(10)" json:"country"`
 	Province  *string   `gorm:"type:varchar(50)" json:"province"`
@@ -365,6 +412,8 @@ func Models() []any {
 		&Tag{},
 		&Link{},
 		&LinkTag{},
+		&LinkTarget{},
+		&LinkTargetAudit{},
 		&ClickLog{},
 		&SMSVerificationCode{},
 		&LoginCaptcha{},

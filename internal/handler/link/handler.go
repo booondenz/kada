@@ -62,6 +62,61 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 	r.GET("/links/:id", h.Get)
 	r.PATCH("/links/:id", h.Update)
 	r.DELETE("/links/:id", h.Delete)
+	r.GET("/links/:id/targets", h.Targets)
+	r.PUT("/links/:id/targets", h.ReplaceTargets)
+}
+
+// ReplaceTargets replaces a link's pool of destinations.
+//
+// The whole pool arrives in one request and replaces what is there: the pool is a decision ("these three, in
+// this proportion"), and an edit that lands one row at a time has no moment at which it can be recorded as a
+// decision. It is the only write path that touches targets, so a pool cannot be half-edited.
+func (h *Handler) ReplaceTargets(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid link ID"})
+		return
+	}
+
+	var req domain.ReplaceTargetsRequest
+	if bindErr := c.ShouldBindJSON(&req); bindErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request parameters"})
+		return
+	}
+
+	link, err := h.svc.ReplaceTargets(c.Request.Context(), id, middleware.GetUserID(c), operatorPhone(c), req.Targets)
+	if err != nil {
+		respondLinkError(c, err, http.StatusBadRequest)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"link": link})
+}
+
+// Targets lists a link's pool with the clicks each target took.
+func (h *Handler) Targets(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid link ID"})
+		return
+	}
+
+	targets, err := h.svc.Targets(c.Request.Context(), id, middleware.GetUserID(c))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "link not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"targets": targets})
+}
+
+// operatorPhone is who a change is attributed to. An API token carries no number, and the audit says so
+// rather than guessing.
+func operatorPhone(c *gin.Context) string {
+	if phone := middleware.GetUserPhone(c); phone != nil {
+		return *phone
+	}
+	return ""
 }
 
 // Create creates a short link.

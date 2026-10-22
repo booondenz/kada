@@ -147,6 +147,26 @@ export const authAPI = {
 
 // ========== Links API ==========
 
+/** One destination of a link's pool, as the owner submits it. */
+export interface LinkTargetInput {
+  url: string;
+  label?: string;
+  weight: number;
+  daily_quota: number;
+  enabled: boolean;
+}
+
+/** One destination as the API returns it, with the clicks that reached it. */
+export interface LinkTarget {
+  id: number;
+  url: string;
+  label?: string;
+  weight: number;
+  daily_quota: number;
+  enabled: boolean;
+  clicks: number;
+}
+
 export const linksAPI = {
   list: (token: string, page = 1, pageSize = 20, search = "", folderId = 0, tagId = 0, sort = "created_desc") => {
     const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
@@ -195,6 +215,21 @@ export const linksAPI = {
     fetchAPI(`/api/links/${id}`, {
       method: "DELETE",
       token,
+    }),
+
+  /** The link's pool of destinations, with the clicks each one took. */
+  targets: (token: string, id: number) =>
+    fetchAPI(`/api/links/${id}/targets`, { token }),
+
+  /**
+   * Replaces the pool whole. A target edited row by row would have no moment at which the change could be
+   * recorded as a decision, which is what the audit keeps.
+   */
+  replaceTargets: (token: string, id: number, targets: LinkTargetInput[]) =>
+    fetchAPI(`/api/links/${id}/targets`, {
+      method: "PUT",
+      token,
+      body: JSON.stringify({ targets }),
     }),
 
   batchDelete: (token: string, ids: number[]) =>

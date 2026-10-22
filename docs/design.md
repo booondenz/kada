@@ -38,9 +38,9 @@ allowed to lag by a second. The architecture is split along that line.
 ## 2. System overview
 
 ```text
-Browser ? nginx :80 ??? /api/, /r/ ? backend :8080 ??? PostgreSQL (source of truth)
-                      ?                              ?? Redis (cache + rate limit)
-                      ?? other ? frontend :3000      ?? Kafka (clicks) ? worker
+Browser → nginx :80 ─┬→ /api/, /r/ → backend :8080 ─┬→ PostgreSQL (source of truth)
+                     │                              ├→ Redis (cache + rate limit)
+                     └→ other → frontend :3000      └→ Kafka (clicks) → worker
 ```
 
 Components:
@@ -270,6 +270,8 @@ blocked_hosts   (standalone, keyed by host)
 | `blocked_hosts` | Targets that are not served | `host` (unique; matched by suffix, so one row covers every subdomain), `category` (why), `note` |
 | `link_blocks` | One takedown of one link | `short_code` (copied, so the row outlives the link), `reason`, `evidence`, `operator` (the phone number that decided), `lifted_at`, `lift_reason`, `lifted_by` |
 | `abuse_reports` | Complaints from visitors | `short_code`, `link_id` (nullable - a report about a deleted link is still evidence), `reason`, `detail`, `contact`, `ip` (not published) |
+| `link_targets` | One destination of a link's pool | `url`, `weight` (share of the draw; 0 means never), `daily_quota` (0 means unlimited), `enabled`, `label` |
+| `link_target_audits` | One replacement of a pool | `operator`, `before` and `after` as JSON arrays |
 
 Design rules:
 
@@ -800,6 +802,38 @@ insert a moment later anyway - turning one bad query into "nobody can make a lin
 limiter's key** (`guest:<ip>`). That is not cosmetic: every limiter counts into the same `ratelimit:<ip>`
 window, so a limit attached to one route is really a limit on all of them, and an un-namespaced guest bucket
 would have shared its counter with every other request the address made.
+
+### 7.9 A link can have a pool of destinations
+
+`links.original_url` answers "where does this go" for every link that has one place to go, which is most of
+them. A link may instead carry a pool in `link_targets`, and a visitor is sent to one of them:
+
+- **weight** decides the share, and a weight of zero means "in the pool but never chosen" - which is how a
+  target is paused without deleting it and losing its history.
+- **daily_quota** caps how many visitors one target takes in a day, after which the pool skips it. That is
+  what a 群活码 needs: a group fills up, the next one takes over, and the QR code already printed never
+  changes.
+- **enabled** takes a target out of the draw.
+
+The pool is replaced whole (`PUT /api/links/:id/targets`), and each replacement writes one row into
+`link_target_audits` with the before and the after - who changed the split, when, and from what to what. A
+row-by-row edit has no moment at which a decision could be recorded, which is why there is only one write
+path.
+
+The pool travels with the link through the cache, because the redirect draws from it on every request. That
+makes two things necessary: a replacement drops the cached link, and a pool URL is validated again when it is
+served. The checks are cheap, and cached data is what they exist to distrust.
+
+A link whose pool cannot take this visitor - every target disabled, full, or weighted zero - answers 404
+rather than falling back to `original_url`. The link has said where its traffic goes; `original_url` is where
+it pointed before it had a pool, and sending a visitor there is the stale-URL failure the split exists to
+avoid.
+
+The counter behind `daily_quota` is in memory. It is a routing decision rather than a bill, one API instance
+makes it exact, and several would make it approximate - bounded by the day's quota per instance.
+
+Which target took a click is on the click row (`click_logs.target_id`), and the owner's target listing is a
+group-by over it, which is why the counts are a request of their own rather than part of the link.
 
 ## 8. Cross-cutting decisions
 

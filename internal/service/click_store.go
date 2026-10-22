@@ -44,10 +44,10 @@ func (s *ClickStore) WriteClick(ctx context.Context, event mq.ClickEvent) error 
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		res := tx.Exec(`
-			INSERT INTO click_logs (link_id, ip, user_agent, platform, kind, action, referer, created_at, event_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO click_logs (link_id, target_id, ip, user_agent, platform, kind, action, referer, created_at, event_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT (event_id) DO NOTHING
-		`, event.LinkID, event.IP, event.UserAgent, event.Platform, string(kind), nullable(event.Action), event.Referer, event.CreatedAt, event.EventID)
+		`, event.LinkID, event.TargetID, event.IP, event.UserAgent, event.Platform, string(kind), nullable(event.Action), event.Referer, event.CreatedAt, event.EventID)
 		if res.Error != nil {
 			return res.Error
 		}

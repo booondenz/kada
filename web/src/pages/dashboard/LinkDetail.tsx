@@ -7,6 +7,9 @@ import {
 import { toast } from "sonner";
 import useSWR from "swr";
 import { linksAPI, foldersAPI, tagsAPI, domainsAPI, analyticsAPI } from "@/lib/api";
+import type { LinkTarget } from "@/lib/api";
+import { buttonClass } from "@/components/ui/Button";
+import { inputClass } from "@/components/ui/Field";
 import { getToken } from "@/lib/auth";
 import { safeHref } from "@/lib/utils";
 import { useT, useI18n } from "@/lib/i18n";
@@ -94,6 +97,13 @@ export default function LinkDetailPage() {
   const [showAnalytics, setShowAnalytics] = useState(wantsAnalytics);
   const [clickData, setClickData] = useState<{ daily: { date: string; count: number }[]; platforms: { platform: string; count: number }[] } | null>(null);
 
+  // Target pool
+  const [targets, setTargets] = useState<
+    { url: string; weight: number; dailyQuota: number; enabled: boolean; clicks: number }[]
+  >([]);
+  const [editingTargets, setEditingTargets] = useState(false);
+  const [savingTargets, setSavingTargets] = useState(false);
+
   const token = getToken();
   const { data: folderData } = useSWR(token ? "folders" : null, () => foldersAPI.list(token!));
   const { data: tagData } = useSWR(token ? "tags" : null, () => tagsAPI.list(token!));
@@ -174,6 +184,62 @@ export default function LinkDetailPage() {
     setCopied(true);
     toast.success(t("已复制"));
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  // The pool lives in its own request: it is a routing decision with statistics attached, and the redirect
+  // carries it on every hit, so it does not ride along with the ordinary link read.
+  const loadTargets = useCallback(async () => {
+    if (!token || !link) return;
+    try {
+      const data = await linksAPI.targets(token, link.id);
+      setTargets(
+        (data.targets ?? []).map((target: LinkTarget) => ({
+          url: target.url,
+          weight: target.weight,
+          dailyQuota: target.daily_quota,
+          enabled: target.enabled,
+          clicks: target.clicks,
+        })),
+      );
+    } catch {
+      // A link without a pool is the ordinary case, and the request says the same thing as an empty list.
+    }
+  }, [token, link]);
+
+  useEffect(() => {
+    void loadTargets();
+  }, [loadTargets]);
+
+  const updateTarget = (
+    index: number,
+    patch: Partial<{ url: string; weight: number; dailyQuota: number; enabled: boolean }>,
+  ) => {
+    setTargets((prev) => prev.map((target, i) => (i === index ? { ...target, ...patch } : target)));
+  };
+
+  const saveTargets = async () => {
+    if (!token || !link) return;
+    const filled = targets.filter((target) => target.url.trim() !== "");
+    setSavingTargets(true);
+    try {
+      await linksAPI.replaceTargets(
+        token,
+        link.id,
+        filled.map((target) => ({
+          url: target.url.trim(),
+          weight: target.weight,
+          daily_quota: target.dailyQuota,
+          enabled: target.enabled,
+        })),
+      );
+      toast.success(t("分流目标已保存"));
+      setEditingTargets(false);
+      await loadTargets();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("保存分流失败"));
+    } finally {
+      setSavingTargets(false);
+    }
   };
 
   const handleSave = async () => {
@@ -342,6 +408,126 @@ export default function LinkDetailPage() {
             </button>
             <p className="text-xs text-muted mt-0.5">{t("点击详情")}</p>
           </div>
+        </div>
+
+        {/* Target pool: a link with none resolves to its original URL, exactly as before. */}
+        <div className="border-b border-line p-6 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-strong">{t("分流目标")}</h3>
+              <p className="mt-0.5 text-xs text-muted">
+                {t("设置多个目标后，访客会按权重被分流；全部停用或满额时链接不再跳转")}
+              </p>
+            </div>
+            {!editingTargets && (
+              <button
+                onClick={() => setEditingTargets(true)}
+                className={buttonClass({ variant: "secondary", size: "sm" })}
+              >
+                {t("编辑")}
+              </button>
+            )}
+          </div>
+
+          {targets.length === 0 && !editingTargets && (
+            <p className="text-sm text-muted">{t("没有分流目标，访客会直接跳到原目标地址")}</p>
+          )}
+
+          {editingTargets ? (
+            <div className="space-y-2">
+              {targets.map((target, index) => (
+                <div key={index} className="grid gap-2 sm:grid-cols-[1fr_4.5rem_5rem_auto_auto]">
+                  <input
+                    value={target.url}
+                    onChange={(e) => updateTarget(index, { url: e.target.value })}
+                    placeholder="https://"
+                    className={`${inputClass()} font-mono text-xs`}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    value={target.weight}
+                    onChange={(e) => updateTarget(index, { weight: Number(e.target.value) })}
+                    title={t("权重")}
+                    className={inputClass()}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    value={target.dailyQuota}
+                    onChange={(e) => updateTarget(index, { dailyQuota: Number(e.target.value) })}
+                    title={t("每日上限")}
+                    className={inputClass()}
+                  />
+                  <label className="flex items-center gap-1 text-xs text-muted">
+                    <input
+                      type="checkbox"
+                      checked={target.enabled}
+                      onChange={(e) => updateTarget(index, { enabled: e.target.checked })}
+                    />
+                    {t("启用")}
+                  </label>
+                  <button
+                    onClick={() => setTargets((prev) => prev.filter((_, i) => i !== index))}
+                    className="text-xs text-danger"
+                  >
+                    {t("删除")}
+                  </button>
+                </div>
+              ))}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() =>
+                    setTargets((prev) => [...prev, { url: "", weight: 1, dailyQuota: 0, enabled: true, clicks: 0 }])
+                  }
+                  className={buttonClass({ variant: "secondary", size: "sm" })}
+                >
+                  {t("添加目标")}
+                </button>
+                <button
+                  onClick={saveTargets}
+                  disabled={savingTargets}
+                  className={buttonClass({ size: "sm" })}
+                >
+                  {savingTargets ? t("保存中...") : t("保存分流")}
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingTargets(false);
+                    void loadTargets();
+                  }}
+                  className={buttonClass({ variant: "ghost", size: "sm" })}
+                >
+                  {t("取消")}
+                </button>
+              </div>
+            </div>
+          ) : (
+            targets.length > 0 && (
+              <ul className="space-y-2">
+                {targets.map((target, index) => (
+                  <li key={index} className="flex items-center gap-3 text-sm">
+                    <span
+                      className={`size-1.5 shrink-0 rounded-full ${target.enabled ? "bg-emerald-500" : "bg-muted-surface"}`}
+                    />
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-body">{target.url}</span>
+                    <span className="shrink-0 text-xs text-muted tabular-nums">
+                      {t("权重")} {target.weight}
+                    </span>
+                    {target.dailyQuota > 0 && (
+                      <span className="shrink-0 text-xs text-muted tabular-nums">
+                        {t("每日上限")} {target.dailyQuota}
+                      </span>
+                    )}
+                    <span className="shrink-0 text-xs text-muted tabular-nums">
+                      {target.clicks.toLocaleString()} {t("点击")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )
+          )}
         </div>
 
         {/* Per-link analytics */}

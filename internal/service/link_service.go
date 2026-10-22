@@ -45,6 +45,9 @@ type LinkService struct {
 	clickWriter ClickWriter       // direct write (used by the degraded fallback)
 	blocker     TargetBlocker     // nil means nothing is blocked
 
+	// quota holds today's dispatch count per target, for the targets that cap theirs.
+	quota dispatchQuota
+
 	// loads collapses concurrent cache misses for one short code into a single database read. A key that
 	// is absent is exactly when a burst of requests for it arrives together.
 	loads singleflight.Group
@@ -254,7 +257,7 @@ func (s *LinkService) loadLink(ctx context.Context, shortCode string) (*domain.L
 			return nil, domain.ErrLinkNotFound
 		}
 
-		info := linkInfoFromEntity(row)
+		info := s.attachTargets(ctx, linkInfoFromEntity(row))
 
 		// check whether it has expired
 		if info.ExpiresAt != nil && info.ExpiresAt.Before(time.Now()) {
@@ -307,7 +310,7 @@ func (s *LinkService) CheckPassword(ctx context.Context, shortCode, password str
 		return false, nil, domain.ErrLinkNotFound
 	}
 
-	info := linkInfoFromEntity(row)
+	info := s.attachTargets(ctx, linkInfoFromEntity(row))
 
 	if info.ExpiresAt != nil && info.ExpiresAt.Before(time.Now()) {
 		return false, nil, errors.New("link has expired")
@@ -778,6 +781,7 @@ func (s *LinkService) LogClick(ctx context.Context, e domain.ClickEvent) {
 		Kind:      string(e.Kind),
 		Action:    string(e.Action),
 		Referer:   e.Referer,
+		TargetID:  e.TargetID,
 		CreatedAt: time.Now(),
 	}
 
@@ -844,7 +848,7 @@ func (s *LinkService) toLinkInfo(ctx context.Context, linkID, userID int64) *dom
 		return nil
 	}
 
-	info := linkInfoFromEntity(row)
+	info := s.attachTargets(ctx, linkInfoFromEntity(row))
 
 	// look up the folder name
 	if info.FolderID != nil {
