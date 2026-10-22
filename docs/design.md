@@ -268,6 +268,7 @@ blocked_hosts   (standalone, keyed by host)
 | `abuse_reports` | Complaints from visitors | `short_code`, `link_id` (nullable - a report about a deleted link is still evidence), `reason`, `detail`, `contact`, `ip` (not published) |
 | `link_targets` | One destination of a link's pool | `url`, `weight` (share of the draw; 0 means never), `daily_quota` (0 means unlimited), `enabled`, `label` |
 | `link_target_audits` | One replacement of a pool | `operator`, `before` and `after` as JSON arrays |
+| `uploads` | Files behind file links | `public_id` (unguessable, in the URL), `filename`, `content_type`, `size`, `sha256`, `storage_path` (relative to `UPLOAD_DIR`) |
 
 Design rules:
 
@@ -832,6 +833,32 @@ makes it exact, and several would make it approximate - bounded by the day's quo
 
 Which target took a click is on the click row (`click_logs.target_id`), and the owner's target listing is a
 group-by over it, which is why the counts are a request of their own rather than part of the link.
+
+### 7.10 A short link can be a file
+
+A file link is an ordinary link whose target happens to be a file this service stores. `POST /api/uploads`
+takes the file and answers a URL on this domain (`/f/<id>`), and creating a link with that upload's id makes
+the service derive the target from it - the caller does not get to type one. The point is the domain: a
+"short link" pointing at somebody else's image host is the thing this replaces.
+
+The file is served with a year of `immutable` caching, because the id is unguessable and the contents never
+change, and with `Content-Disposition: inline` for images and PDFs only: an image has to be visible to be
+saved by hand, a PDF is what the browser's viewer is for, and an Office file cannot be rendered at all - so
+offering it inline would be a blank page. `?download=1` forces a download.
+
+Two things make this safe to expose. The type is decided by the extension **and then checked against the
+first bytes**, so a `.png` that starts with a ZIP header is refused; and the only types accepted are png,
+jpg, webp, gif, pdf, docx, xlsx and pptx - video and audio are out of scope, and refused by type and by the
+20 MB per-file ceiling.
+
+Storage is the local disk (`UPLOAD_DIR`), not a bucket: one machine, files written once, a directory that
+survives a deploy. The per-account ceiling is 50 MB for a guest and 1 GB for a claimed account, for the same
+reason the link quota differs - an account costs one request to create.
+
+Deleting a link does not delete its file. It orphans it, and an hourly sweep removes uploads that no link
+refers to once they are a day old. Sweeping rather than deleting at the point of deletion keeps the link
+code out of the file business, and the grace period is what stops a link being created right now from losing
+its file to a sweep that ran in between.
 
 ## 8. Cross-cutting decisions
 

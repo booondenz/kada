@@ -16,10 +16,11 @@ import (
 type Handler struct {
 	svc     *service.LinkService
 	fetcher *preview.Fetcher
+	uploads *service.UploadService
 }
 
-func NewHandler(svc *service.LinkService) *Handler {
-	return &Handler{svc: svc, fetcher: preview.NewFetcher()}
+func NewHandler(svc *service.LinkService, uploads *service.UploadService) *Handler {
+	return &Handler{svc: svc, fetcher: preview.NewFetcher(), uploads: uploads}
 }
 
 // respondLinkError maps the service's refusals onto status codes.
@@ -125,6 +126,17 @@ func (h *Handler) Create(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "valid link details are required: " + err.Error()})
 		return
+	}
+
+	// A file link's target is the file this service stores, not a URL the caller typed: resolving it here
+	// is what makes the upload id the only thing that decides where such a link goes.
+	if req.UploadID != nil {
+		upload, err := h.uploads.ByID(c.Request.Context(), *req.UploadID, middleware.GetUserID(c))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "that upload does not exist or is not yours"})
+			return
+		}
+		req.OriginalURL = h.uploads.URL(upload)
 	}
 
 	link, err := h.svc.Create(c.Request.Context(), middleware.GetUserID(c), req)

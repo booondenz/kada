@@ -84,6 +84,37 @@ async function fetchAPI(path: string, options: FetchOptions = {}) {
   return data;
 }
 
+/**
+ * Performs a multipart upload.
+ *
+ * It is separate from `fetchAPI` because that one sets a JSON content type and serialises the body; the
+ * browser has to set the multipart boundary itself, so the body is a FormData and the header is left alone.
+ */
+export async function uploadFile(
+  path: string,
+  token: string,
+  file: File,
+): Promise<{ upload: { id: number; url: string; filename: string; content_type: string; size: number } }> {
+  const url = `${API_URL}${path}`;
+  const body = new FormData();
+  body.append("file", file);
+
+  let res: Response;
+  try {
+    res = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body });
+  } catch (cause) {
+    throw new Error(`cannot reach the API at ${url}: ${cause instanceof Error ? cause.message : cause}`, {
+      cause,
+    });
+  }
+
+  const data = await readJSON(res, url);
+  if (!res.ok) {
+    throw new Error(data.error || `upload failed with status ${res.status}`);
+  }
+  return data;
+}
+
 /** Performs a request that returns CSV rather than JSON, used by the link export. */
 export async function fetchCSV(path: string, token: string): Promise<string> {
   const url = `${API_URL}${path}`;
@@ -194,6 +225,8 @@ export const linksAPI = {
     utm_content?: string;
     ios_url?: string;
     android_url?: string;
+    /** Makes this a file link: the target is derived from the upload, not from original_url. */
+    upload_id?: number;
   }) =>
     fetchAPI("/api/links", {
       method: "POST",
@@ -260,6 +293,18 @@ export const linksAPI = {
 };
 
 // ========== Analytics API ==========
+
+// ========== Uploads API ==========
+
+/**
+ * Stores a file for a file link.
+ *
+ * The type is checked on the server, by content and not only by extension, so the `accept` list here is
+ * convenience rather than the rule.
+ */
+export const uploadsAPI = {
+  create: (token: string, file: File) => uploadFile("/api/uploads", token, file),
+};
 
 // ========== Reports API ==========
 

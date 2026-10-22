@@ -146,6 +146,7 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 			UTMContent:   req.UTMContent,
 			IosURL:       req.IosURL,
 			AndroidURL:   req.AndroidURL,
+			UploadID:     req.UploadID,
 		}
 		err := s.db.WithContext(ctx).Create(&row).Error
 		if err == nil {

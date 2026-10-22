@@ -14,6 +14,9 @@ type Config struct {
 	JWTExpires  string
 	BaseURL     string
 	FrontendURL string
+	// UploadDir is where uploaded files are stored. It has to be a directory this process may write to,
+	// and one that survives a deploy - the files are the content of file links, not a cache.
+	UploadDir string
 
 	// The assistant's own settings. It runs in this process, so the model keys are read here; there is no
 	// second service, no internal secret and no second database to point at.
@@ -55,6 +58,7 @@ func Load() *Config {
 		JWTExpires:  getEnv("JWT_EXPIRES_IN", "720h"),
 		BaseURL:     getEnv("API_BASE_URL", "https://kada.click"),
 		FrontendURL: getEnv("FRONTEND_URL", "http://localhost:3000"),
+		UploadDir:   getEnv("UPLOAD_DIR", "./data/uploads"),
 
 		AIDeepSeekBaseURL: getEnv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
 		AIDeepSeekAPIKey:  getEnv("DEEPSEEK_API_KEY", ""),

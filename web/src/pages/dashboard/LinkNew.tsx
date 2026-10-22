@@ -3,7 +3,8 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { Globe, Clock, Shield, Smartphone, Tags, Link2, Folder, X, ExternalLink } from "lucide-react";
 import useSWR from "swr";
-import { linksAPI, domainsAPI, utmAPI, foldersAPI, tagsAPI } from "@/lib/api";
+import { linksAPI, domainsAPI, utmAPI, foldersAPI, tagsAPI, uploadsAPI } from "@/lib/api";
+import { buttonClass } from "@/components/ui/Button";
 import { getToken } from "@/lib/auth";
 import { safeHref } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
@@ -26,6 +27,11 @@ export default function CreateLinkPage() {
   const [iosUrl, setIosUrl] = useState("");
   const [androidUrl, setAndroidUrl] = useState("");
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  // The upload makes this a file link: the target becomes the stored file, and the URL field is filled in
+  // for the owner to see rather than typed by them.
+  const [uploadId, setUploadId] = useState<number | null>(null);
+  const [uploadName, setUploadName] = useState("");
   const [previewing, setPreviewing] = useState(false);
   const [preview, setPreview] = useState<{ title: string; description: string; image_url: string; favicon_url: string } | null>(null);
   const previewTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -75,6 +81,23 @@ export default function CreateLinkPage() {
   const activeDomain = domain || "kada.click";
   const previewURL = `https://${activeDomain}/r/${shortCode || "abc123"}`;
 
+  const handleUpload = async (file: File) => {
+    if (!token) return;
+    setUploading(true);
+    try {
+      const data = await uploadsAPI.create(token, file);
+      setUploadId(data.upload.id);
+      setUploadName(data.upload.filename);
+      setOriginalUrl(data.upload.url);
+      setPreview(null);
+      toast.success(t("文件已上传"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("上传失败"));
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     // A narrowing, not a flow: the shell opens a session before this page renders, so the token exists by
@@ -84,6 +107,7 @@ export default function CreateLinkPage() {
     try {
       await linksAPI.create(token, {
         original_url: originalUrl,
+        upload_id: uploadId ?? undefined,
         short_code: shortCode || undefined,
         title: title || undefined,
         description: description || undefined,
@@ -130,12 +154,36 @@ export default function CreateLinkPage() {
                   value={originalUrl}
                   onChange={(e) => {
                     setOriginalUrl(e.target.value);
+                    // Editing the target by hand turns this back into an ordinary link; the upload stays
+                    // unclaimed and the sweep removes it.
+                    setUploadId(null);
+                    setUploadName("");
                     setPreview(null);
                   }}
                   className="w-full rounded-xl border border-line px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
                   placeholder="https://example.com/your-long-url"
-                  required
+                  required={!uploadId}
                 />
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                  <label className={buttonClass({ variant: "secondary", size: "sm", className: "cursor-pointer" })}>
+                    {uploading ? t("上传中...") : t("上传文件")}
+                    <input
+                      type="file"
+                      accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.docx,.xlsx,.pptx"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void handleUpload(file);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {uploadId ? (
+                    <span className="truncate text-muted">{uploadName}</span>
+                  ) : (
+                    <span className="text-muted">{t("图片或文档，上传后得到一个短链")}</span>
+                  )}
+                </div>
                 {/* Preview card */}
                 {(previewing || preview) && (
                   <div className="mt-3 rounded-xl border border-line bg-subtle overflow-hidden">

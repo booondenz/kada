@@ -351,6 +351,11 @@ export const zh = {
   "保存分流": "保存分流",
   "分流目标已保存": "分流目标已保存",
   "保存分流失败": "保存分流失败",
+  "上传文件": "上传文件",
+  "上传中...": "上传中...",
+  "上传失败": "上传失败",
+  "文件已上传": "文件已上传",
+  "图片或文档，上传后得到一个短链": "图片或文档，上传后得到一个短链",
 } as const;
 
 export type MessageKey = keyof typeof zh;
@@ -705,4 +710,9 @@ export const en: Messages = {
   "保存分流": "Save targets",
   "分流目标已保存": "Targets saved",
   "保存分流失败": "Could not save the targets",
+  "上传文件": "Upload a file",
+  "上传中...": "Uploading...",
+  "上传失败": "Upload failed",
+  "文件已上传": "File uploaded",
+  "图片或文档，上传后得到一个短链": "An image or a document - you get a short link for it",
 };

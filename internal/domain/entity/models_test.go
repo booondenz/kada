@@ -39,6 +39,7 @@ func TestTableNames(t *testing.T) {
 		"LinkTargetAudit":     "link_target_audits",
 		"Domain":              "domains",
 		"BlockedHost":         "blocked_hosts",
+		"Upload":              "uploads",
 		"LinkBlock":           "link_blocks",
 		"AbuseReport":         "abuse_reports",
 		"UTMTemplate":         "utm_templates",

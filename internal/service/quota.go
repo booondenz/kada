@@ -6,6 +6,8 @@ import (
 	"log"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/booondenz/kada/internal/domain"
 	"github.com/booondenz/kada/internal/domain/entity"
 )
@@ -79,13 +81,7 @@ func waitUntil(oldest time.Time, window time.Duration, now time.Time) int {
 // cannot answer a count is a database that would refuse the insert a moment later anyway; turning one bad
 // query into "nobody can create a link" would be the more expensive failure.
 func (s *LinkService) checkQuota(ctx context.Context, userID int64) error {
-	var account struct{ Phone *string }
-	if err := s.db.WithContext(ctx).Model(&entity.User{}).
-		Select("phone").Where("id = ?", userID).Scan(&account).Error; err != nil {
-		log.Printf("read the account for its link quota failed: %v", err)
-		return nil
-	}
-	claimed := account.Phone != nil
+	claimed := claimedAccount(ctx, s.db, userID)
 
 	now := time.Now().UTC()
 	daily, oldestDaily := s.linksCreatedSince(ctx, userID, now.Add(-quotaWindow))
@@ -95,6 +91,19 @@ func (s *LinkService) checkQuota(ctx context.Context, userID int64) error {
 		return refusal
 	}
 	return nil
+}
+
+// claimedAccount reports whether the account has claimed a phone number, which is what entitles it to the
+// larger ceilings. A row that cannot be read counts as unclaimed: the smaller allowance is the safe answer
+// for a question about how much somebody may have.
+func claimedAccount(ctx context.Context, db *gorm.DB, userID int64) bool {
+	var account struct{ Phone *string }
+	if err := db.WithContext(ctx).Model(&entity.User{}).
+		Select("phone").Where("id = ?", userID).Scan(&account).Error; err != nil {
+		log.Printf("read the account for its quota failed: %v", err)
+		return false
+	}
+	return account.Phone != nil
 }
 
 // linksCreatedSince counts an account's links since a point in time, and returns the oldest of them - which

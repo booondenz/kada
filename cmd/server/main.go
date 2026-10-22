@@ -26,10 +26,12 @@ import (
 	reportHandler "github.com/booondenz/kada/internal/handler/report"
 	tagHandler "github.com/booondenz/kada/internal/handler/tag"
 	tokenHandler "github.com/booondenz/kada/internal/handler/token"
+	uploadHandler "github.com/booondenz/kada/internal/handler/upload"
 	utmHandler "github.com/booondenz/kada/internal/handler/utm"
 	"github.com/booondenz/kada/internal/infra"
 	"github.com/booondenz/kada/internal/infra/blocklist"
 	"github.com/booondenz/kada/internal/infra/sms"
+	"github.com/booondenz/kada/internal/infra/storage"
 	"github.com/booondenz/kada/internal/middleware"
 	"github.com/booondenz/kada/internal/service"
 )
@@ -131,6 +133,33 @@ func main() {
 	go blockList.Run(context.Background(), 30*time.Second)
 
 	linkSvc := service.NewLinkService(db, cfg.BaseURL, cacheSvc, service.NewClickStore(db), blockList)
+
+	// Uploaded files live on disk. A missing or unwritable directory is a refused start rather than a
+	// feature that fails on the first upload: the upload routes exist either way, and one that answers 500
+	// forever is worse than a process that says why it will not run.
+	fileStore, err := storage.New(cfg.UploadDir)
+	if err != nil {
+		log.Fatalf("the upload directory is not usable: %v", err)
+	}
+	uploadSvc := service.NewUploadService(db, fileStore, cfg.BaseURL)
+	// Orphans are an upload whose link was deleted and an upload whose link was never created. Sweeping
+	// them on a timer is what keeps the link paths out of the file business; the grace period stops a link
+	// being created right now from losing its file to a sweep in between.
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			removed, sweepErr := uploadSvc.SweepOrphans(context.Background(), 24*time.Hour)
+			if sweepErr != nil {
+				log.Printf("sweep orphan uploads failed: %v", sweepErr)
+				continue
+			}
+			if removed > 0 {
+				log.Printf("removed %d orphan uploads", removed)
+			}
+		}
+	}()
+
 	domainSvc := service.NewDomainService(db)
 	folderSvc := service.NewFolderService(db)
 	tagSvc := service.NewTagService(db)
@@ -141,7 +170,8 @@ func main() {
 
 	// Initialize the handler layer
 	authH := authHandler.NewHandler(authSvc)
-	linkH := linkHandler.NewHandler(linkSvc)
+	linkH := linkHandler.NewHandler(linkSvc, uploadSvc)
+	uploadH := uploadHandler.NewHandler(uploadSvc)
 	redirectH := redirectHandler.NewHandler(linkSvc)
 	domainH := domainHandler.NewHandler(domainSvc)
 	folderH := folderHandler.NewHandler(folderSvc)
@@ -231,6 +261,10 @@ func main() {
 		actionMW = rateLimiter.Action()
 	}
 	redirectH.RegisterRoutes(r, redirectMW, actionMW)
+
+	// File links: the public GET is at the root beside /r/, and the upload is an API route. The handler
+	// mounts both because they are two halves of one feature.
+	uploadH.RegisterRoutes(r, authMW)
 
 	// API v1 route group
 	v1 := r.Group("/api")

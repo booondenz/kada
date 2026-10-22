@@ -37,6 +37,10 @@ type Link struct {
 	// ON DELETE SET NULL: deleting an account must not delete the links that were created with it.
 	UserID   *int64 `gorm:"index" json:"user_id"`
 	FolderID *int64 `gorm:"index" json:"folder_id"`
+	// UploadID points at the file this link serves, when the link was made from one. Deleting the link
+	// deletes the upload (the service does it in the same transaction), so a short link is the only handle
+	// on a file and losing the link cannot leave the file reachable.
+	UploadID *int64 `gorm:"index" json:"upload_id"`
 
 	UTMSource   *string `gorm:"type:varchar(255)" json:"utm_source"`
 	UTMMedium   *string `gorm:"type:varchar(255)" json:"utm_medium"`
@@ -347,6 +351,30 @@ type AbuseReport struct {
 	Link *Link `gorm:"foreignKey:LinkID;constraint:OnDelete:SET NULL" json:"-"`
 }
 
+// Upload is one file this service stores for a short link.
+//
+// The bytes live on disk, under the configured upload directory; this row is the index of them. The public
+// handle is an opaque id rather than the database id, because the file URL is reachable by anyone holding
+// the link and a counter would invite walking everybody else's.
+type Upload struct {
+	ID int64 `gorm:"primaryKey" json:"id"`
+	// PublicID is what appears in the URL (/f/<public_id>).
+	PublicID string `gorm:"type:varchar(32);uniqueIndex;not null" json:"public_id"`
+	// ON DELETE SET NULL: an account can be deleted while its links stay public.
+	UserID      *int64 `gorm:"index" json:"user_id"`
+	Filename    string `gorm:"type:varchar(255);not null" json:"filename"`
+	ContentType string `gorm:"type:varchar(100);not null" json:"content_type"`
+	Size        int64  `gorm:"not null" json:"size"`
+	// SHA256 is of the contents, so the same file uploaded twice can be recognized later without reading
+	// it back off disk.
+	SHA256 string `gorm:"type:varchar(64);not null" json:"sha256"`
+	// StoragePath is relative to the upload directory, so moving that directory does not need a rewrite.
+	StoragePath string    `gorm:"type:varchar(255);not null" json:"-"`
+	CreatedAt   time.Time `gorm:"index" json:"created_at"`
+
+	User *User `gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL" json:"-"`
+}
+
 // UTMTemplate is a reusable set of UTM parameters.
 type UTMTemplate struct {
 	ID          int64     `gorm:"primaryKey" json:"id"`
@@ -420,6 +448,7 @@ func Models() []any {
 		&LoginAttempt{},
 		&Domain{},
 		&BlockedHost{},
+		&Upload{},
 		&LinkBlock{},
 		&AbuseReport{},
 		&UTMTemplate{},

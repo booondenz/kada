@@ -123,7 +123,7 @@ type UserInfo struct {
 // ---- Links ----
 
 type CreateLinkRequest struct {
-	OriginalURL string  `json:"original_url" binding:"required,url"`
+	OriginalURL string  `json:"original_url"`
 	ShortCode   *string `json:"short_code"`
 	Title       *string `json:"title"`
 	Description *string `json:"description"`
@@ -140,6 +140,9 @@ type CreateLinkRequest struct {
 	UTMContent  *string `json:"utm_content"`
 	IosURL      *string `json:"ios_url"`
 	AndroidURL  *string `json:"android_url"`
+	// UploadID makes this link a file link: the target is derived from the upload, so OriginalURL is
+	// ignored (and may be empty) when this is set.
+	UploadID *int64 `json:"upload_id"`
 }
 
 type UpdateLinkRequest struct {
@@ -246,6 +249,27 @@ type LinkTargetInput struct {
 type ReplaceTargetsRequest struct {
 	Targets []LinkTargetInput `json:"targets"`
 }
+
+// ==================== Uploads ====================
+
+// UploadInfo is a stored file as the API hands it back.
+//
+// URL is where the file is served from, and it is on this domain: a short link that pointed at somebody
+// else's image host would be the thing this feature exists to avoid.
+type UploadInfo struct {
+	ID          int64     `json:"id"`
+	URL         string    `json:"url"`
+	Filename    string    `json:"filename"`
+	ContentType string    `json:"content_type"`
+	Size        int64     `json:"size"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// ErrStorageQuota is the refusal for an account that has used all of its file space.
+var ErrStorageQuota = errors.New("storage quota reached")
+
+// ErrUnsupportedFile is the refusal for a file whose type this service will not store.
+var ErrUnsupportedFile = errors.New("unsupported file type")
 
 // ==================== Moderation ====================
 
