@@ -11,7 +11,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: "1.26"
+  # Pin the patch release, not the minor line. The go directive in go.mod is a patch-level floor
+  # (ollama v0.40.9 requires 1.26.10), and setup-go installs GOTOOLCHAIN=local, so Go will not fetch
+  # a newer toolchain to satisfy it: asking for "1.26" got this runner's cached 1.26.9 and every job
+  # that loads the module stopped before it built. Raise this whenever go.mod's directive moves up.
+  GO_VERSION: "1.26.10"
   NODE_VERSION: "22"
 
 jobs:
