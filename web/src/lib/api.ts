@@ -362,8 +362,9 @@ export interface LinkBlockRecord {
 /**
  * The operator routes.
  *
- * They refuse everybody whose number is not in `ADMIN_PHONES`, so a caller who is not an operator gets a
- * 403 - which is what the console uses to decide whether the entry belongs in the sidebar at all.
+ * They refuse every request that does not carry `ADMIN_SECRET` in `X-Admin-Secret`, so a caller without
+ * the secret gets a 403 - which is what the console uses to decide whether the entry belongs in the
+ * sidebar at all.
  */
 export const adminAPI = {
   reports: (token: string, limit = 50): Promise<{ reports: AbuseReport[] }> =>

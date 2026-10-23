@@ -89,15 +89,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     if (pathname === "/dashboard") return t("链接");
     if (pathname.startsWith("/dashboard/links/new")) return t("创建链接");
     if (pathname.match(/^\/dashboard\/links\/\d+$/)) return t("链接详情");
-    if (pathname === "/dashboard/analytics") return t("分析");
+    if (pathname === "/dashboard/analytics") return t("统计");
     if (pathname === "/dashboard/domains") return t("域名");
     if (pathname === "/dashboard/ai") return t("AI 助手");
+    if (pathname === "/dashboard/api") return t("API");
     if (pathname === "/dashboard/events") return t("事件");
     if (pathname === "/dashboard/customers") return t("客户");
     if (pathname === "/dashboard/folders") return t("文件夹");
+    if (pathname === "/dashboard/moderation") return t("运营");
     if (pathname === "/dashboard/tags") return t("标签");
+    if (pathname === "/dashboard/targets") return t("分流");
     if (pathname === "/dashboard/utm") return t("UTM 模板");
-    if (pathname === "/dashboard/settings") return t("用户");
     return "";
   })();
 

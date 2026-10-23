@@ -13,8 +13,8 @@ import { useT } from "@/lib/i18n";
  * The operator console: what visitors reported, and the two decisions an operator makes.
  *
  * It is one page because the job is one job - read a complaint, decide, write down why. The routes behind it
- * refuse anybody whose number is not in `ADMIN_PHONES`; this page shows the refusal rather than hiding the
- * possibility, so an operator who has just been added (or removed) can see which side they are on.
+ * refuse every request without `ADMIN_SECRET`; this page asks for the secret and shows the refusal rather
+ * than hiding the possibility, so an operator can see which side they are on.
  */
 export default function ModerationPage() {
   const t = useT();

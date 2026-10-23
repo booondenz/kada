@@ -64,12 +64,12 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
     setShowQR(true);
   };
 
-  // The rest of the card already opens the link; a click on the total asks the same page for the numbers
-  // behind it, which are folded away by default.
+  // The card opens the link; the total opens the numbers behind it, which live under 洞察 with every other
+  // reading of the clicks rather than folded away at the bottom of this link's own page.
   const handleAnalytics = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    navigate(`/dashboard/links/${link.id}?analytics=1`);
+    navigate(`/dashboard/analytics?link=${link.id}`);
   };
 
   // Generate QR code when modal opens

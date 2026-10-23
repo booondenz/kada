@@ -9,6 +9,7 @@ import {
   Folder,
   Tag,
   ArrowRightLeft,
+  Split,
   Sparkles,
   ShieldCheck,
   Braces,
@@ -50,9 +51,13 @@ const NAV_SECTIONS: NavSection[] = [
   {
     name: "洞察",
     items: [
-      { name: "分析", href: "/dashboard/analytics", icon: BarChart3 },
+      // The numbers, the raw events behind them, the visitors they came from, and where the traffic is being
+      // sent: four ways of looking at the same clicks, so they sit together. 分流 used to be a block on the
+      // link page, which meant the one question it answers - "where does my traffic go" - was asked per link.
+      { name: "统计", href: "/dashboard/analytics", icon: BarChart3 },
       { name: "事件", href: "/dashboard/events", icon: MousePointerClick },
       { name: "客户", href: "/dashboard/customers", icon: Users },
+      { name: "分流", href: "/dashboard/targets", icon: Split },
     ],
   },
   {

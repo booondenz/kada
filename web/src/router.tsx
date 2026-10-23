@@ -13,6 +13,7 @@ import LinkNew from "@/pages/dashboard/LinkNew";
 import Links from "@/pages/dashboard/Links";
 import Moderation from "@/pages/dashboard/Moderation";
 import Tags from "@/pages/dashboard/Tags";
+import Targets from "@/pages/dashboard/Targets";
 import Utm from "@/pages/dashboard/Utm";
 import Privacy from "@/pages/Privacy";
 import Redirect from "@/pages/Redirect";
@@ -63,9 +64,11 @@ export const router = createBrowserRouter([
       // and the two things on it - tokens and the theme - live on the API page and in the top bar now.
       { path: "settings", element: <Navigate to="/dashboard/api" replace /> },
       // The operator console. It lives behind the same shell as everything else and the API refuses it to
-      // anybody who is not in ADMIN_PHONES; the sidebar only shows the entry when that check passes.
+      // anybody who cannot present ADMIN_SECRET; the sidebar only shows the entry when that check passes.
       { path: "moderation", element: <Moderation /> },
       { path: "tags", element: <Tags /> },
+      // 分流: the pool of destinations behind each link, which used to be edited on the link page itself.
+      { path: "targets", element: <Targets /> },
       { path: "utm", element: <Utm /> },
     ],
   },

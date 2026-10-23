@@ -1,15 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router";
+import { Link, useParams } from "react-router";
 import {
   Copy, ExternalLink, Pencil, Save, X, Check, QrCode, Download,
-  BarChart3, Globe, Clock, Shield, Smartphone, Tags, ArrowLeft, Folder,
+  BarChart3, Globe, Clock, Shield, Smartphone, Tags, ArrowLeft, Folder, Split,
 } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
-import { linksAPI, foldersAPI, tagsAPI, domainsAPI, analyticsAPI, uploadsAPI } from "@/lib/api";
-import type { LinkTarget } from "@/lib/api";
-import { buttonClass } from "@/components/ui/Button";
-import { inputClass } from "@/components/ui/Field";
+import { linksAPI, foldersAPI, tagsAPI, domainsAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { safeHref } from "@/lib/utils";
 import { useT, useI18n } from "@/lib/i18n";
@@ -51,18 +48,9 @@ interface LinkDetail {
 
 export default function LinkDetailPage() {
   const { id = "" } = useParams<{ id: string }>();
-  // A link card's click total arrives with ?analytics=1: the block starts open and is scrolled to once the
-  // page has replaced its skeleton.
-  const [searchParams] = useSearchParams();
-  const wantsAnalytics = searchParams.get("analytics") === "1";
   const t = useT();
   const { locale } = useI18n();
   const dateLocale = locale === "en" ? "en-US" : "zh-CN";
-
-  const platformLabels: Record<string, string> = {
-    browser: t("浏览器"), wechat: t("微信"), qq: "QQ",
-    weibo: t("微博"), xiaohongshu: t("小红书"), sms: t("短信"), unknown: t("其他"),
-  };
 
   const [link, setLink] = useState<LinkDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -92,25 +80,6 @@ export default function LinkDetailPage() {
   // QR code
   const [showQR, setShowQR] = useState(false);
   const [qrURL, setQrURL] = useState<string | null>(null);
-
-  // Analytics
-  const [showAnalytics, setShowAnalytics] = useState(wantsAnalytics);
-  const [clickData, setClickData] = useState<{ daily: { date: string; count: number }[]; platforms: { platform: string; count: number }[] } | null>(null);
-
-  // Target pool
-  const [targets, setTargets] = useState<
-    {
-      url: string;
-      weight: number;
-      dailyQuota: number;
-      enabled: boolean;
-      clicks: number;
-      kind: "url" | "wechat_group";
-      expiresAt: string;
-    }[]
-  >([]);
-  const [editingTargets, setEditingTargets] = useState(false);
-  const [savingTargets, setSavingTargets] = useState(false);
 
   const token = getToken();
   const { data: folderData } = useSWR(token ? "folders" : null, () => foldersAPI.list(token!));
@@ -151,27 +120,6 @@ export default function LinkDetailPage() {
 
   useEffect(() => { fetchLink(); }, [fetchLink]);
 
-  // Fetch per-link analytics
-  useEffect(() => {
-    if (showAnalytics && link && token) {
-      Promise.all([
-        analyticsAPI.dailyForLink(token, link.id),
-        analyticsAPI.platformsForLink(token, link.id),
-      ]).then(([dailyData, platformsData]) => {
-        setClickData({
-          daily: dailyData.daily ?? [],
-          platforms: platformsData.platforms ?? [],
-        });
-      }).catch((e: unknown) => toast.error(e instanceof Error ? e.message : t("加载统计数据失败")));
-    }
-  }, [showAnalytics, link, token, t]);
-
-  // Runs after the skeleton is gone, because the block only exists once `link` has arrived.
-  useEffect(() => {
-    if (!wantsAnalytics || !link) return;
-    document.getElementById("analytics")?.scrollIntoView({ block: "start", behavior: "smooth" });
-  }, [wantsAnalytics, link]);
-
   // QR code
   useEffect(() => {
     if (showQR && link && !qrURL) {
@@ -192,90 +140,6 @@ export default function LinkDetailPage() {
     setCopied(true);
     toast.success(t("已复制"));
     setTimeout(() => setCopied(false), 2000);
-  };
-
-  // The pool lives in its own request: it is a routing decision with statistics attached, and the redirect
-  // carries it on every hit, so it does not ride along with the ordinary link read.
-  const loadTargets = useCallback(async () => {
-    if (!token || !link) return;
-    try {
-      const data = await linksAPI.targets(token, link.id);
-      setTargets(
-        (data.targets ?? []).map((target: LinkTarget) => ({
-          url: target.url,
-          weight: target.weight,
-          dailyQuota: target.daily_quota,
-          enabled: target.enabled,
-          clicks: target.clicks,
-          kind: target.kind === "wechat_group" ? "wechat_group" : "url",
-          // The date input speaks days, the API speaks RFC 3339: the date is the part a person sets.
-          expiresAt: target.expires_at ? target.expires_at.slice(0, 10) : "",
-        })),
-      );
-    } catch {
-      // A link without a pool is the ordinary case, and the request says the same thing as an empty list.
-    }
-  }, [token, link]);
-
-  useEffect(() => {
-    void loadTargets();
-  }, [loadTargets]);
-
-  const updateTarget = (
-    index: number,
-    patch: Partial<{ url: string; weight: number; dailyQuota: number; enabled: boolean; kind: "url" | "wechat_group"; expiresAt: string }>,
-  ) => {
-    setTargets((prev) => prev.map((target, i) => (i === index ? { ...target, ...patch } : target)));
-  };
-
-  // A group code is an image, and the image has to be hosted somewhere the visitor can see it - which is
-  // what the upload route is for. The target keeps the file's URL, so replacing the code later is editing
-  // the row rather than reprinting anything.
-  const uploadTargetImage = async (index: number, file: File) => {
-    if (!token) return;
-    try {
-      const data = await uploadsAPI.create(token, file);
-      updateTarget(index, { url: data.upload.url, kind: "wechat_group" });
-      toast.success(t("文件已上传"));
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("上传失败"));
-    }
-  };
-
-  // A group code runs out: WeChat's last seven days, and the QR itself stops admitting anyone once the
-  // group is full. The pool skips an expired target on its own; these two say so to the one person who can
-  // replace it, on the row where the replacement happens.
-  const expired = (date: string) => new Date(`${date}T23:59:59Z`).getTime() <= Date.now();
-  const expiresWithin = (date: string, days: number) =>
-    !expired(date) && new Date(`${date}T23:59:59Z`).getTime() - Date.now() <= days * 86_400_000;
-
-  const saveTargets = async () => {
-    if (!token || !link) return;
-    const filled = targets.filter((target) => target.url.trim() !== "");
-    setSavingTargets(true);
-    try {
-      await linksAPI.replaceTargets(
-        token,
-        link.id,
-        filled.map((target) => ({
-          url: target.url.trim(),
-          weight: target.weight,
-          daily_quota: target.dailyQuota,
-          enabled: target.enabled,
-          kind: target.kind,
-          // The end of the chosen day, in UTC: the owner picks a date rather than a time, and the target
-          // stays live through it.
-          expires_at: target.expiresAt ? `${target.expiresAt}T23:59:59Z` : undefined,
-        })),
-      );
-      toast.success(t("分流目标已保存"));
-      setEditingTargets(false);
-      await loadTargets();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("保存分流失败"));
-    } finally {
-      setSavingTargets(false);
-    }
   };
 
   const handleSave = async () => {
@@ -435,255 +299,16 @@ export default function LinkDetailPage() {
             <p className="text-xs text-muted mt-0.5">{t("创建日期")}</p>
           </div>
           <div className="p-4 text-center">
-            <button
-              onClick={() => setShowAnalytics(!showAnalytics)}
-              className={`text-sm font-bold transition ${showAnalytics ? "text-brand-ink" : "text-strong"}`}
+            <Link
+              to={`/dashboard/analytics?link=${link.id}`}
+              className="text-sm font-bold text-strong transition hover:text-brand-ink"
             >
               <BarChart3 className="size-4 inline mr-1" />
-              {t("统计")}
-            </button>
+              {t("查看统计")}
+            </Link>
             <p className="text-xs text-muted mt-0.5">{t("点击详情")}</p>
           </div>
         </div>
-
-        {/* Target pool: a link with none resolves to its original URL, exactly as before. */}
-        <div className="border-b border-line p-6 space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-strong">{t("分流目标")}</h3>
-              <p className="mt-0.5 text-xs text-muted">
-                {t("设置多个目标后，访客会按权重被分流；全部停用或满额时链接不再跳转")}
-              </p>
-            </div>
-            {!editingTargets && (
-              <button
-                onClick={() => setEditingTargets(true)}
-                className={buttonClass({ variant: "secondary", size: "sm" })}
-              >
-                {t("编辑")}
-              </button>
-            )}
-          </div>
-
-          {targets.length === 0 && !editingTargets && (
-            <p className="text-sm text-muted">{t("没有分流目标，访客会直接跳到原目标地址")}</p>
-          )}
-
-          {editingTargets ? (
-            <div className="space-y-2">
-              {targets.map((target, index) => (
-                <div key={index} className="space-y-2 rounded-lg border border-line p-2">
-                  <div className="flex gap-2">
-                    <input
-                      value={target.url}
-                      onChange={(e) => updateTarget(index, { url: e.target.value })}
-                      placeholder="https://"
-                      className={`${inputClass()} min-w-0 flex-1 font-mono text-xs`}
-                    />
-                    <label
-                      className={buttonClass({
-                        variant: "secondary",
-                        size: "sm",
-                        className: "shrink-0 cursor-pointer",
-                      })}
-                    >
-                      {t("上传二维码")}
-                      <input
-                        type="file"
-                        accept=".png,.jpg,.jpeg"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) void uploadTargetImage(index, file);
-                          e.target.value = "";
-                        }}
-                      />
-                    </label>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                    <select
-                      value={target.kind}
-                      onChange={(e) => updateTarget(index, { kind: e.target.value as "url" | "wechat_group" })}
-                      className={inputClass()}
-                      title={t("目标类型")}
-                    >
-                      <option value="url">{t("普通链接")}</option>
-                      <option value="wechat_group">{t("微信群二维码")}</option>
-                    </select>
-                    <input
-                      type="number"
-                      min={0}
-                      value={target.weight}
-                      onChange={(e) => updateTarget(index, { weight: Number(e.target.value) })}
-                      title={t("权重")}
-                      className={`${inputClass()} w-20`}
-                    />
-                    <input
-                      type="number"
-                      min={0}
-                      value={target.dailyQuota}
-                      onChange={(e) => updateTarget(index, { dailyQuota: Number(e.target.value) })}
-                      title={t("每日上限")}
-                      className={`${inputClass()} w-24`}
-                    />
-                    <input
-                      type="date"
-                      value={target.expiresAt}
-                      onChange={(e) => updateTarget(index, { expiresAt: e.target.value })}
-                      title={t("有效期")}
-                      className={inputClass()}
-                    />
-                    <label className="flex items-center gap-1">
-                      <input
-                        type="checkbox"
-                        checked={target.enabled}
-                        onChange={(e) => updateTarget(index, { enabled: e.target.checked })}
-                      />
-                      {t("启用")}
-                    </label>
-                    <button
-                      onClick={() => setTargets((prev) => prev.filter((_, i) => i !== index))}
-                      className="ml-auto text-danger"
-                    >
-                      {t("删除")}
-                    </button>
-                  </div>
-                </div>
-              ))}
-
-              <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={() =>
-                        setTargets((prev) => [
-                          ...prev,
-                          { url: "", weight: 1, dailyQuota: 0, enabled: true, clicks: 0, kind: "url", expiresAt: "" },
-                        ])
-                      }
-                      className={buttonClass({ variant: "secondary", size: "sm" })}
-                    >
-                      {t("添加目标")}
-                    </button>
-                <button
-                  onClick={saveTargets}
-                  disabled={savingTargets}
-                  className={buttonClass({ size: "sm" })}
-                >
-                  {savingTargets ? t("保存中...") : t("保存分流")}
-                </button>
-                <button
-                  onClick={() => {
-                    setEditingTargets(false);
-                    void loadTargets();
-                  }}
-                  className={buttonClass({ variant: "ghost", size: "sm" })}
-                >
-                  {t("取消")}
-                </button>
-              </div>
-            </div>
-          ) : (
-            targets.length > 0 && (
-              <ul className="space-y-2">
-                {targets.map((target, index) => (
-                  <li key={index} className="flex items-center gap-3 text-sm">
-                    <span
-                      className={`size-1.5 shrink-0 rounded-full ${target.enabled ? "bg-emerald-500" : "bg-muted-surface"}`}
-                    />
-                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-body">{target.url}</span>
-                    {target.kind === "wechat_group" && (
-                      <span className="shrink-0 rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700">
-                        {t("微信群二维码")}
-                      </span>
-                    )}
-                    {target.expiresAt && (
-                      <span
-                        className={`shrink-0 text-xs tabular-nums ${
-                          expiresWithin(target.expiresAt, 3) ? "font-medium text-amber-600" : "text-muted"
-                        }`}
-                      >
-                        {expired(target.expiresAt)
-                          ? t("已过期")
-                          : `${t("有效期至")} ${target.expiresAt}`}
-                      </span>
-                    )}
-                    <span className="shrink-0 text-xs text-muted tabular-nums">
-                      {t("权重")} {target.weight}
-                    </span>
-                    {target.dailyQuota > 0 && (
-                      <span className="shrink-0 text-xs text-muted tabular-nums">
-                        {t("每日上限")} {target.dailyQuota}
-                      </span>
-                    )}
-                    <span className="shrink-0 text-xs text-muted tabular-nums">
-                      {target.clicks.toLocaleString()} {t("点击")}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )
-          )}
-        </div>
-
-        {/* Per-link analytics */}
-        {showAnalytics && (
-          <div id="analytics" className="scroll-mt-4 p-6 border-b border-line bg-subtle space-y-4">
-            <h3 className="text-sm font-semibold text-strong">{t("点击统计")}</h3>
-            {clickData ? (
-              <>
-                {/* Daily chart */}
-                {clickData.daily.length > 0 && (
-                  <div>
-                    <p className="text-xs text-muted mb-2">{t("每日点击量（近30天）")}</p>
-                    <div className="flex items-end gap-1 h-24">
-                      {clickData.daily.map((d) => {
-                        const max = Math.max(...clickData.daily.map(dd => dd.count), 1);
-                        const h = (d.count / max) * 100;
-                        return (
-                          <div key={d.date} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-                            <div className="w-full flex flex-col justify-end" style={{ height: "80px" }}>
-                              <div className="w-full rounded-t bg-indigo-500 min-h-[2px]" style={{ height: `${Math.max(h, 1)}%` }}
-                                title={`${d.date}: ${d.count} ${t("点击")}`} />
-                            </div>
-                            <span className="text-[9px] text-faint truncate w-full text-center">{d.date.slice(5)}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                {/* Platforms */}
-                {clickData.platforms.length > 0 && (
-                  <div>
-                    <p className="text-xs text-muted mb-2">{t("平台分布")}</p>
-                    <div className="space-y-1.5">
-                      {clickData.platforms.map((p) => {
-                        const total = clickData.platforms.reduce((s, pp) => s + pp.count, 0);
-                        const pct = total > 0 ? Math.round((p.count / total) * 100) : 0;
-                        return (
-                          <div key={p.platform} className="flex items-center gap-2 text-xs">
-                            <span className="w-14 text-muted">{platformLabels[p.platform] || p.platform}</span>
-                            <div className="flex-1 h-1.5 rounded-full bg-raised overflow-hidden">
-                              <div className="h-full rounded-full bg-indigo-500" style={{ width: `${pct}%` }} />
-                            </div>
-                            <span className="w-10 text-right text-muted tabular-nums">{p.count}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                {clickData.daily.length === 0 && clickData.platforms.length === 0 && (
-                  <p className="text-xs text-faint py-2">{t("暂无点击数据")}</p>
-                )}
-              </>
-            ) : (
-              <div className="flex items-center justify-center py-4">
-                <div className="size-5 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Edit form */}
         {editing && (
@@ -837,6 +462,18 @@ export default function LinkDetailPage() {
               <span className={`text-strong ${mono ? "font-mono" : ""}`}>{value}</span>
             </div>
           ))}
+
+          {/* The pool is managed where routing is: this row says the page exists and which link to open it on.
+              Editing it here is what made "where does my traffic go" a question about this link's tags. */}
+          <div className="flex items-center justify-between border-t border-line pt-3 text-sm">
+            <span className="flex items-center gap-1.5 text-muted">
+              <Split className="size-3.5" />
+              {t("分流目标")}
+            </span>
+            <Link to={`/dashboard/targets?link=${link.id}`} className="text-brand-ink hover:underline">
+              {t("在分流里编辑")}
+            </Link>
+          </div>
 
           {/* UTM */}
           {[link.utm_source, link.utm_medium, link.utm_campaign, link.utm_term, link.utm_content].some(Boolean) && (
