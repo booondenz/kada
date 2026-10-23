@@ -1,7 +1,5 @@
 # Kada Design
 
-**English** | [简体中文](design.zh.md)
-
 Kada is a short-link management and analytics platform. Users create short links, organise them, and
 watch how they are clicked. This document explains how the system is put together and why.
 

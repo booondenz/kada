@@ -43,7 +43,7 @@
 
 AI 助手运行在 API 进程内：`/api/ai/*` 由它自己提供，会话存放在同一个 PostgreSQL 里，产品说明文档
 随二进制一起编译并在每次提问时发给模型；它提供的工具直接调用本项目的业务服务。见
-[docs/design.md](docs/design.md) 的部署一节。
+[docs/design.md] 的部署一节。
 
 ## 快速开始
 
@@ -105,7 +105,7 @@ go run ./cmd/loadgen -codes 200 -absent 2000 -requests 20000 -clients 4000 -conc
 | DEEPSEEK_API_KEY | AI 助手的对话模型密钥 |
 
 生产环境下这些值来自 GitHub 仓库 secrets，由部署任务写入 `/opt/kada/backend/.env`；部署任务做了什么，
-见 [docs/design.md](docs/design.md) 的部署一节。
+见 [docs/design.md] 的部署一节。
 
 ## 目录结构
 
