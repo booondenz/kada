@@ -119,7 +119,7 @@ the deploy job; the deployment section of [docs/design.md](docs/design.md) expla
 ```text
 cmd/       entry points: the API, the migration and the load generator
 config/    environment parsing (the single source of configuration)
-internal/  the application: domain, handler, service, infra, middleware, mq, metrics, assistant
+internal/  the application: domain, handler, service, infra, middleware, metrics, assistant
 web/       Vite single-page app, built to static files and served by nginx
 docs/      Design, contributing and code-style documentation
 deploy/    Deployment scripts, and deploy/nginx/ with the reverse proxy configuration
