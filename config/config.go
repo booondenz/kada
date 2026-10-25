@@ -22,10 +22,6 @@ type Config struct {
 	// Disable it (DB_AUTO_MIGRATE=false) once the schema is managed out of band.
 	AutoMigrate bool
 
-	// WeChat
-	WechatAppID     string
-	WechatAppSecret string
-
 	// AdminSecret is the password for the operator routes (ADMIN_SECRET).
 	//
 	// It is a shared secret rather than an account because there are no accounts: the site is free and every
@@ -46,10 +42,8 @@ func Load() *Config {
 		FrontendURL: getEnv("FRONTEND_URL", "http://localhost:3000"),
 		UploadDir:   getEnv("UPLOAD_DIR", "./data/uploads"),
 
-		AutoMigrate:     getEnvBool("DB_AUTO_MIGRATE", true),
-		WechatAppID:     getEnv("WECHAT_APP_ID", ""),
-		WechatAppSecret: getEnv("WECHAT_APP_SECRET", ""),
-		AdminSecret:     getEnv("ADMIN_SECRET", ""),
+		AutoMigrate: getEnvBool("DB_AUTO_MIGRATE", true),
+		AdminSecret: getEnv("ADMIN_SECRET", ""),
 	}
 }
 
