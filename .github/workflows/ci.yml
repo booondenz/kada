@@ -12,9 +12,9 @@ concurrency:
 
 env:
   # Pin the patch release, not the minor line. The go directive in go.mod is a patch-level floor
-  # (ollama v0.40.9 requires 1.26.10), and setup-go installs GOTOOLCHAIN=local, so Go will not fetch
-  # a newer toolchain to satisfy it: asking for "1.26" got this runner's cached 1.26.9 and every job
-  # that loads the module stopped before it built. Raise this whenever go.mod's directive moves up.
+  # (go 1.26.10), and setup-go installs GOTOOLCHAIN=local, so Go will not fetch a newer toolchain to
+  # satisfy it: asking for "1.26" got this runner's cached 1.26.9 and every job that loads the module
+  # stopped before it built. Raise this whenever go.mod's directive moves up.
   GO_VERSION: "1.26.10"
   NODE_VERSION: "22"
 
@@ -76,7 +76,7 @@ jobs:
         env:
           DATABASE_URL: postgres://kada:kada123@localhost:5432/kada_test?sslmode=disable
           JWT_SECRET: test-secret
-        run: go test ./... -v -count=1 -race -coverprofile=coverage.out
+        run: go test ./... -count=1 -race -coverprofile=coverage.out
 
       - name: Upload coverage
         uses: actions/upload-artifact@v7
@@ -129,7 +129,6 @@ jobs:
           key: ${{ runner.os }}-npm-${{ hashFiles('web/package-lock.json') }}
           restore-keys: ${{ runner.os }}-npm-
 
-
       - name: Install dependencies
         working-directory: web
         run: npm ci
@@ -154,7 +153,6 @@ jobs:
         run: |
           mkdir -p ../deploy-pkg
           tar czf ../deploy-pkg/kada-fe.tar.gz -C dist .
-
 
       - name: Upload the frontend build
         uses: actions/upload-artifact@v7
@@ -273,7 +271,6 @@ jobs:
             'rm -rf /tmp/kada-deploy && mkdir -p /tmp/kada-deploy && tar xzf /tmp/kada-deploy.tar.gz -C /tmp/kada-deploy && rm -f /tmp/kada-deploy.tar.gz'
           echo "the bundle is unpacked on the host"
 
-
       # The id is what the report step below reads to tell "the site was not reachable" apart from "the
       # release never reached the host": without it, a failed deploy is reported as a smoke test that did
       # not run, next to a reassuring sentence about a deployment that never happened.
@@ -301,8 +298,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
           # The step replaces the API and the frontend and then waits for the API to answer; the action
-          # default of 10m is generous for that. It was 30m when the Python image was built here, which
-          # took minutes on a small server.
+          # default of 10m is generous for that, and the whole step finishes in well under a minute.
           command_timeout: 10m
           envs: DATABASE_URL,ADMIN_SECRET,SITE_ORIGIN
           script: |
@@ -705,7 +701,7 @@ jobs:
                 go-test) result="${{ needs.go-test.result }}" ;;
                 web-lint) result="${{ needs.web-lint.result }}" ;;
                 web-build) result="${{ needs.web-build.result }}" ;;
-               deploy) result="${{ needs.deploy.result }}" ;;
+                deploy) result="${{ needs.deploy.result }}" ;;
               esac
               echo "| $job | $result |"
             done
