@@ -22,8 +22,7 @@ import { getToken } from "@/lib/auth";
 import { getAdminSecret } from "@/lib/adminSecret";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
-import { IcpNotice } from "@/components/IcpNotice";
-import { PublicSecurityNotice } from "@/components/PublicSecurityNotice";
+import { FilingCredits } from "@/components/FilingCredits";
 
 interface NavItem {
   name: string;
@@ -165,20 +164,10 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
       </nav>
 
       {/* The bottom of the sidebar is the one place every page reaches, so it is where the filings sit -
-          the account row that used to be here named an identity the product no longer has. The links are
-          above the numbers because a filing is not navigation: the two things a visitor might act on come
-          first, and the two things a regulator checks come after. */}
-      <div className="space-y-1.5 border-t border-line px-4 py-3 text-xs">
-        <div className="flex flex-wrap items-center gap-x-3">
-          <Link to="/privacy" className="text-muted transition-colors hover:text-strong">
-            {t("隐私政策")}
-          </Link>
-          <Link to="/report" className="text-muted transition-colors hover:text-strong">
-            {t("举报")}
-          </Link>
-        </div>
-        <IcpNotice className="block text-faint transition-colors hover:text-muted" />
-        <PublicSecurityNotice className="block text-faint transition-colors hover:text-muted" />
+          the account row that used to be here named an identity the product no longer has. They are one
+          control now and the rule above them is gone with the rows they used to fill: see FilingCredits. */}
+      <div className="px-4 py-3">
+        <FilingCredits />
       </div>
     </aside>
   );
