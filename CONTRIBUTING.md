@@ -47,8 +47,9 @@ follows. A change that spans the three is one change to this document.
 
 ## How the system is built
 
-Kada is a short-link management and analytics platform. Users create short links, organise them, and
-watch how they are clicked. This document explains how the system is put together and why.
+This section is the architecture and the decisions behind it: how a request moves through the system,
+what the database holds and why, the flows that carry the product, and the choices that are easiest to
+question six months later. Where a decision cost something, it says what.
 
 ### 1. Product summary
 
@@ -1161,8 +1162,8 @@ These are deliberate trade-offs, not oversights:
 
 ## How to work on it
 
-Thanks for taking the time to contribute. This document covers how to set the project up, how work
-is expected to flow, and what a good pull request looks like.
+This section covers how to set the project up, how work is expected to flow, and what a good pull
+request looks like.
 
 Read [How the system is built](#how-the-system-is-built) first for how the pieces fit together, and
 [Code style](#code-style) for the conventions used in the code itself.
@@ -1503,7 +1504,7 @@ document should be fixed in the same pull request.
 
 Tooling already enforces most of this: `gofmt` and `goimports` through `golangci-lint`, ESLint and
 Prettier-style formatting on the frontend. What tooling cannot check is naming, structure and the
-quality of a comment, which is what the rest of this document is about.
+quality of a comment, which is what the rest of this section is about.
 
 ### 1. General principles
 
