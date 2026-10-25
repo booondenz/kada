@@ -1,15 +1,14 @@
 import { authAPI } from "./api";
-import { getToken, removeToken, setToken, setUser } from "./auth";
+import { getToken, removeToken, setToken } from "./auth";
 
 /**
  * The session the app runs in.
  *
  * There is no sign-in screen any more: opening the site is enough to use it. The first page load asks the
  * API for a guest session, which is an ordinary account row with no phone number on it (see
- * `AuthService.CreateGuest`), stores the token the same way a sign-in used to, and every request after that
- * is authenticated exactly as before. Nothing in the app has to know that its user has not signed up: the
- * links it creates have an owner, and that owner can be claimed later by writing a phone number onto the
- * same row.
+ * `AuthService.CreateGuest`), and every request after that carries the token it minted. Nothing in the app
+ * has to know that the account has no identity: the links it creates have an owner, and the id in the
+ * token is that owner - there is nothing to claim and nobody to claim it with.
  *
  * The trade-off is stated where the user can see it rather than here: a guest account lives in this
  * browser's storage, so clearing the browser loses it, and an expiring token starts a new one.
@@ -62,7 +61,6 @@ export function ensureSession(): Promise<string> {
     .guest()
     .then((data) => {
       setToken(data.token);
-      setUser(data.user);
       return data.token;
     })
     .catch((err: unknown) => {

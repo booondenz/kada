@@ -22,11 +22,3 @@ export function setAdminSecret(secret: string): void {
     // Storage can be unavailable (private mode); the console then asks every time, which still works.
   }
 }
-
-export function clearAdminSecret(): void {
-  try {
-    localStorage.removeItem(KEY);
-  } catch {
-    // Nothing to clear.
-  }
-}

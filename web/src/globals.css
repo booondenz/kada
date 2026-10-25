@@ -28,8 +28,6 @@
   --color-brand-dark: #4338ca;   /* indigo-700 */
   --color-brand-soft: #eef2ff;   /* indigo-50: brand-tinted surface */
   --color-brand-ink: #4338ca;    /* indigo-700: text and icons on that surface */
-  --color-hairline: #e5e5e5;     /* neutral-200 hairline border */
-  --color-surface: #fafafa;      /* neutral-50 page background */
 
   /*
    * Tailwind v4 has no `dark` config key; both themes are expressed as CSS variables. The light values
