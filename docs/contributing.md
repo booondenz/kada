@@ -1,7 +1,5 @@
 # Contributing to Kada
 
-**English** | [简体中文](contributing.zh.md)
-
 Thanks for taking the time to contribute. This document covers how to set the project up, how work
 is expected to flow, and what a good pull request looks like.
 
@@ -51,13 +49,9 @@ Fill in `.env` before starting anything:
 
 - `JWT_SECRET` — a strong random value: `openssl rand -hex 32`.
 - `POSTGRES_PASSWORD` — anything non-default.
-- SMS variables — leave them **empty** in a local setup: real sending is then disabled and verification
-  codes are printed to the API log outside release mode. Copying the placeholder value is worse than
-  leaving them empty, because the API starts and then fails on every registration. In production they are
-  required for anyone to register (a password is chosen with a code, and an account with no password can
-  only be reached through one), so the deploy job writes them from repository secrets with
-  `deploy/upsert-env.sh` and refuses to deploy while any of them is missing - checked against the host's
-  `.env`, so a value configured there by hand counts too.
+- `ADMIN_SECRET` — optional, and empty is a valid local choice: it refuses every operator route, which
+  only costs you the takedown console. In production the deploy job writes it from the repository secret
+  with `deploy/upsert-env.sh`, as the first step of the deploy.
 
 ### Line endings
 
@@ -309,13 +303,11 @@ A few checks cannot be expressed as a unit test, so they live in `web/scripts/` 
 | `node scripts/check-theme-css.mjs` | The theme tokens compile, and brand/status colours are still fixed |
 | `node scripts/check-theme-timing.mjs` | The theme is applied before the first frame, so there is no flash |
 | `node scripts/capture-theme.mjs` | Screenshots every route in both themes into `web/.theme-shots/` |
-| `node scripts/report-color-usage.mjs` | Inventories colour utilities and flags ones that need a role |
-| `node scripts/migrate-color-tokens.mjs --dry-run` | Shows the shade-to-role rewrite without applying it |
 
-The first two need the dev server running; the ones that drive a browser also need Edge installed, and on
-Windows they must run outside the default sandbox. Run `check-theme-timing.mjs` after touching anything
-that injects the theme script: a theme applied after the first frame is a visible flash, and it is not
-obvious from reading the code.
+The last two drive a running dev server through Edge, so they need both, and on Windows they must run
+outside the default sandbox. Run `check-theme-timing.mjs` after touching anything that injects the theme
+script: a theme applied after the first frame is a visible flash, and it is not obvious from reading the
+code.
 
 ## 10. Changing the database schema
 
