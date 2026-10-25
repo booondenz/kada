@@ -5,6 +5,9 @@ import { toast } from "sonner";
 import { utmAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { Button } from "@/components/ui/Button";
+import { inputClass } from "@/components/ui/Field";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 interface UTMTemplate {
   id: number;
@@ -94,19 +97,16 @@ export default function UTMPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-strong">{t("UTM 模板")}</h1>
-          <p className="text-sm text-muted mt-1">{t("管理 UTM 参数模板，创建链接时快速复用")}</p>
-        </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition shadow-sm"
-        >
-          <Plus className="size-4" />
-          {t("新建模板")}
-        </button>
-      </div>
+      <PageHeader
+        title={t("UTM 模板")}
+        description={t("管理 UTM 参数模板，创建链接时快速复用")}
+        actions={
+          <Button onClick={() => setShowForm(true)}>
+            <Plus className="size-4" />
+            {t("新建模板")}
+          </Button>
+        }
+      />
 
       {/* Create form modal-ish */}
       {showForm && (
@@ -131,7 +131,7 @@ export default function UTMPage() {
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
                 placeholder={t("春季推广活动")}
-                className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className={inputClass()}
               />
             </div>
 
@@ -148,20 +148,16 @@ export default function UTMPage() {
                       setFormValues((prev) => ({ ...prev, [key]: e.target.value }))
                     }
                     placeholder={placeholder}
-                    className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono"
+                    className={inputClass(false, "font-mono")}
                   />
                 </div>
               ))}
             </div>
 
             <div className="flex items-center gap-3 pt-2">
-              <button
-                onClick={handleCreate}
-                disabled={!formName.trim() || creating}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
-              >
+              <Button onClick={handleCreate} disabled={!formName.trim() || creating}>
                 {creating ? t("创建中...") : t("创建模板")}
-              </button>
+              </Button>
               <button
                 onClick={resetForm}
                 className="text-sm text-muted hover:text-body transition"
@@ -192,7 +188,7 @@ export default function UTMPage() {
               className="animate-pulse rounded-xl border border-line bg-canvas p-5 space-y-3"
             >
               <div className="h-5 w-32 rounded bg-muted-surface" />
-              <div className="h-4 w-64 rounded bg-gray-50" />
+              <div className="h-4 w-64 rounded bg-muted-surface" />
             </div>
           ))}
         </div>
@@ -306,7 +302,7 @@ export default function UTMPage() {
                             className="flex items-center gap-2 text-sm"
                           >
                             <span className="text-faint shrink-0">{label}</span>
-                            <code className="text-xs bg-gray-50 px-1.5 py-0.5 rounded text-body font-mono">
+                            <code className="text-xs bg-muted-surface px-1.5 py-0.5 rounded text-body font-mono">
                               {value}
                             </code>
                           </div>

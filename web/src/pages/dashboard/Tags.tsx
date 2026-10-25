@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { tagsAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { Button } from "@/components/ui/Button";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 const TAG_COLORS = [
   "#3B82F6", // blue
@@ -70,10 +72,7 @@ export default function TagsPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-strong">{t("标签")}</h1>
-        <p className="text-sm text-muted mt-1">{t("用标签标记和筛选链接")}</p>
-      </div>
+      <PageHeader title={t("标签")} description={t("用标签标记和筛选链接")} />
 
       {/* Create new tag */}
       <div className="rounded-xl border border-line bg-canvas shadow-sm p-4">
@@ -121,14 +120,10 @@ export default function TagsPage() {
             ))}
           </div>
 
-          <button
-            type="submit"
-            disabled={!newName.trim() || creating}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition shrink-0"
-          >
+          <Button type="submit" size="sm" disabled={!newName.trim() || creating}>
             <Plus className="size-3.5" />
             {t("新建")}
-          </button>
+          </Button>
         </form>
       </div>
 

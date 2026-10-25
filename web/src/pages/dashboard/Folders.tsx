@@ -5,6 +5,9 @@ import { toast } from "sonner";
 import { foldersAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { Button } from "@/components/ui/Button";
+import { inputClass } from "@/components/ui/Field";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 interface FolderItem {
   id: number;
@@ -71,10 +74,7 @@ export default function FoldersPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-strong">{t("文件夹")}</h1>
-        <p className="text-sm text-muted mt-1">{t("用文件夹组织你的短链接")}</p>
-      </div>
+      <PageHeader title={t("文件夹")} description={t("用文件夹组织你的短链接")} />
 
       {/* Create new */}
       <div className="rounded-xl border border-line bg-canvas shadow-sm p-4">
@@ -96,14 +96,10 @@ export default function FoldersPage() {
             className="flex-1 border-none bg-transparent text-sm text-strong placeholder:text-faint focus:outline-none"
             maxLength={50}
           />
-          <button
-            type="submit"
-            disabled={!newName.trim() || creating}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition shrink-0"
-          >
+          <Button type="submit" size="sm" disabled={!newName.trim() || creating}>
             <Plus className="size-3.5" />
             {t("新建")}
-          </button>
+          </Button>
         </form>
       </div>
 
@@ -130,7 +126,7 @@ export default function FoldersPage() {
               <div className="size-9 rounded-lg bg-muted-surface" />
               <div className="flex-1 space-y-2">
                 <div className="h-4 w-32 rounded bg-muted-surface" />
-                <div className="h-3 w-16 rounded bg-gray-50" />
+                <div className="h-3 w-16 rounded bg-muted-surface" />
               </div>
             </div>
           ))}
@@ -158,7 +154,7 @@ export default function FoldersPage() {
                       type="text"
                       value={editingName}
                       onChange={(e) => setEditingName(e.target.value)}
-                      className="border border-line rounded-lg px-2 py-1 text-sm text-strong focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      className={inputClass(false, "h-8 w-56")}
                       autoFocus
                       onKeyDown={(e) => {
                         if (e.key === "Enter") handleRename(f.id);
