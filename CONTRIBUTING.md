@@ -1,18 +1,13 @@
 # Contributing to Kada
 
-This one file is the project's documentation: how the system is built and why (Part 1), how to work on
-it (Part 2), and the conventions its code follows (Part 3). A change that spans them - the decision, the
-convention that encodes it and the workflow that ships it - is one change to one document, which is why
-they are not three. The name is the one GitHub looks for when somebody clicks "Contributing": the
-contributing guide is Part 2, and the two parts around it are what a contributor needs in order to read
-the code and to leave it consistent.
-
-Until this file existed the material lived in `docs/design.md`, `docs/contributing.md` and
-`docs/code-style.md`, each numbering its sections from 1 and cross-referencing the others by filename.
+Kada is a short-link management and analytics platform: people create short links, organise them in
+folders and tags, and watch how they are clicked. This document is everything needed to change it - how
+the system is put together and why, the workflow a change goes through, and the conventions the code
+follows. A change that spans the three is one change to this document.
 
 ## Contents
 
-- [Part 1: Design](#part-1-design)
+- [How the system is built](#how-the-system-is-built)
   - [1. Product summary](#1-product-summary)
   - [2. System overview](#2-system-overview)
   - [3. Repository layout](#3-repository-layout)
@@ -25,7 +20,7 @@ Until this file existed the material lived in `docs/design.md`, `docs/contributi
   - [10. Deployment](#10-deployment)
   - [11. Testing](#11-testing)
   - [12. Known limitations](#12-known-limitations)
-- [Part 2: Contributing](#part-2-contributing)
+- [How to work on it](#how-to-work-on-it)
   - [1. Requirements](#1-requirements)
   - [2. Local setup](#2-local-setup)
   - [3. Running the stack](#3-running-the-stack)
@@ -37,7 +32,7 @@ Until this file existed the material lived in `docs/design.md`, `docs/contributi
   - [9. Testing expectations](#9-testing-expectations)
   - [10. Changing the database schema](#10-changing-the-database-schema)
   - [11. Documentation](#11-documentation)
-- [Part 3: Code style](#part-3-code-style)
+- [Code style](#code-style)
   - [1. General principles](#1-general-principles)
   - [2. Comments](#2-comments)
   - [3. Go](#3-go)
@@ -50,7 +45,7 @@ Until this file existed the material lived in `docs/design.md`, `docs/contributi
   - [10. Configuration and secrets](#10-configuration-and-secrets)
   - [11. Formatting quick reference](#11-formatting-quick-reference)
 
-## Part 1: Design
+## How the system is built
 
 Kada is a short-link management and analytics platform. Users create short links, organise them, and
 watch how they are clicked. This document explains how the system is put together and why.
@@ -1164,13 +1159,13 @@ These are deliberate trade-offs, not oversights:
   path - `POST /api/auth/guest` sits behind the strict limiter and the guest tier, and the quota in
   [7.8](#78-what-one-account-may-create) bounds what one of those accounts can then create.
 
-## Part 2: Contributing
+## How to work on it
 
 Thanks for taking the time to contribute. This document covers how to set the project up, how work
 is expected to flow, and what a good pull request looks like.
 
-Read [Part 1](#part-1-design) first for how the system fits together, and
-[Part 3](#part-3-code-style) for the conventions used in the code itself.
+Read [How the system is built](#how-the-system-is-built) first for how the pieces fit together, and
+[Code style](#code-style) for the conventions used in the code itself.
 
 ### 1. Requirements
 
@@ -1269,11 +1264,11 @@ cd web && npm run lint && npx tsc --noEmit && npm run build
    is the only step that has to decide what "done" means *before* there is an implementation to argue
    with. A fix whose issue was written afterwards is a fix nobody can find later: the tracker is the only
    list of what was wrong with this project, and the commit log is not searchable by symptom.
-2. **Branch off `main`.** Use a short descriptive name: `feat/ai-support`, `fix/sms-signature-error`.
+2. **Branch off `main`.** Use a short descriptive name: `feat/utm-templates`, `fix/redirect-cache`.
 3. **Keep the change focused.** One topic per branch and per pull request. Unrelated cleanups make a
    change hard to review and hard to revert.
 4. **Follow the existing layering.** New behaviour belongs in a service; the handler stays thin. See
-   [Part 1, section 4](#4-backend).
+   [Backend](#4-backend).
 5. **Keep the layers honest.** Handlers do not run SQL, services do not touch `*gin.Context`,
    ownership is enforced in the `WHERE` clause.
 6. **Write the tests that would have caught the bug** or that pin the new behaviour.
@@ -1388,7 +1383,7 @@ who has the symptom and not the commit. An incident found in production gets one
 `## Problem`: that is the evidence, and it is the part that is impossible to reconstruct afterwards.
 
 What does not belong: background, alternatives considered, trade-off analysis, and plans for work that
-is not being done now. A design choice that needs that much room belongs in [Part 1](#part-1-design); a
+is not being done now. A design choice that needs that much room belongs in [How the system is built](#how-the-system-is-built); a
 rejected option belongs in the pull request that chose the other one.
 
 Write the title in the same shape as a commit subject (`type: imperative summary`), and close the issue
@@ -1494,13 +1489,13 @@ as deliberate operations with a backup, not as part of a normal change.
 |---|---|
 | `README.md` | What the project is, how to run it |
 | `README.zh.md` | The same README in Chinese; `README.md` is the source, so the two change together |
-| `CONTRIBUTING.md` | This file: the architecture and the decisions behind it (Part 1), the workflow that ships a change (Part 2), and the conventions the code follows (Part 3) |
+| `CONTRIBUTING.md` | This file: the architecture and the decisions behind it, the workflow that ships a change, and the conventions the code follows |
 
 Documentation is part of the change, not a follow-up. If you make a decision a future reader would
-question, write the reason next to the code (`why`, not `what`) and mention it in Part 1 if it
+question, write the reason next to the code (`why`, not `what`) and mention it in the first section if it
 affects the architecture.
 
-## Part 3: Code style
+## Code style
 
 Conventions used in this repository. They follow what the code already does, so the goal is
 consistency rather than reform. When something here contradicts the code, the code wins - and the
@@ -1847,7 +1842,7 @@ runtime environment variable, where it does nothing at all.
 | Blank line | Between logical blocks, not after `{` or before `}` |
 | Import order | stdlib, third-party, then `github.com/booondenz/kada/...` |
 | File endings | LF, one trailing newline (enforced by `.gitattributes`) |
-| Commit messages | English, one line, `type: imperative summary` - see [Part 2, section 6](#6-commit-messages) |
+| Commit messages | English, one line, `type: imperative summary` - see [section 6](#6-commit-messages) |
 
 Run before pushing:
 
