@@ -18,15 +18,6 @@ type Config struct {
 	// and one that survives a deploy - the files are the content of file links, not a cache.
 	UploadDir string
 
-	// The assistant's own settings. It runs in this process, so the model keys are read here; there is no
-	// second service, no internal secret and no second database to point at.
-	AIDeepSeekBaseURL string
-	AIDeepSeekAPIKey  string
-	// AIDeepSeekModel keeps the name the Python service used. The name is a product decision, not part of
-	// the port, so it is unchanged here even though it is an unusual one for api.deepseek.com.
-	AIDeepSeekModel string
-	AIMaxTokens     int
-
 	// AutoMigrate controls whether the process is allowed to create/update the schema at startup.
 	// Disable it (DB_AUTO_MIGRATE=false) once the schema is managed out of band.
 	AutoMigrate bool
@@ -55,14 +46,10 @@ func Load() *Config {
 		FrontendURL: getEnv("FRONTEND_URL", "http://localhost:3000"),
 		UploadDir:   getEnv("UPLOAD_DIR", "./data/uploads"),
 
-		AIDeepSeekBaseURL: getEnv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
-		AIDeepSeekAPIKey:  getEnv("DEEPSEEK_API_KEY", ""),
-		AIDeepSeekModel:   getEnv("AI_CHAT_MODEL", "deepseek-flash"),
-		AIMaxTokens:       getEnvInt("AI_MAX_TOKENS", 8192),
-		AutoMigrate:       getEnvBool("DB_AUTO_MIGRATE", true),
-		WechatAppID:       getEnv("WECHAT_APP_ID", ""),
-		WechatAppSecret:   getEnv("WECHAT_APP_SECRET", ""),
-		AdminSecret:       getEnv("ADMIN_SECRET", ""),
+		AutoMigrate:     getEnvBool("DB_AUTO_MIGRATE", true),
+		WechatAppID:     getEnv("WECHAT_APP_ID", ""),
+		WechatAppSecret: getEnv("WECHAT_APP_SECRET", ""),
+		AdminSecret:     getEnv("ADMIN_SECRET", ""),
 	}
 }
 
@@ -85,20 +72,6 @@ func getEnvBool(key string, fallback bool) bool {
 		return fallback
 	}
 	return b
-}
-
-// getEnvInt parses an integer environment variable; an unparsable value falls back to the default, the
-// same way getEnvBool does, rather than turning a typo into a zero.
-func getEnvInt(key string, fallback int) int {
-	v := strings.TrimSpace(os.Getenv(key))
-	if v == "" {
-		return fallback
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n <= 0 {
-		return fallback
-	}
-	return n
 }
 
 // weakJWTSecrets lists known weak default secrets: startup fails outright in release mode

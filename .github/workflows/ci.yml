@@ -282,15 +282,11 @@ jobs:
         uses: appleboy/ssh-action@v1.2.2
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          # The provider keys live here rather than in a file someone edits over SSH. "The AI page is
-          # broken" was, in the end, an empty line in the host's env files that nothing had ever checked; see
-          # deploy/upsert-env.sh for how these are written and why the deployment stops when they are
-          # missing.
+          # The operator secret lives here rather than in a file someone edits over SSH; see
+          # deploy/upsert-env.sh for how it is written.
           #
-          # Add them under Settings -> Secrets and variables -> Actions:
-          #   DEEPSEEK_API_KEY      chat model key
+          # Add it under Settings -> Secrets and variables -> Actions:
           #   ADMIN_SECRET          the operator secret the console asks for (optional)
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
           # Optional, and not required below: moderation can wait, and a deployment that refused to run
           # because the operator's secret was not set would be a deployment held hostage by a feature it
@@ -308,7 +304,7 @@ jobs:
           # default of 10m is generous for that. It was 30m when the Python image was built here, which
           # took minutes on a small server.
           command_timeout: 10m
-          envs: DATABASE_URL,DEEPSEEK_API_KEY,ADMIN_SECRET,SITE_ORIGIN
+          envs: DATABASE_URL,ADMIN_SECRET,SITE_ORIGIN
           script: |
             set -euo pipefail
 
@@ -330,13 +326,8 @@ jobs:
             #    hand keeps working; --require is what makes "nothing there at all" a hard failure.
             echo "Syncing secrets into the runtime env files"
             #
-            # The assistant runs in this process, so its key belongs in the API's own env file:
-            # the /opt/kada/ai/ai.env the Python service read is gone with it.
-            #
             bash "$DEPLOY_DIR/deploy/upsert-env.sh" "$BACKEND_DIR/.env" \
-              --set "DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY" \
-              --set "ADMIN_SECRET=$ADMIN_SECRET" \
-              --require DEEPSEEK_API_KEY
+              --set "ADMIN_SECRET=$ADMIN_SECRET"
 
             # 1. Back up the running binary so a failed start can be rolled back.
             echo "Backing up the current binary"

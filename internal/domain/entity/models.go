@@ -12,7 +12,6 @@ package entity
 import (
 	"time"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -349,30 +348,6 @@ type APIToken struct {
 	User *User `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
-// AIConversation is one chat session with the assistant. It is scoped to a user, and every query that
-// reads a conversation names that user, so one account's sessions are unreachable from another's.
-type AIConversation struct {
-	// The id is a UUID the application generates rather than a sequence: it is handed to the browser as an
-	// opaque conversation_id, and a number would invite guessing the next one.
-	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	UserID    int64     `gorm:"not null;index" json:"user_id"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// AIMessage is one stored turn of a conversation.
-type AIMessage struct {
-	ID             uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	ConversationID uuid.UUID `gorm:"type:uuid;not null;index" json:"conversation_id"`
-	// Role is "user" or "assistant"; the model reads the turns back in that order.
-	Role      string    `gorm:"type:varchar(20);not null" json:"role"`
-	Content   string    `gorm:"type:text;not null" json:"content"`
-	CreatedAt time.Time `json:"created_at"`
-
-	// Deleting a conversation takes its messages with it (ON DELETE CASCADE), so no turn is left behind
-	// pointing at a session that no longer exists.
-	Conversation *AIConversation `gorm:"foreignKey:ConversationID;constraint:OnDelete:CASCADE" json:"-"`
-}
-
 // Models returns every entity in a stable, dependency-first order.
 //
 // The order matters for AutoMigrate: PostgreSQL cannot add a foreign key to a table that does not exist
@@ -394,8 +369,6 @@ func Models() []any {
 		&AbuseReport{},
 		&UTMTemplate{},
 		&APIToken{},
-		&AIConversation{},
-		&AIMessage{},
 	}
 }
 

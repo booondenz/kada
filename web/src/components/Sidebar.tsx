@@ -10,7 +10,6 @@ import {
   Tag,
   ArrowRightLeft,
   Split,
-  Sparkles,
   ShieldCheck,
   Braces,
   X,
@@ -60,17 +59,13 @@ const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    // The API page used to sit under AI, next to the assistant that called it. It documents this product's
+    // own endpoints and holds the tokens that reach them, which makes it a resource like the three above.
     name: "资源管理",
     items: [
       { name: "文件夹", href: "/dashboard/folders", icon: Folder },
       { name: "标签", href: "/dashboard/tags", icon: Tag },
       { name: "UTM 模板", href: "/dashboard/utm", icon: ArrowRightLeft },
-    ],
-  },
-  {
-    name: "AI",
-    items: [
-      { name: "AI 助手", href: "/dashboard/ai", icon: Sparkles },
       { name: "API", href: "/dashboard/api", icon: Braces },
     ],
   },
@@ -101,11 +96,9 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 
-  // The new entries sit in the existing AI section rather than in a group of their own, which is where the
-  // operator asked for them while there is only one of them.
-  const sections = NAV_SECTIONS.map((section) =>
-    isOperator && section.name === "AI" ? { ...section, items: [...section.items, MODERATION_ITEM] } : section,
-  );
+  // The operator entry has a group of its own, appended after the last one: it is not a resource the
+  // product offers, and it exists only for a browser that holds ADMIN_SECRET.
+  const sections = isOperator ? [...NAV_SECTIONS, { items: [MODERATION_ITEM] }] : NAV_SECTIONS;
 
   const handleClick = () => {
     // Close mobile sidebar after navigation

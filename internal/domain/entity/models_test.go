@@ -41,8 +41,6 @@ func TestTableNames(t *testing.T) {
 		"AbuseReport":     "abuse_reports",
 		"UTMTemplate":     "utm_templates",
 		"APIToken":        "api_tokens",
-		"AIConversation":  "ai_conversations",
-		"AIMessage":       "ai_messages",
 	}
 	for _, model := range Models() {
 		s := parse(t, model)
@@ -77,9 +75,7 @@ func TestColumns(t *testing.T) {
 			"updated_at"},
 		"utm_templates": {"id", "user_id", "name", "utm_source", "utm_medium", "utm_campaign",
 			"utm_term", "utm_content", "created_at", "updated_at"},
-		"api_tokens":       {"id", "user_id", "name", "token_hash", "last_used", "created_at"},
-		"ai_conversations": {"id", "user_id", "created_at"},
-		"ai_messages":      {"id", "conversation_id", "role", "content", "created_at"},
+		"api_tokens": {"id", "user_id", "name", "token_hash", "last_used", "created_at"},
 	}
 
 	byTable := make(map[string]*schema.Schema)

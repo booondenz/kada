@@ -2,9 +2,9 @@
 
 **English** | [简体中文](README.zh.md)
 
-A short link management and analytics platform. Supports link folders and tags, custom domains, access passwords, expiry times, UTM templates, a click analytics dashboard, and an AI assistant that answers questions about your own links.
+A short link management and analytics platform. Supports link folders and tags, custom domains, access passwords, expiry times, UTM templates, a click analytics dashboard, and an API that scripts can drive.
 
-The backend is written in Go, the frontend is a Vite single-page app served as static files, and the AI assistant runs inside the API process.
+The backend is written in Go, the frontend is a Vite single-page app served as static files.
 
 ## Features
 
@@ -19,7 +19,6 @@ The backend is written in Go, the frontend is a Vite single-page app served as s
 - Link preview, QR codes, and CSV export
 - Click analytics dashboard (overview, platform breakdown, daily trend, visitor detail)
 - Open API tokens
-- AI assistant (bundled product documentation in the prompt, tool calls that act as the signed-in user)
 - Light and dark themes
 
 ## Tech stack
@@ -29,7 +28,6 @@ The backend is written in Go, the frontend is a Vite single-page app served as s
 | Backend | Go 1.26, Gin, GORM |
 | Storage | PostgreSQL 16, Redis 7 |
 | Frontend | Vite, React 19, React Router, TypeScript, SWR, Tailwind |
-| AI assistant | Go (Eino), DeepSeek |
 | Deployment | Docker Compose, Nginx, systemd, GitHub Actions |
 
 ## Architecture
@@ -43,11 +41,6 @@ broker and no worker unit), so it was removed and there is now one write path.
 The database schema is defined by the GORM models in `internal/domain/entity` and applied by
 `cmd/migrate` (AutoMigrate). There are no SQL migration files: the structs are the single source
 of truth, and AutoMigrate only adds missing tables/columns/indexes, so it is safe to re-run.
-
-The AI assistant runs inside the API process: it serves `/api/ai/*` itself, keeps its conversations in
-the same PostgreSQL as everything else, carries its product documentation compiled into the binary, and
-calls the application's own services for the tools it offers. See the deployment section of
-[docs/design.md](docs/design.md).
 
 ## Getting started
 
@@ -109,7 +102,6 @@ Two things in that table are not about the cache:
 | DB_AUTO_MIGRATE | Let the API server apply the schema on startup (default true; set false when using cmd/migrate) |
 | SMS_ACCESS_KEY_ID / SMS_ACCESS_KEY_SECRET | Alibaba Cloud SMS. Required to claim a guest account with a phone number; opening the app does not need it |
 | SMS_SIGN_NAME / SMS_TEMPLATE_CODE | The system-granted SMS signature and template from the Aliyun PNVS console |
-| DEEPSEEK_API_KEY | The assistant's chat model key |
 
 In production these come from GitHub repository secrets and are written into `/opt/kada/backend/.env` by
 the deploy job; the deployment section of [docs/design.md](docs/design.md) explains what that job does.
@@ -119,7 +111,7 @@ the deploy job; the deployment section of [docs/design.md](docs/design.md) expla
 ```text
 cmd/       entry points: the API, the migration and the load generator
 config/    environment parsing (the single source of configuration)
-internal/  the application: domain, handler, service, infra, middleware, metrics, assistant
+internal/  the application: domain, handler, service, infra, middleware, metrics
 web/       Vite single-page app, built to static files and served by nginx
 docs/      Design, contributing and code-style documentation
 deploy/    Deployment scripts, and deploy/nginx/ with the reverse proxy configuration

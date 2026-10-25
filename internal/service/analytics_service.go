@@ -27,9 +27,8 @@ func NewAnalyticsService(db *gorm.DB) *AnalyticsService {
 
 // Overview sums up one user's links.
 //
-// The query lives here rather than in the HTTP handler because there are two callers now: the dashboard
-// endpoint and the assistant's "how many links do I have" tool. Two copies of the same SUM drift apart,
-// and then the assistant answers a question the dashboard contradicts.
+// The query lives here rather than in the HTTP handler so the number is computed in one place; a second
+// copy of the same SUM would drift apart from this one.
 //
 // Ownership is the WHERE clause, so another user's links are not merely filtered out afterwards - they are
 // never read.

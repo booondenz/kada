@@ -2,15 +2,15 @@
 # Set or refresh KEY=VALUE pairs in a runtime env file, on the server.
 #
 #   bash upsert-env.sh /opt/kada/backend/.env \
-#     --set DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" \
-#     --require DEEPSEEK_API_KEY
+#     --set ADMIN_SECRET="$ADMIN_SECRET" \
+#     --require ADMIN_SECRET
 #
-# Why this exists: the AI keys and the SMS credentials used to be typed into a file on the server by hand,
-# and nothing anywhere failed when they were forgotten. The service started, passed its health check, and
-# then failed every request that mattered - "the AI page is broken" and "the SMS code never arrives" were
-# both, in the end, an empty line in a file nobody had looked at. The values now come from GitHub Secrets
-# through CI, and --require turns "forgot to configure it" into a failed deployment that says which key is
-# missing, before any service on the host has been touched.
+# Why this exists: the SMS credentials used to be typed into a file on the server by hand, and nothing
+# anywhere failed when they were forgotten. The service started, passed its health check, and then failed
+# every request that mattered - "the SMS code never arrives" was, in the end, an empty line in a file nobody
+# had looked at. The values now come from GitHub Secrets through CI, and --require turns "forgot to
+# configure it" into a failed deployment that says which key is missing, before any service on the host has
+# been touched.
 #
 # --set with an EMPTY value is a no-op: it leaves whatever the file already holds. That is what makes it
 # safe to run on a host that was configured by hand before the secrets existed - and --require is what
@@ -135,8 +135,6 @@ also satisfies the check - --set with an empty value leaves it alone, so a host 
 was configured by hand keeps deploying without the secret being set here.
 
 Expected secrets:
-  DEEPSEEK_API_KEY    chat model key           -> DEEPSEEK_API_KEY in the host's /opt/kada/backend/.env
-  
   SMS_ACCESS_KEY_ID, SMS_ACCESS_KEY_SECRET, SMS_SIGN_NAME, SMS_TEMPLATE_CODE -> the host's /opt/kada/backend/.env
       (phone + SMS code is how a guest account is claimed and the only way into an account that has one,
        so without these no one can claim a phone number)

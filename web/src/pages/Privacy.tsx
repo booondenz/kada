@@ -89,10 +89,6 @@ function ChinesePolicy() {
             你创建的链接，以及每次访问产生的点击记录：时间、来源 IP、User-Agent、Referer、由
             User-Agent 推断的平台与地区。这是短链统计功能的基础。
           </Row>
-          <Row label="AI 对话">
-            你在「AI 助手」里发送的消息、模型的回复，以及会话所属的用户 ID。用于在下次进入页面时
-            续上会话。
-          </Row>
           <Row label="访问日志">
             服务器与反向代理记录请求路径、状态码与来源 IP，用于排障和阻止滥用。
           </Row>
@@ -100,7 +96,7 @@ function ChinesePolicy() {
       </Section>
 
       <Section title="二、信息如何被使用">
-        <p>仅用于提供本服务本身：登录鉴权、短链跳转、点击统计、AI 助手问答，以及防止短信接口被滥用。</p>
+        <p>仅用于提供本服务本身：登录鉴权、短链跳转、点击统计，以及防止短信接口被滥用。</p>
         <p>我们不会出售、出租你的个人信息，也不会把它用于本服务之外的广告投放。</p>
       </Section>
 
@@ -108,9 +104,6 @@ function ChinesePolicy() {
         <ul className="space-y-2">
           <Row label="阿里云短信">
             为下发登录验证码，我们会将你的手机号与验证码内容发送给阿里云短信服务。
-          </Row>
-          <Row label="DeepSeek">
-            你在 AI 助手输入的内容会发送给 DeepSeek 以生成回复。
           </Row>
           <Row label="服务器与数据库">
             数据存放在本服务自有的服务器与数据库中，不向其他方开放。
@@ -175,10 +168,6 @@ function EnglishPolicy() {
             The links you create and one record per visit: time, source IP, User-Agent, referer, and the
             platform and region inferred from the User-Agent. This is what the analytics feature is made of.
           </Row>
-          <Row label="AI conversations">
-            The messages you send to the AI assistant, the replies, and the user id the conversation belongs
-            to, so the next visit continues where you left off.
-          </Row>
           <Row label="Access logs">
             The server and reverse proxy record the request path, status code and source IP for debugging
             and abuse prevention.
@@ -188,8 +177,8 @@ function EnglishPolicy() {
 
       <Section title="2. How it is used">
         <p>
-          Only to run this service: authentication, redirection, click analytics, the AI assistant, and
-          keeping the SMS endpoint from being abused.
+          Only to run this service: authentication, redirection, click analytics, and keeping the SMS
+          endpoint from being abused.
         </p>
         <p>Your personal information is never sold, rented, or used for advertising outside this service.</p>
       </Section>
@@ -197,7 +186,6 @@ function EnglishPolicy() {
       <Section title="3. Who else sees it">
         <ul className="space-y-2">
           <Row label="Aliyun SMS">Your phone number and the code are sent to Aliyun to deliver the message.</Row>
-          <Row label="DeepSeek">What you type into the assistant is sent to DeepSeek to produce a reply.</Row>
           <Row label="Our servers">Data lives in this service&apos;s own servers and database, closed to anyone else.</Row>
         </ul>
         <p>We disclose nothing further unless the law requires it.</p>

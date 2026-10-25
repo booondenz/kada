@@ -26,7 +26,6 @@ watch how they are clicked. This document explains how the system is put togethe
 | Custom domains | DNS TXT ownership verification before a domain can serve links |
 | Analytics | Click totals, daily trend, platform breakdown, visitor list, raw event log |
 | Integrations | UTM templates, QR codes, CSV export, personal API tokens |
-| AI assistant | Bundled product documentation in the prompt, tools that run as the signed-in user |
 | Presentation | Bilingual UI (Chinese / English), light and dark themes |
 
 The primary tension in the design is that **redirection is hot and analytics is cold**. Following a
@@ -147,13 +146,6 @@ package and one line in `main.go`, not editing a central route list.
 
 Public endpoints that do not require a session (`/api/auth/*`, `/r/:code`) are registered inside the
 handler without the auth middleware; everything else is grouped behind it.
-
-The Python AI service is the one exception, and it is not registered here at all: `/api/ai/*` is a
-reverse proxy (`internal/handler/ai`) that authenticates the caller, injects the user id, and forwards
-to the AI service with its own mount prefix stripped (`/api/ai/conversations/current` ->
-`/conversations/current`). The Python service owns its own paths and knows nothing about `/api/ai`, so
-the two surfaces can move independently - and, as everywhere else in this project, no `/v1` appears in a
-URL: the `v1` in the snippet above is a variable name.
 
 ### 4.3 Short-link resolution
 
@@ -312,11 +304,8 @@ declared and where the bearer token is attached. Components never call `fetch` d
 The operator console is the one page whose entry the sidebar does not decide on its own: whether an account
 is an operator is a deployment setting (`ADMIN_PHONES`), so the shell asks the cheapest operator route once
 and shows the entry only if the answer is not a 403. The page itself still says so if it is opened directly -
-being added to or removed from that list should be visible, not guessed at.
-
-The new features did not get sections of their own in the sidebar. The operator asked for them under the
-existing AI section while there is one of them, which is why `/dashboard/moderation` appears there rather
-than under a heading called 运营.
+being added to or removed from that list should be visible, not guessed at. The entry has a group of its
+own at the bottom of the sidebar, because it is not a resource the product offers.
 
 State that must survive a reload (session token, profile, locale) lives in `localStorage` behind
 helpers in `src/lib/auth.ts` and `src/lib/i18n`.
@@ -950,33 +939,6 @@ configuration impossible to diagnose. Internal details are suppressed in release
 - CSV export: fields are escaped and formula-injection prefixes are neutralised.
 - Error responses never echo internal errors.
 - Containers run as a non-root user; nginx sets the usual response security headers.
-- The AI service refuses its own paths (`/chat`, `/conversations/*`) unless the request carries the
-  gateway's shared secret, so being able to reach `127.0.0.1:8000` is not the same as being allowed to
-  use it (see 8.6).
-
-### 8.6 AI tools act as the signed-in user
-
-The AI service holds no credential of its own. The Go gateway already forwards the caller's
-`Authorization` header, and the tools that read link statistics or create short links pass it on to the
-existing `/api/*` routes. Four consequences decide the shape of that:
-
-- **Permission checks live in exactly one place.** The assistant does not parse or validate the JWT and has
-  nothing to validate: the handler already knows the user, because the request reached it through the same
-  middleware as every other route. A disabled account or an expired token fails a tool call exactly as it
-  fails the user's own call, and nothing has to be restarted when that happens.
-- **The user id is the authenticated one, and there is no header to spoof.** It used to be a header the
-  gateway injected, trustworthy only while the request also carried a shared secret that no other local
-  process knew - and that second half is what made forging the header impossible rather than merely
-  unlikely. In this process the value comes from the middleware's context, so the whole exchange is gone:
-  no header, no secret, and no way for a local process to impersonate a user.
-- **The credential is per request, not per process.** The user id travels in the request context, so two
-  users served by the same process cannot see each other's data - and the same fact is what lets one
-  agent, built once at startup, serve every account. (The Python service kept it in a `ContextVar` bound
-  by the chat route; that is the same idea, and the reason its business tools could not live in the MCP
-  subprocess, whose single shared stdio session has no request to belong to.)
-- **A failed tool degrades the answer, not the request.** Tools return their failure as text (an HTTP
-  status, a missing credential) so the model can explain it, in the same spirit as the bundled
-  documentation failing to load: the answer gets worse, and the request still finishes.
 
 ## 9. Configuration
 
@@ -995,8 +957,6 @@ existing `/api/*` routes. Four consequences decide the shape of that:
 | `SMS_SIGN_NAME`, `SMS_TEMPLATE_CODE` | empty | The system-granted signature and template from the PNVS console; both are required, see below |
 | `ADMIN_PHONES` | empty | Comma-separated numbers allowed to stop and restore links; empty refuses everybody |
 | `VITE_API_URL` | `""` (same origin) | API base for the browser, fixed at build time |
-| `DEEPSEEK_API_KEY` | empty | The assistant's chat model key (DeepSeek, OpenAI-compatible API) |
-| `AI_CHAT_MODEL`, `DEEPSEEK_BASE_URL`, `AI_MAX_TOKENS` | `deepseek-flash`, `https://api.deepseek.com`, `8192` | Optional overrides for the three values above |
 
 `SMS_SIGN_NAME` has no default on purpose. It used to fall back to the literal `kada`, and for this
 deployment that is in fact the account's real signature - which is precisely what made the outage
@@ -1009,7 +969,7 @@ None of these secrets are set on the server by hand any more. The deploy job wri
 repository secrets with `deploy/upsert-env.sh`, as its **first** step, before a single service is replaced.
 
 Every one of them is `--require`d, and the check reads **the file**, not the repository secrets. That
-placement is the whole design: an AI key or an SMS credential that is missing fails the deployment while
+placement is the whole design: an SMS credential that is missing fails the deployment while
 the previous build keeps serving, and it fails before anything on the host has been touched. Reading the
 file rather than the secrets is also what keeps a hand-configured host deployable - `--set` with an empty
 value leaves an existing line alone, so a value that only exists on the server satisfies the check, and a
@@ -1023,16 +983,6 @@ without them serves a site that works for the people already on it and is closed
 deployment that would produce that is better refused. What survives from the episode is a runner-side note
 (never a failure) saying that CI does not *manage* these four values yet - useful because whether they are
 set here or only on the host is invisible until the machine is rebuilt.
-
-The assistant reads these from the same environment as the rest of the API (see
-`.env.example`), and in production the deploy job writes them into `/opt/kada/backend/.env`.
-A missing key does not stop the process: without the chat key every question is answered with a
-configuration message.
-
-> There is no service token and no second process. The tools act as the signed-in user because they run
-> in this process with the user id from the request (see 8.6) - the credential the Python service used to
-> carry, the internal secret that authenticated the hop to it, and the second database it kept its
-> conversations in are all gone with it.
 
 ### 9.1 SMS verification
 
@@ -1116,19 +1066,13 @@ Three supported shapes:
    Redis provided separately. This is what the GitHub Actions deploy job uses: it builds the binary,
    applies the schema with `bin/migrate`, restarts `kada-api`, and verifies the health endpoint, rolling
    back to the previous binary if the service does not come up.
-3. **The assistant inside the API process.** It used to be a Python container of its own with its own
-   database, its own env file and its own deploy script; it is a package of the Go binary now
-   (`internal/assistant`), which is why none of those exist any more. Its product documentation is
-   compiled into the binary and sent with every question, so the chat and tool code all runs in the API
-   process - one fewer service to run, one fewer way for two processes to disagree about who is asking,
-   and no indexing step in the deploy.
 
-   The provider keys reach the host from **GitHub repository secrets**, written into
-   `/opt/kada/backend/.env` by `deploy/upsert-env.sh` as the first step of the deploy, before any service
-   is replaced. That file is the fix for a whole class of outage: both "the AI page is broken" and "the
-   SMS code never arrives" turned out to be an empty line in a file on the server that nothing had ever
-   checked. A `--require`d key that is missing fails the deployment while the previous build is still
-   serving, and an empty `--set` leaves an existing hand-configured value alone.
+The SMS credentials reach the host from **GitHub repository secrets**, written into
+`/opt/kada/backend/.env` by `deploy/upsert-env.sh` as the first step of the deploy, before any service
+is replaced. That file is the fix for a whole class of outage: "the SMS code never arrives" turned out to
+be an empty line in a file on the server that nothing had ever checked. A `--require`d key that is
+missing fails the deployment while the previous build is still serving, and an empty `--set` leaves an
+existing hand-configured value alone.
 
 The deploy job applies the schema **before** replacing the binary, so a failed migration leaves the
 previous version running.
@@ -1297,14 +1241,11 @@ those rules honest.
 | Services | Pure-function tests (validation, short-code generation, CSV escaping) |
 | Schema | `internal/domain/entity` asserts table names, columns, unique indexes and delete rules against the GORM schema |
 | Query shapes | Dry-run GORM sessions assert the generated SQL for the dynamic and bulk statements |
-| Frontend | Vitest for pure helpers (`aiAnswer` parsing, utilities) and the UI primitives, rendered to static markup - no DOM, no jsdom |
-| Assistant | A fake model, but the real Eino agent with the real tools and the real bundled documentation: one test drives a model that asks for a tool and asserts which user the tool acted for, another drives a model that never stops asking and asserts the step limit holds |
+| Frontend | Vitest for pure helpers and the UI primitives, rendered to static markup - no DOM, no jsdom |
 
 Run everything with `go test ./... -count=1 -race` and `cd web && npm test`; CI
 additionally runs `go vet`, `golangci-lint`,
-`tsc --noEmit` and the production build on every pull request. The assistant is tested where it runs
-rather than as a container: the failure it has to catch - a model call that only breaks when a question
-arrives - is a fake model in `internal/assistant`, not an image that starts.
+`tsc --noEmit` and the production build on every pull request.
 
 ## 12. Known limitations
 

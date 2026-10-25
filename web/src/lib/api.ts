@@ -1,5 +1,5 @@
 // Resolves the API base URL.
-import { getToken, type User } from "./auth";
+import type { User } from "./auth";
 import { getAdminSecret } from "./adminSecret";
 //
 // The three cases:
@@ -523,31 +523,3 @@ export const utmAPI = {
     }),
 };
 
-// ========== AI Chat API ==========
-// 通过 Go 网关（同源 /api/ai/*）访问 Python AI 服务：Go 用 JWT 认证后会把用户 id
-// 注入 X-Kada-User-ID，前端不再直接接触 Python，也不传用户 id（防止伪造）。
-// 注意：streamChat 不能用 fetchAPI —— 它是 JSON 专用的，SSE 流会被它当 JSON 解析抛错。
-export const aiAPI = {
-  // 对话：SSE 流式，返回 Response 让页面自己读流（不能用 readJSON）
-  streamChat: (body: { conversation_id?: string; message: string }) =>
-    fetch(`${API_URL}/api/ai/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getToken() ?? ""}`,
-      },
-      body: JSON.stringify(body),
-    }),
-
-  // 获取当前会话（最新一个）及其消息：进 AI 页时调用，自动续上上次聊天。
-  // 路径按数据模型叫 conversations：表是 ai_conversations，返回体是 conversation_id。
-  getCurrentConversation: () =>
-    fetchAPI("/api/ai/conversations/current", { token: getToken() ?? undefined }),
-
-  // 重新开始：后端删掉该用户的旧会话，新建一个空会话并返回其 id
-  restartConversation: () =>
-    fetchAPI("/api/ai/conversations/restart", {
-      method: "POST",
-      token: getToken() ?? undefined,
-    }),
-};

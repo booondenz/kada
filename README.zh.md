@@ -2,9 +2,9 @@
 
 [English](README.md) | **简体中文**
 
-短链接管理与分析平台。支持链接文件夹与标签、自定义域名、访问密码、过期时间、UTM 模板、点击分析看板，以及一个能就你自己链接提问的 AI 助手。
+短链接管理与分析平台。支持链接文件夹与标签、自定义域名、访问密码、过期时间、UTM 模板、点击分析看板，以及一套给自己脚本调用的 API。
 
-后端用 Go 编写，前端是 Vite 单页应用（构建为静态文件），AI 助手运行在 API 进程内。
+后端用 Go 编写，前端是 Vite 单页应用（构建为静态文件）。
 
 ## 功能
 
@@ -17,7 +17,6 @@
 - 链接预览、二维码与 CSV 导出
 - 点击分析看板（总览、平台分布、每日趋势、访客明细）
 - 开放 API 令牌
-- AI 助手（随二进制携带产品说明文档，工具调用以当前登录用户的身份执行）
 - 明暗两套主题
 
 ## 技术栈
@@ -27,7 +26,6 @@
 | 后端 | Go 1.26、Gin、GORM |
 | 存储 | PostgreSQL 16、Redis 7 |
 | 前端 | Vite、React 19、React Router、TypeScript、SWR、Tailwind |
-| AI 助手 | Go（Eino）、DeepSeek |
 | 部署 | Docker Compose、Nginx、systemd、GitHub Actions |
 
 ## 架构
@@ -40,10 +38,6 @@
 数据库表结构由 `internal/domain/entity` 下的 GORM 模型定义，由 `cmd/migrate`
 （AutoMigrate）应用。仓库里没有 SQL 迁移文件：结构体是唯一事实来源，AutoMigrate 只补齐缺失的
 表 / 列 / 索引，因此可以安全地重复执行。
-
-AI 助手运行在 API 进程内：`/api/ai/*` 由它自己提供，会话存放在同一个 PostgreSQL 里，产品说明文档
-随二进制一起编译并在每次提问时发给模型；它提供的工具直接调用本项目的业务服务。见
-[docs/design.md](docs/design.md) 的部署一节。
 
 ## 快速开始
 
@@ -101,7 +95,6 @@ go run ./cmd/loadgen -codes 200 -absent 2000 -requests 20000 -clients 4000 -conc
 | DB_AUTO_MIGRATE | 是否让 API 服务在启动时应用表结构（默认 true；使用 cmd/migrate 时设为 false） |
 | SMS_ACCESS_KEY_ID / SMS_ACCESS_KEY_SECRET | 阿里云短信。做账号认领（手机号 + 验证码）时必填；游客会话不需要 |
 | SMS_SIGN_NAME / SMS_TEMPLATE_CODE | 阿里云 PNVS 控制台为你分配的短信签名与模板 |
-| DEEPSEEK_API_KEY | AI 助手的对话模型密钥 |
 
 生产环境下这些值来自 GitHub 仓库 secrets，由部署任务写入 `/opt/kada/backend/.env`；部署任务做了什么，
 见 [docs/design.md](docs/design.md) 的部署一节。
@@ -111,7 +104,7 @@ go run ./cmd/loadgen -codes 200 -absent 2000 -requests 20000 -clients 4000 -conc
 ```text
 cmd/       入口：API、表结构迁移、压测工具
 config/    环境变量解析（唯一的配置来源）
-internal/  应用主体：domain、handler、service、infra、middleware、metrics、assistant
+internal/  应用主体：domain、handler、service、infra、middleware、metrics
 web/       Vite 单页应用，构建为静态文件后由 nginx 提供
 docs/      设计、贡献与代码风格文档
 deploy/    部署脚本，以及 deploy/nginx/ 下的反向代理配置

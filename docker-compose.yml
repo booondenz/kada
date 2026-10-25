@@ -44,10 +44,6 @@ services:
       # runs the migration explicitly (cmd/migrate) and starts the API with this disabled, so a restart can
       # never change the database. In Compose the API applies it first.
       DB_AUTO_MIGRATE: "true"
-      # The assistant runs in this process, so its key goes to the API rather than to a second service. An
-      # empty value still starts the stack: the AI page reports the configuration problem and the rest of
-      # the application does not notice.
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

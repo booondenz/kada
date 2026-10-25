@@ -1,7 +1,6 @@
 import { createBrowserRouter, Navigate, Outlet } from "react-router";
 
 import { AppLayout } from "@/components/AppLayout";
-import Ai from "@/pages/dashboard/Ai";
 import Analytics from "@/pages/dashboard/Analytics";
 import Api from "@/pages/dashboard/Api";
 import Customers from "@/pages/dashboard/Customers";
@@ -52,7 +51,9 @@ export const router = createBrowserRouter([
       { path: "links/new", element: <LinkNew /> },
       { path: "links/:id", element: <LinkDetail /> },
       { path: "analytics", element: <Analytics /> },
-      { path: "ai", element: <Ai /> },
+      // The AI assistant is gone and its URL sat in the sidebar of every deployment, so a bookmark to it
+      // lands on the dashboard the way the other retired URLs do.
+      { path: "ai", element: <Navigate to="/dashboard" replace /> },
       // The API page carries the documentation and the tokens that reach it, which is where the token
       // management used to live: the user page it was on no longer exists, because there are no users.
       { path: "api", element: <Api /> },

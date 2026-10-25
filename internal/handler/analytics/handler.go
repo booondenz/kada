@@ -27,9 +27,8 @@ type Handler struct {
 }
 
 // NewHandler takes both the database and the analytics service: the overview moved into the service so the
-// assistant's tool and this endpoint read the same query, while the four breakdown endpoints below still
-// query here. They are the same candidate for the same extraction, and none of them is needed by the
-// assistant yet.
+// number it returns is computed in one place, while the four breakdown endpoints below still query here.
+// They are the same candidate for the same extraction.
 func NewHandler(db *gorm.DB, analytics OverviewService) *Handler {
 	return &Handler{db: db, analytics: analytics}
 }

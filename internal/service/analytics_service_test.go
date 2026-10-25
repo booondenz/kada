@@ -24,8 +24,7 @@ func newAnalyticsDryRunDB(t *testing.T) *gorm.DB {
 }
 
 // The totals are one user's: the condition is in the query, so a missing WHERE would show somebody how many
-// links are on the platform rather than how many are theirs. The dashboard and the assistant's tool both
-// read this, so the assertion covers both.
+// links are on the platform rather than how many are theirs.
 func TestOverviewTotalsOneUsersLinks(t *testing.T) {
 	db := newAnalyticsDryRunDB(t)
 
