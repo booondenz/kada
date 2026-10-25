@@ -20,7 +20,7 @@ watch how they are clicked. This document explains how the system is put togethe
 
 | Capability | Notes |
 |---|---|
-| Authentication | Phone + password behind a graphical challenge at registration, JWT bearer token for the API |
+| Authentication | A guest session is the account: `POST /api/auth/guest` mints the JWT bearer token the API takes |
 | Links | Create, edit, disable, expire, password protect, batch delete and batch tag |
 | Organisation | Folders and tags |
 | Custom domains | DNS TXT ownership verification before a domain can serve links |
@@ -66,7 +66,7 @@ internal/
     entity/          GORM models == the database schema
   handler/           HTTP layer, one package per resource
   service/           business logic and persistence
-  infra/             database, redis, SMS, URL safety, link preview, user-agent
+  infra/             database, redis, URL safety, link preview, user-agent, schema, storage
   middleware/        JWT auth, rate limiting, real client IP
 db/                  (removed) schema used to live here as SQL migrations
 web/
@@ -131,12 +131,12 @@ Rules that keep this honest:
 ### 4.2 Request path
 
 `cmd/server/main.go` is the only place where the object graph is built. It creates the database
-handle, Redis client, SMS sender, cache service, then every service, then every
+handle, Redis client, cache service, then every service, then every
 handler, and finally registers routes:
 
 ```go
 v1 := r.Group("/api")
-authH.RegisterRoutes(v1, authMW, strictMW)
+authH.RegisterRoutes(v1, authMW, strictMW, guestMW)
 linkH.RegisterRoutes(v1, authMW)
 // ...
 ```
@@ -237,8 +237,6 @@ users ──┬── links ──┬── click_logs
         ├── utm_templates
         └── api_tokens
 
-sms_codes       (standalone, keyed by phone)
-login_captchas  (standalone, keyed by id)
 blocked_hosts   (standalone, keyed by host)
 ```
 
@@ -251,8 +249,6 @@ blocked_hosts   (standalone, keyed by host)
 | `domains` | Custom domains | `verified`, unique per `(user_id, name)` |
 | `utm_templates` | Reusable UTM sets | `utm_*` columns |
 | `api_tokens` | Programmatic access | `token_hash` (unique); the raw token is shown once |
-| `sms_codes` | Pending SMS logins | `code_hash` (sha256), `ip` (per-IP quotas), `attempts`, `expires_at`; the plaintext code is never stored |
-| `login_captchas` | Pending graphical challenges | `code_hash` (sha256 of the upper-cased answer), `attempts`, `expires_at` |
 | `blocked_hosts` | Targets that are not served | `host` (unique; matched by suffix, so one row covers every subdomain), `category` (why), `note` |
 | `link_blocks` | One takedown of one link | `short_code` (copied, so the row outlives the link), `reason`, `evidence`, `operator` (the phone number that decided), `lifted_at`, `lift_reason`, `lifted_by` |
 | `abuse_reports` | Complaints from visitors | `short_code`, `link_id` (nullable - a report about a deleted link is still evidence), `reason`, `detail`, `contact`, `ip` (not published) |
@@ -262,12 +258,13 @@ blocked_hosts   (standalone, keyed by host)
 
 Design rules:
 
-- **Passwords are never stored in a form that can be replayed.** Account and link passwords use
-  bcrypt; SMS codes, captchas and API tokens are stored as SHA-256 hashes, and the plaintext of a
-  one-time secret is never written to the database or the log.
-- **The graphical challenge lives in PostgreSQL, not Redis.** Redis is optional in this deployment - the
-  rate limiter fails open when it is down - and a captcha that silently stops being enforced is worse than
-  no captcha, because the endpoint still looks protected. The database is not optional.
+- **Secrets are never stored in a form that can be replayed.** A link's access password is bcrypt (a
+  legacy SHA-256 hash is still accepted and upgraded on the next correct one); API tokens are stored as
+  SHA-256 hashes and the raw value is shown once. The plaintext of a one-time secret never reaches the
+  database or the log.
+- **Redis is optional; the database is not.** The cache and the rate limiter fail open when Redis is down
+  (see [8.2](#82-caching-and-degradation)). There is no such fallback for a link that cannot be read,
+  because the answer to one is a 500, not a degraded page.
 - **Deletion semantics are explicit.** Deleting a user cascades to their folders, tags, domains,
   templates and tokens, but only detaches links (`ON DELETE SET NULL`) so public links do not vanish.
   Deleting a folder detaches its links. Deleting a link cascades to its click logs.
@@ -456,9 +453,8 @@ under the strict limiter, because each call is a row and it is the cheapest thin
 
 - **A guest is a real account, not a demo mode.** `phone`, `password_hash` and the OAuth columns are all
   nullable and unique, and PostgreSQL allows any number of NULLs in a unique index, so "no identity yet"
-  is a state the schema already had. The links a visitor creates have an owner, and that owner is
-  *claimed* by writing a phone number onto the same row - the form on the user page, which is what the
-  payment flow will need, since a top-up has to be about an account.
+  is a state the schema already had. The links a visitor creates have an owner, and that owner is the
+  `users` row the token names - which is why the id is minted before the visitor has done anything.
 - **One request in flight.** Two components opening a session at once would create two accounts and keep
   whichever token was written last, so `ensureSession()` shares one promise per page.
 - **An expired token is replaced, not reused.** The client reads the token's own `exp` claim - unsigned,
@@ -473,117 +469,58 @@ under the strict limiter, because each call is a row and it is the cheapest thin
 
 What this costs, stated plainly: the account lives in one browser's `localStorage`. Clearing site data
 loses it, another device is another account, and an expiring token starts a new one. That is the price of
-not asking for a phone number first, and the 登录 form on the user page is what turns the account into one
-that survives - see [7.1](#71-signing-in-is-phone-plus-password) for what that call does.
+not asking for a phone number first, and there is no form that turns the account into one that survives -
+[7.1](#71-the-sign-in-that-used-to-be) is what that would have been.
 
 ## 7. Key flows
 
-### 7.1 Signing in is phone plus password
+### 7.1 The sign-in that used to be
 
-An account is a phone number and a password. The number is verified once, at registration, with an SMS
-code; from then on the password is what signs in. The split exists for one reason: an SMS costs money and
-an account is signed into far more often than it is created, so a message is spent to prove the number
-belongs to the caller rather than on every visit.
+An account was a phone number and a password. The number was verified once, at registration, with an SMS
+code; from then on the password signed in. The split existed for one reason: an SMS costs money, and an
+account is opened far more often than it is created, so the message was spent proving the number rather
+than on every visit.
 
-None of this is the way in any more: the app opens as a guest ([6.4](#64-there-is-no-sign-in-page)) and
-this is the identity a guest account can be given. It is written down here because the routes are the
-material the user page's 登录 form is built from, and because the password bound below is a security
-decision that does not depend on which screen calls it.
+None of it is the way in any more (see [6.4](#64-there-is-no-sign-in-page)). What is worth recording is
+what removing it left behind:
 
-**The form on the user page is one call, not four.** `POST /api/auth/claim` takes the phone number and the
-code and answers a token, because both of its outcomes are a sign-in:
+- **The routes are gone, not hidden.** `internal/handler/auth` registers `POST /auth/guest` and `GET /me`.
+  The captcha, the SMS send, register, login and login-by-phone were deleted with the screens that called
+  them, so `/api/auth/login` answers 404: there is no handler left to refuse it.
+- **The columns stayed.** `users.phone`, `.email`, `.password_hash` and the two WeChat columns are still in
+  the model and in the database (see [5](#5-data-model)). AutoMigrate adds and never drops, so deleting the
+  fields would leave the columns behind anyway; nothing reads them and nothing writes them.
+- **The tables did not.** `sms_codes`, `login_captchas` and `login_attempts` are dropped by
+  `ReconcileLegacyTables` on the next migration. A table for a feature that no longer exists leaves open
+  the question of which of the two is the schema, and the models are the answer.
+- **`last_login_at` still moves**, because opening a session is the event it names.
 
-- the number has no account, so it is written onto the caller's own guest row (`WHERE id = ? AND phone IS
-  NULL` - the guard is what makes it a claim rather than a rewrite), and the links created before this
-  moment stay with the account that now has an identity;
-- the number already has an account, so the session becomes that account's, and the links created in this
-  browser are moved onto it with one `UPDATE`. A visitor who creates links, signs in, and watches them
-  disappear would rightly call that a bug, and the browser cannot tell them which case they are in.
-
-Folders, tags and API tokens do not move: they belong to the guest row, which is not deleted, and a token in
-particular must not change hands. The code is consumed *before* the lookup, so a wrong code answers the same
-way whether or not the number has an account here. There is no password in this flow on purpose - the
-account exists, the code proves the number, and "choose a password" is not a question to put in front of
-somebody who has been using the product for a week.
-
-Two other sign-in paths were removed rather than hidden, and the reason is worth recording:
-
-- **WeChat.** The schema had carried `wechat_openid`/`wechat_unionid` from the start and the config had
-  `WECHAT_APP_ID`/`WECHAT_APP_SECRET`, but no route ever read them. Implementing it needs an approved
-  WeChat Open Platform application, and an individual cannot register one, so the columns stay (existing
-  data is untouched) and nothing else does.
-- **Email + password.** It duplicated what the phone path already did, and the phone number is the
-  identifier an SMS can actually verify - an email address cannot be proved to belong to anyone.
-  `users.email` remains in the schema so old rows keep their data; the API publishes neither it nor the
-  password hash, and the route that used to write a name or an email onto the profile (`PATCH /api/me`)
-  went with it.
-
-The code path (`login-by-phone`) is kept, and it is not a convenience: an account created before this flow
-existed has no password, so a code is the only way into it - and registering the same number with a code is
-how such an account gets one. It is also the way back in for a password that has been forgotten, since a
-password can be reset only by someone who can receive the message. The 登录 form on the user page reaches
-`auth/claim` directly, and a caller whose number has a password stays signed in - signing somebody out of an
-account they just proved they own, to ask for a password they may not remember, is a step in the wrong
-direction.
-
-### 7.2 Registering, and signing in
+### 7.2 Opening a session
 
 ```text
-GET /api/auth/captcha
-  → generate a 4-character code and its SVG (internal/infra/captcha, no image or font dependency)
-  → store sha256(NORMALISED code) in login_captchas with a 5-minute expiry
-  → 200 { captcha_id, image: "data:image/svg+xml;base64,..." }   (Cache-Control: no-store)
+POST /api/auth/guest
+  → insert a users row with every identity column NULL, and stamp last_login_at
+  → sign an HS256 JWT: { user_id: <id>, phone: null, exp: now + JWT_EXPIRES_IN, iss: "kada" }
+  → 200 { token, user: { id, phone: null } }
 
-POST /api/auth/send-sms-code   { phone, captcha_id, captcha_code }
-  → one UPDATE consumes the challenge atomically (unused, unexpired, attempts < 5)
-      failure → 400, and attempts is incremented for that id
-  → per-phone quotas: 60s cooldown, 10/day            → 429 + Retry-After
-  → per-IP quotas: 10/hour, 30/day                    → 429
-  → provider sends the code, sha256(code) is stored with a 5-minute expiry
-      provider error → the provider code and message are surfaced (see 8.4)
-  → 200
-
-POST /api/auth/register   { phone, code, password }
-  → phone format and password length are checked first (8 characters, 72 bytes)
-  → one UPDATE consumes the pending code atomically (unused, unexpired, attempts < 5)
-      failure → increment attempts for the phone, return 400
-  → no account for the number      → create it with bcrypt(password)
-  → an account with no password    → set the password (the way off the code path)
-  → an account with a password     → 409, refused rather than overwritten
-  → sign JWT → 200 { token, user }
-
-POST /api/auth/login   { phone, password }
-  → bcrypt compare → 401 on any mismatch, identical for an unknown number and a wrong password
-  → sign JWT → 200 { token, user }
-
-POST /api/auth/login-by-phone   { phone, code }
-  → the same code consumption, then 401 if no account has that number
-  → sign JWT → 200 { token, user }
+GET /api/me                       Authorization: Bearer <token>
+  → 200 { user: { id, phone: null } }
 ```
 
-Four properties of that ordering are deliberate:
+Three properties of that are deliberate:
 
-1. **The captcha is checked first and is burned either way.** An unauthenticated endpoint that makes the
-   server send paid messages is the most abusable thing in this app, so no send can happen without a human
-   having solved a challenge - and a challenge that survives a refused send is a challenge an automated
-   caller can reuse. The client re-fetches one after every attempt for exactly that reason.
-2. **The quotas are independent.** The per-phone pair bounds the damage to one victim; the per-IP pair is
-   what notices a script walking a list of numbers, which the per-phone quotas never would (each number is
-   used once). The per-IP figures are looser on purpose: a campus or office NAT legitimately shares an
-   address.
-3. **A quota is a 429, a wrong captcha is a 400.** Returning 500 for both - which the handler used to do -
-   tells a client to retry a request that will keep failing, and tells an operator to look for a server
-   fault that does not exist.
-4. **A password sign-in cannot be asked which way it failed.** An unknown number, a wrong password and an
-   account with no password all answer the same 401 with the same message, and the unknown number is still
-   verified against a throwaway bcrypt hash so the three take the same time. Otherwise the endpoint answers
-   "does this number have an account here" - to anyone, at twenty guesses a minute per address, which is
-   what the strict limiter on these routes allows.
+1. **The row is written before the visitor has done anything.** Every page load that finds no token costs
+   one insert, which is why the route sits behind the strict limiter and, inside it, the tighter guest one
+   - two ceilings on one endpoint, the second bounding exactly what the first is too loose for.
+2. **The token is the account.** There is no password to reset and no second factor to lose, so this
+   bearer token is the only credential the system has: HS256 only, expiry required (see
+   [8.4](#84-security-posture)). Using a stolen one is indistinguishable from using a real one, which is
+   the cost of not asking anybody who they are.
+3. **`phone` is always null.** It travels because the column does, and because an older build could have
+   written one; the API answers it rather than pretending the field does not exist.
 
-The password is hashed with bcrypt, and a hash stored by the pre-Go backend is still accepted and upgraded
-on the next successful sign-in. Both hashes live in `users.password_hash`, so this change needed no
-migration: nothing had ever written that column, which is also why "register" is the endpoint that fills it
-in for accounts that already exist.
+A browser that cannot reach `POST /api/auth/guest` gets no session at all, and the shell says so instead of
+rendering an empty page - see [6.4](#64-there-is-no-sign-in-page).
 
 ### 7.3 Recording a click
 
@@ -793,9 +730,9 @@ links after that costs nothing - which used to mean one address could turn itsel
 and each account into any number of links, none of them attached to anybody. Two ceilings now apply, and both
 are checked in `Create` before a folder is looked up or a short code allocated:
 
-- **A daily allowance** of 20 links per rolling 24 hours for a guest, 500 for an account that has claimed a
-  phone number. Claiming is what buys the larger allowance, because a phone number is the one thing a farm
-  cannot mint at will.
+- **A daily allowance** of 20 links per rolling 24 hours, for every account. There is one allowance
+  because there is one kind of account: a claimed phone number used to buy a larger one, and the site has
+  no phone numbers any more.
 - **A burst ceiling** of 5 links per rolling 10 minutes, for everybody. The daily quota bounds a day and this
   bounds a moment; a script needs the moment, and it is what stops a new account from spending its whole
   allowance in the minute it was created.
@@ -862,8 +799,8 @@ jpg, webp, gif, pdf, docx, xlsx and pptx - video and audio are out of scope, and
 20 MB per-file ceiling.
 
 Storage is the local disk (`UPLOAD_DIR`), not a bucket: one machine, files written once, a directory that
-survives a deploy. The per-account ceiling is 50 MB for a guest and 1 GB for a claimed account, for the same
-reason the link quota differs - an account costs one request to create.
+survives a deploy. The per-account ceiling is 50 MB, one allowance for the same reason the link quota is
+one (see [7.8](#78-what-one-account-may-create)).
 
 Deleting a link does not delete its file. It orphans it, and an hourly sweep removes uploads that no link
 refers to once they are a day old. Sweeping rather than deleting at the point of deletion keeps the link
@@ -923,14 +860,7 @@ activity on somebody else's link. The visit confirmation stays under the redirec
 POST - it is what makes a click count, so dropping one loses a real visit - and its volume can only ever be
 a fraction of the redirects that served the page it reports from.
 
-### 8.4 Third-party failures are made visible
-
-An SMS provider rejection (unapproved signature, unapproved template, disabled AccessKey) is a
-configuration mistake, not a transient failure. The provider's error code and message are logged and
-- outside release mode - returned to the caller, because a generic "please try again later" makes the
-configuration impossible to diagnose. Internal details are suppressed in release mode.
-
-### 8.5 Security posture
+### 8.4 Security posture
 
 - JWT: HS256 only, expiry required, secret strength enforced in release mode.
 - Link targets: only `http` and `https` are accepted, which also blocks `javascript:` and `data:`
@@ -953,108 +883,30 @@ configuration impossible to diagnose. Internal details are suppressed in release
 | `GIN_MODE` | `debug` | `release` silences dev output and enables strict checks |
 | `API_BASE_URL` | `https://kada.click` | Base for generated short URLs |
 | `FRONTEND_URL` | `http://localhost:3000` | CORS and redirects |
-| `SMS_ACCESS_KEY_ID`, `SMS_ACCESS_KEY_SECRET` | empty | Alibaba Cloud credentials; empty disables real sending (and, in production, sign-in) |
-| `SMS_SIGN_NAME`, `SMS_TEMPLATE_CODE` | empty | The system-granted signature and template from the PNVS console; both are required, see below |
-| `ADMIN_PHONES` | empty | Comma-separated numbers allowed to stop and restore links; empty refuses everybody |
+| `UPLOAD_DIR` | `./data/uploads` | Where file links are stored; must be writable and outlive a deploy |
+| `ADMIN_SECRET` | empty | The operator password; empty refuses everybody |
 | `VITE_API_URL` | `""` (same origin) | API base for the browser, fixed at build time |
 
-`SMS_SIGN_NAME` has no default on purpose. It used to fall back to the literal `kada`, and for this
-deployment that is in fact the account's real signature - which is precisely what made the outage
-invisible: with the signature always supplied by a default, the missing template code (see 9.1) still
-produced a constructed sender, and the failure came back as an Aliyun rejection rather than as "this is
-not configured". Empty now means "not configured", and the startup log says so. The cost is one explicit
-setting: `SMS_SIGN_NAME=kada` for this account.
+`config.Config` is that list and nothing else: one struct, parsed once, and no other file reads the
+environment. Two of them carry a cost for being wrong, in opposite directions. An empty `ADMIN_SECRET`
+refuses every operator route - the safe direction for a missing value - while a wrong one is
+indistinguishable from a right one until a takedown is attempted. An unwritable `UPLOAD_DIR` stops the
+process at startup rather than failing on somebody's first upload.
 
-None of these secrets are set on the server by hand any more. The deploy job writes them from GitHub
-repository secrets with `deploy/upsert-env.sh`, as its **first** step, before a single service is replaced.
+None of these are typed into the server by hand. The deploy job writes `ADMIN_SECRET` into
+`/opt/kada/backend/.env` with `deploy/upsert-env.sh`, as its **first** step, before a single service is
+replaced; everything else in that file is left as the host has it. `--set` with an empty value is a no-op,
+so a repository secret that is not set cannot blank a value the host already holds, and `--require` is
+what turns "nothing there at all" into a failed deployment. The check reads **the file**, not the
+repository secrets, which is what keeps a hand-configured host deployable: the value only has to reach the
+file by some route.
 
-Every one of them is `--require`d, and the check reads **the file**, not the repository secrets. That
-placement is the whole design: an SMS credential that is missing fails the deployment while
-the previous build keeps serving, and it fails before anything on the host has been touched. Reading the
-file rather than the secrets is also what keeps a hand-configured host deployable - `--set` with an empty
-value leaves an existing line alone, so a value that only exists on the server satisfies the check, and a
-check that looked at `secrets.*` instead would reject a deployment that was going to work.
+Only `ADMIN_SECRET` is written that way today. It is not `--require`d, on the argument that if the
+operator secret is missing the console can simply refuse to open - refusing the whole deploy would hold
+every unrelated fix hostage to an operator feature.
 
-The SMS credentials were briefly exempt from that (`--warn`, i.e. report and continue), on the argument
-that the Aliyun signature and template have to be approved in the console before they exist at all and
-blocking every deploy until then would stop unrelated fixes from shipping. That argument lost: nobody can
-register without them, and an account that has no password can only be reached through a code - so a host
-without them serves a site that works for the people already on it and is closed to everyone else. A
-deployment that would produce that is better refused. What survives from the episode is a runner-side note
-(never a failure) saying that CI does not *manage* these four values yet - useful because whether they are
-set here or only on the host is invisible until the machine is rebuilt.
-
-### 9.1 SMS verification
-
-Sign-up by phone uses Alibaba Cloud **PNVS "SMS verification"** (`dypnsapi.aliyuncs.com`), not the
-separate SMS product (`dysmsapi`). That distinction decides the configuration:
-
-- It is the one SMS route open to **individually verified** accounts. The SMS product stopped accepting
-  personal self-use qualifications, so personal signatures and templates can no longer be approved there.
-- The account gets **one** system-granted signature and **one** system-granted template, read from the
-  PNVS console (**短信认证 → 概览**). For this account they are the signature `恒创联众` and the template
-  `100001`, whose content is `您的验证码为${code}，…以上验证码${min}分钟内有效…`. They cannot be created or
-  edited, and they must be used as a pair: a granted signature with a custom template is rejected, and so
-  is the reverse.
-- The two products keep **separate registries**, and the same string means nothing in the other one. This
-  was settled for this account rather than argued: the SMS product's own `QuerySmsSignList` and
-  `QuerySmsTemplateList` both answer `TotalCount: 0`, so no signature and no template of that product
-  exists here, while PNVS answers `isv.INVALID_PARAMETERS` / 签名或者模版无效 for anything that is not the
-  granted pair.
-- `SMS_SIGN_NAME` and `SMS_TEMPLATE_CODE` have **no defaults**. They used to fall back to the granted pair
-  hardcoded in `aliyun.go`, which is why sends worked before anything was configured at all - and why an
-  unset variable looked harmless. Startup now names the missing setting instead, and phone sign-up stays
-  disabled until it is set.
-- The API contract is not the obvious one either. `SendSmsVerifyCode` **generates the code itself**: the
-  template variable must carry the placeholder `##code##` for Aliyun to substitute, and the generated code
-  only comes back because `ReturnVerifyCode` is set. A code of our own in that field is rejected with
-  `isv.INVALID_PARAMETERS` before any message is sent. `CodeLength` is pinned to 6 because its default is
-  4 while the sign-in form, the stored hash and the input field all expect six.
-- `SchemeName` is left out, so the provider uses the default service. It is an account-specific name whose
-  documented default is exactly that, and the hardcoded `SMS` the request used to carry was a guess that
-  nothing had ever checked - probed against the live account, the granted pair answers `OK` as soon as the
-  parameter is absent. `CheckSmsVerifyCode` omits it for the same reason: a check has to name the scheme
-  the code was issued under.
-- The console describes the granted pair as being for **API 联调** and requires test phone numbers to be
-  bound before 联调 starts (up to five), so the granted pair is what makes the flow testable for free;
-  sending to arbitrary numbers needs a signature and a template of its own.
-- The provider enforces a send interval of its own and reports it as a business code on an HTTP 200
-  (`biz.FREQUENCY` here, `isv.BUSINESS_LIMIT_CONTROL` on the SMS product). That is a wait, not a
-  misconfiguration, and it is not reported as one: the sender flags it, the service turns it into the same
-  quota it uses for its own limits, and the client gets a 429 with a retry-after rather than a 400 carrying
-  an English provider code into a Chinese form. The codes are matched on the substrings `FREQUENCY` and
-  `LIMIT`, because a fixed list would quietly stop matching the next variant.
-- The PNVS console, its data, and its package are all separate from the SMS product: sending is billed
-  against a PNVS "SMS verification" package, which the SMS product's free trial does not cover.
-
-**Where the working pair went (worth reading before debugging "SMS stopped working").**
-
-SMS really did work in production once, and the reason it stopped is on the record:
-
-1. `05eda08 feat: add Alibaba Cloud SMS verification` moved the pair out of the source and recorded the
-   **wrong** values in `.env.example`: signature `kada` and a template code of the form `SMS_…`.
-   Neither exists in either registry of this account. Nothing appeared to break, because the source still
-   held the correct pair as a hardcoded fallback and kept using it.
-2. `8420bd9 refactor: move the backend from pgx to GORM with AutoMigrate` blanked that whole SMS section of
-   the example file while rewriting it, so the only recorded copy of the template code disappeared. Still
-   nothing broke, for the same reason.
-3. `fbc1763 fix: fail on an unset SMS signature instead of substituting one` removed that fallback, which
-   was right on its own terms - a hardcoded account-specific pair has no business being a default. But the
-   host had no signature configured, so sending stopped, and the values then copied in by hand came from
-   the example file, which is to say the wrong ones. From there every send was rejected as an invalid
-   signature or template, and the rejection read like a broken account rather than a wrong pair.
-4. What ended it was reading the console instead of the repository: **短信认证 → 概览** lists the granted
-   signature and template, and a signature probe against both products showed the recorded values belong to
-   neither. The lesson is not "the value was lost" but "a wrong value was recorded as if it were the
-   account's, and nothing ever checked it against the provider".
-
-The AccessKey pair is **not in the repository and never was** (it is only ever read from the environment; a
-history search for the `LTAI` prefix finds nothing but accidental substrings inside base64 hashes in
-`go.sum`). The signature and template code are account-specific and read from the environment too, and
-`.env.example` deliberately keeps them empty so a copied example file cannot pretend to be
-configured. They are named above because they are not secrets - they are visible in the console - and
-because refusing to name them is what turned one wrong assumption into an outage that took a console
-screenshot to end.
+`SITE_ORIGIN` (`vars.SITE_URL`, default `https://kada.click`) is not a service setting: the deploy uses it
+to ask this host's nginx for the site without depending on DNS.
 
 ## 10. Deployment
 
@@ -1067,12 +919,11 @@ Three supported shapes:
    applies the schema with `bin/migrate`, restarts `kada-api`, and verifies the health endpoint, rolling
    back to the previous binary if the service does not come up.
 
-The SMS credentials reach the host from **GitHub repository secrets**, written into
-`/opt/kada/backend/.env` by `deploy/upsert-env.sh` as the first step of the deploy, before any service
-is replaced. That file is the fix for a whole class of outage: "the SMS code never arrives" turned out to
-be an empty line in a file on the server that nothing had ever checked. A `--require`d key that is
-missing fails the deployment while the previous build is still serving, and an empty `--set` leaves an
-existing hand-configured value alone.
+The secrets reach the host from **GitHub repository secrets**, written into `/opt/kada/backend/.env` by
+`deploy/upsert-env.sh` as the first step of the deploy, before any service is replaced. That file is the
+fix for a whole class of outage: a credential that never worked turned out to be an empty line in a file
+on the server that nothing had ever checked. An empty `--set` leaves an existing hand-configured value
+alone, and a `--require`d key that is missing fails the deployment while the previous build keeps serving.
 
 The deploy job applies the schema **before** replacing the binary, so a failed migration leaves the
 previous version running.
@@ -1267,8 +1118,8 @@ These are deliberate trade-offs, not oversights:
   folders already provided.
 - **Rate-limit state is per-Redis-instance**, so a multi-instance deployment needs a shared Redis
   (which is the intended topology).
-- **An account starts as a guest and stays one until it is claimed.** Its token lives in one browser's
-  storage, so a cleared browser or an expired token means a new account and the old one's links are
-  unreachable without the phone number that would identify it - which is exactly the gap the claim step
-  fills. Anonymous creation is also an open write path: `POST /api/auth/guest` is behind the strict
-  limiter, and there is no per-account quota on the links a guest may create yet.
+- **An account is a browser, and stays one.** Its token lives in one browser's storage, so a cleared
+  browser or an expired token means a new account and the old one's links are unreachable: there is no
+  identifier to look them up by, and nothing to claim them with. Anonymous creation is also an open write
+  path - `POST /api/auth/guest` sits behind the strict limiter and the guest tier, and the quota in
+  [7.8](#78-what-one-account-may-create) bounds what one of those accounts can then create.

@@ -9,8 +9,8 @@ The backend is written in Go, the frontend is a Vite single-page app served as s
 ## Features
 
 - No sign-in wall: opening the site starts a guest session (JWT) and everything is usable immediately.
-  Phone number + password is the identity a guest account is claimed with - the API routes and their tests
-  exist, the claim screen does not yet
+  There is no account to register and no identity to claim - the phone sign-in and its routes went with
+  the screens that used them
 - Create, edit, delete, and bulk-manage short links
 - Custom short codes and custom domains
 - Access passwords and expiry times
@@ -100,8 +100,8 @@ Two things in that table are not about the cache:
 | JWT_SECRET | Required, a strong random secret |
 | POSTGRES_PASSWORD | Required, must be changed in production |
 | DB_AUTO_MIGRATE | Let the API server apply the schema on startup (default true; set false when using cmd/migrate) |
-| SMS_ACCESS_KEY_ID / SMS_ACCESS_KEY_SECRET | Alibaba Cloud SMS. Required to claim a guest account with a phone number; opening the app does not need it |
-| SMS_SIGN_NAME / SMS_TEMPLATE_CODE | The system-granted SMS signature and template from the Aliyun PNVS console |
+| UPLOAD_DIR | Where file links are stored (default `./data/uploads`); must be writable and survive a deploy |
+| ADMIN_SECRET | The operator password for the takedown console; empty refuses everybody |
 
 In production these come from GitHub repository secrets and are written into `/opt/kada/backend/.env` by
 the deploy job; the deployment section of [docs/design.md](docs/design.md) explains what that job does.

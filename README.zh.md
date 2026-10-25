@@ -8,7 +8,7 @@
 
 ## 功能
 
-- 没有登录墙：打开就能用，首个页面加载即开启一个游客会话（JWT）。手机号 + 密码是给游客账号“认领”身份用的，接口和测试都在，认领页面还没做
+- 没有登录墙：打开就能用，首个页面加载即开启一个游客会话（JWT）。没有账号可注册，也没有身份可认领——手机号登录及其接口已随登录页一起移除
 - 短链接的创建、编辑、删除与批量管理
 - 自定义短码与自定义域名
 - 访问密码与过期时间
@@ -93,8 +93,8 @@ go run ./cmd/loadgen -codes 200 -absent 2000 -requests 20000 -clients 4000 -conc
 | JWT_SECRET | 必填，强随机密钥 |
 | POSTGRES_PASSWORD | 必填，生产环境必须修改 |
 | DB_AUTO_MIGRATE | 是否让 API 服务在启动时应用表结构（默认 true；使用 cmd/migrate 时设为 false） |
-| SMS_ACCESS_KEY_ID / SMS_ACCESS_KEY_SECRET | 阿里云短信。做账号认领（手机号 + 验证码）时必填；游客会话不需要 |
-| SMS_SIGN_NAME / SMS_TEMPLATE_CODE | 阿里云 PNVS 控制台为你分配的短信签名与模板 |
+| UPLOAD_DIR | 文件短链的存储目录（默认 `./data/uploads`）；需可写且跨部署保留 |
+| ADMIN_SECRET | 运营口令，用于下架控制台；为空时谁都用不了 |
 
 生产环境下这些值来自 GitHub 仓库 secrets，由部署任务写入 `/opt/kada/backend/.env`；部署任务做了什么，
 见 [docs/design.md](docs/design.md) 的部署一节。

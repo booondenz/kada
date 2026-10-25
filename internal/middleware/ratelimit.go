@@ -109,7 +109,8 @@ func (rl *RateLimiter) Limit(cfg RateLimitConfig) gin.HandlerFunc {
 	}
 }
 
-// Strict strict mode - auth endpoints (login, register, send verification code)
+// Strict is the shared bucket for the session endpoints: `/auth/guest` and the report form. It is the
+// strictest tier because it is cheap to call and expensive to serve - every guest call is a row.
 func (rl *RateLimiter) Strict() gin.HandlerFunc {
 	return rl.Limit(RateLimitConfig{
 		Name:   LimiterStrict,

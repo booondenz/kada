@@ -134,10 +134,8 @@ refuses before touching anything on this host. A value already present in this f
 also satisfies the check - --set with an empty value leaves it alone, so a host that
 was configured by hand keeps deploying without the secret being set here.
 
-Expected secrets:
-  SMS_ACCESS_KEY_ID, SMS_ACCESS_KEY_SECRET, SMS_SIGN_NAME, SMS_TEMPLATE_CODE -> the host's /opt/kada/backend/.env
-      (phone + SMS code is how a guest account is claimed and the only way into an account that has one,
-       so without these no one can claim a phone number)
+The keys listed above are the ones the caller passed with --require; this script
+knows nothing about them beyond that.
 EOF
   exit 1
 fi

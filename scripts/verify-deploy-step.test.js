@@ -1,6 +1,5 @@
-// Extracts the "Verify deployment", "Report the smoke test result", "Check the SMS credentials" and
-// "Upload the deploy bundle" steps out of ci.yml and runs them, so each outcome is observed instead of
-// assumed.
+// Extracts the "Verify deployment", "Report the smoke test result" and "Upload the deploy bundle"
+// steps out of ci.yml and runs them, so each outcome is observed instead of assumed.
 //
 //   node scripts/verify-deploy-step.test.js
 //
@@ -8,11 +7,6 @@
 // 6: the host did not resolve) plus the healthy case and a reachable-but-unhealthy API. It asserts that
 // the verify step never fails the job, that it records the right status, and that the report step warns
 // only when the smoke test genuinely did not pass.
-//
-// The SMS cases assert the property that makes that step safe to ship: it reports that CI does not manage
-// the credentials, and still exits 0. It must not fail the job, because the value only has to reach the
-// host's .env by some route and a hand-configured host deploys perfectly well - a step that failed here
-// would reject a deployment that was going to work, which is worse than saying nothing.
 //
 // The upload cases stub `ssh` and drive the three things it can do wrong: complete the transfer, complete
 // it after failures, deliver a short stream while still exiting 0, and refuse outright. What they pin is
@@ -96,7 +90,6 @@ function extractConfigSwap() {
 const write = (name, content) => fs.writeFileSync(path.join(outDir, name), content.replace(/\r\n/g, "\n"), "utf8");
 write("step-verify.sh", extractRun("Verify deployment"));
 write("step-report.sh", extractRun("Report the smoke test result"));
-write("step-check-sms.sh", extractRun("Check the SMS credentials"));
 write("step-upload-bundle.sh", extractRun("Upload the deploy bundle"));
 write("frontend-swap.sh", extractFrontendSwap());
 write("config-swap.sh", extractConfigSwap());
@@ -211,7 +204,6 @@ STUB
 echo "--- bash -n ---"
 bash -n "$HERE/step-verify.sh" && echo "step-verify.sh parses"
 bash -n "$HERE/step-report.sh" && echo "step-report.sh parses"
-bash -n "$HERE/step-check-sms.sh" && echo "step-check-sms.sh parses"
 bash -n "$HERE/step-upload-bundle.sh" && echo "step-upload-bundle.sh parses"
 echo
 
@@ -264,65 +256,6 @@ run_no_deploy_case skipped "the apply step never ran, because an earlier step fa
 run_no_deploy_case failure "the apply step itself failed"
 echo
 
-echo "--- the SMS advisory step ---"
-
-# A missing SMS secret must be reported without failing the deploy, and must name every key that is not
-# managed here; with all four set it must be completely silent. It must never dress this up as a failure,
-# because whether the deployment really breaks depends on the host's own .env, which this step cannot see.
-run_sms_case() {
-  mode="$1"; want_notice="$2"; want_summary="$3"; label="$4"
-  dir="$HERE/case-sms-$mode"
-  rm -rf "$dir"; mkdir -p "$dir"
-  : > "$dir/summary.md"
-
-  if [ "$mode" = "present" ]; then
-    # Obviously fake values on purpose. Nothing here asserts on what a credential *is* (only on whether the
-    # step stays quiet when all four are set), so using the account's real template code would mean putting
-    # an account-specific value in the tree for no gain - see the note in docs/design.md section 9.1.
-    SMS_ACCESS_KEY_ID=id SMS_ACCESS_KEY_SECRET=secret SMS_SIGN_NAME=kada SMS_TEMPLATE_CODE=SMS_000000000 \
-      GITHUB_STEP_SUMMARY="$dir/summary.md" bash "$HERE/step-check-sms.sh" > "$dir/out.txt" 2>&1
-  else
-    SMS_ACCESS_KEY_ID= SMS_ACCESS_KEY_SECRET= SMS_SIGN_NAME= SMS_TEMPLATE_CODE= \
-      GITHUB_STEP_SUMMARY="$dir/summary.md" bash "$HERE/step-check-sms.sh" > "$dir/out.txt" 2>&1
-  fi
-  rc=$?
-
-  noted=no
-  grep -q '::notice' "$dir/out.txt" && noted=yes
-  # An annotation that cries failure where there is none is how the annotations that matter stop being read.
-  alarmed=no
-  grep -qE '::(warning|error)' "$dir/out.txt" && alarmed=yes
-  summary=no
-  [ -s "$dir/summary.md" ] && summary=yes
-
-  problems=""
-  [ "$rc" = "0" ] || problems="$problems exit=$rc(want 0)"
-  [ "$noted" = "$want_notice" ] || problems="$problems notice=$noted(want $want_notice)"
-  [ "$alarmed" = "no" ] || problems="$problems emitted-a-warning-or-error"
-  [ "$summary" = "$want_summary" ] || problems="$problems summary=$summary(want $want_summary)"
-
-  if [ "$want_notice" = "yes" ]; then
-    for key in SMS_ACCESS_KEY_ID SMS_ACCESS_KEY_SECRET SMS_SIGN_NAME SMS_TEMPLATE_CODE; do
-      grep -q "$key" "$dir/out.txt" || problems="$problems does-not-name-$key"
-      grep -q "$key" "$dir/summary.md" || problems="$problems summary-missing-$key"
-    done
-    grep -q '| Secret |' "$dir/summary.md" || problems="$problems summary-missing-the-table"
-  fi
-
-  if [ -z "$problems" ]; then
-    printf 'ok    %s\n' "$label"
-  else
-    printf 'FAIL  %s\n' "$label"
-    printf '        reason:%s\n' "$problems"
-    fails=$((fails + 1))
-  fi
-  printf '        exit=%s notice=%s summary=%s\n' "$rc" "$noted" "$summary"
-  printf '        out: %s\n' "$(head -c 300 "$dir/out.txt")"
-}
-
-run_sms_case missing yes yes "SMS secrets unset: says so, without failing the deploy"
-run_sms_case present no  no  "SMS secrets set: says nothing at all"
-echo
 
 echo "--- the deploy bundle upload step ---"
 
