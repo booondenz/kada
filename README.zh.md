@@ -97,7 +97,7 @@ go run ./cmd/loadgen -codes 200 -absent 2000 -requests 20000 -clients 4000 -conc
 | ADMIN_SECRET | 运营口令，用于下架控制台；为空时谁都用不了 |
 
 生产环境下这些值来自 GitHub 仓库 secrets，由部署任务写入 `/opt/kada/backend/.env`；部署任务做了什么，
-见 [docs/design.md](docs/design.md) 的部署一节。
+见 [CONTRIBUTING.md](CONTRIBUTING.md) 的部署一节。
 
 ## 目录结构
 
@@ -106,7 +106,7 @@ cmd/       入口：API、表结构迁移、压测工具
 config/    环境变量解析（唯一的配置来源）
 internal/  应用主体：domain、handler、service、infra、middleware、metrics
 web/       Vite 单页应用，构建为静态文件后由 nginx 提供
-docs/      设计、贡献与代码风格文档
+CONTRIBUTING.md  文档：设计、协作流程与代码风格，合成一个文件
 deploy/    部署脚本，以及 deploy/nginx/ 下的反向代理配置
 scripts/   维护脚本与部署步骤测试
 go.mod     模块根目录就是仓库根目录：不再需要 cd backend

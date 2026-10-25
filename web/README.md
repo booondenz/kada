@@ -30,4 +30,4 @@ which is a warning today and a syntax error once Vite makes that loader its defa
 `.js` files in this package to be reinterpreted by the change - the scripts are `.mjs` already.
 
 The build is static files, so production has no Node process: nginx serves `dist/` directly. See
-`deploy/nginx/nginx-prod.conf` and the deployment section of `docs/design.md`.
+`deploy/nginx/nginx-prod.conf` and the deployment section of `CONTRIBUTING.md`.

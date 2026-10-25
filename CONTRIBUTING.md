@@ -1,22 +1,61 @@
-# Kada Design
+# Contributing to Kada
+
+This one file is the project's documentation: how the system is built and why (Part 1), how to work on
+it (Part 2), and the conventions its code follows (Part 3). A change that spans them - the decision, the
+convention that encodes it and the workflow that ships it - is one change to one document, which is why
+they are not three. The name is the one GitHub looks for when somebody clicks "Contributing": the
+contributing guide is Part 2, and the two parts around it are what a contributor needs in order to read
+the code and to leave it consistent.
+
+Until this file existed the material lived in `docs/design.md`, `docs/contributing.md` and
+`docs/code-style.md`, each numbering its sections from 1 and cross-referencing the others by filename.
+
+## Contents
+
+- [Part 1: Design](#part-1-design)
+  - [1. Product summary](#1-product-summary)
+  - [2. System overview](#2-system-overview)
+  - [3. Repository layout](#3-repository-layout)
+  - [4. Backend](#4-backend)
+  - [5. Data model](#5-data-model)
+  - [6. Frontend](#6-frontend)
+  - [7. Key flows](#7-key-flows)
+  - [8. Cross-cutting decisions](#8-cross-cutting-decisions)
+  - [9. Configuration](#9-configuration)
+  - [10. Deployment](#10-deployment)
+  - [11. Testing](#11-testing)
+  - [12. Known limitations](#12-known-limitations)
+- [Part 2: Contributing](#part-2-contributing)
+  - [1. Requirements](#1-requirements)
+  - [2. Local setup](#2-local-setup)
+  - [3. Running the stack](#3-running-the-stack)
+  - [4. Everyday commands](#4-everyday-commands)
+  - [5. Making a change](#5-making-a-change)
+  - [6. Commit messages](#6-commit-messages)
+  - [7. Issues](#7-issues)
+  - [8. Pull requests](#8-pull-requests)
+  - [9. Testing expectations](#9-testing-expectations)
+  - [10. Changing the database schema](#10-changing-the-database-schema)
+  - [11. Documentation](#11-documentation)
+- [Part 3: Code style](#part-3-code-style)
+  - [1. General principles](#1-general-principles)
+  - [2. Comments](#2-comments)
+  - [3. Go](#3-go)
+  - [4. Go: errors](#4-go-errors)
+  - [5. Go: layering](#5-go-layering)
+  - [6. Database (GORM)](#6-database-gorm)
+  - [7. TypeScript / React](#7-typescript-react)
+  - [8. Frontend copy and i18n](#8-frontend-copy-and-i18n)
+  - [9. Tests](#9-tests)
+  - [10. Configuration and secrets](#10-configuration-and-secrets)
+  - [11. Formatting quick reference](#11-formatting-quick-reference)
+
+## Part 1: Design
 
 Kada is a short-link management and analytics platform. Users create short links, organise them, and
 watch how they are clicked. This document explains how the system is put together and why.
 
-- [1. Product summary](#1-product-summary)
-- [2. System overview](#2-system-overview)
-- [3. Repository layout](#3-repository-layout)
-- [4. Backend](#4-backend)
-- [5. Data model](#5-data-model)
-- [6. Frontend](#6-frontend)
-- [7. Key flows](#7-key-flows)
-- [8. Cross-cutting decisions](#8-cross-cutting-decisions)
-- [9. Configuration](#9-configuration) 
-- [10. Deployment](#10-deployment)
-- [11. Testing](#11-testing)
-- [12. Known limitations](#12-known-limitations)
-
-## 1. Product summary
+### 1. Product summary
 
 | Capability | Notes |
 |---|---|
@@ -32,7 +71,7 @@ The primary tension in the design is that **redirection is hot and analytics is 
 short link must be fast and must not fail because a database is busy, while counting clicks is
 allowed to lag by a second. The architecture is split along that line.
 
-## 2. System overview
+### 2. System overview
 
 ```text
 Browser → nginx :80 ─┬→ /api/, /r/ → backend :8080 ─┬→ PostgreSQL (source of truth)
@@ -55,7 +94,7 @@ There is exactly one writer of the database schema (see
 [4.4 Schema ownership](#44-schema-ownership)) and no service talks to another service's database.
 The frontend never touches PostgreSQL or Redis.
 
-## 3. Repository layout
+### 3. Repository layout
 
 ```text
 cmd/server/          API entry point: wiring, routes, graceful shutdown
@@ -70,11 +109,11 @@ internal/
   middleware/        JWT auth, rate limiting, real client IP
 db/                  (removed) schema used to live here as SQL migrations
 web/
-  src/router.tsx     the route table: sign-in, privacy, dashboard/**, r/[code]
+  src/router.tsx     the route table: privacy, report, r/[code], dashboard/**
   src/pages/         one component per route
   src/components/    shared UI components; ui/ holds the primitives every page uses
   src/lib/           API client, auth storage, i18n, utilities
-docs/                this documentation
+CONTRIBUTING.md       the documentation: design, workflow and code style
 deploy/              server bootstrap scripts and the env-file writer
   nginx/             reverse proxy configuration
 scripts/             maintenance scripts
@@ -99,9 +138,9 @@ The host layout is not the repository layout. The API runs from `/opt/kada/backe
 the nginx container; renaming either means recreating that container, so the two names are allowed to
 differ. The deploy job is what maps one onto the other (see [10. Deployment](#10-deployment)).
 
-## 4. Backend
+### 4. Backend
 
-### 4.1 Layering
+#### 4.1 Layering
 
 ```text
 HTTP request
@@ -128,7 +167,7 @@ Rules that keep this honest:
   trusting an ID that arrived from the client.
 - Errors returned by services are safe to show to a user. Internal details stay in the logs.
 
-### 4.2 Request path
+#### 4.2 Request path
 
 `cmd/server/main.go` is the only place where the object graph is built. It creates the database
 handle, Redis client, cache service, then every service, then every
@@ -147,7 +186,7 @@ package and one line in `main.go`, not editing a central route list.
 Public endpoints that do not require a session (`/api/auth/*`, `/r/:code`) are registered inside the
 handler without the auth middleware; everything else is grouped behind it.
 
-### 4.3 Short-link resolution
+#### 4.3 Short-link resolution
 
 Redirection has its own hot path that deliberately avoids PostgreSQL:
 
@@ -177,7 +216,7 @@ unreachable database must not write "this code does not exist" for every code th
 because that verdict would outlive the outage by its whole TTL. Creating or renaming a link clears the
 entry, and concurrent misses on one code share a single database read instead of arriving together.
 
-### 4.4 Schema ownership
+#### 4.4 Schema ownership
 
 The schema is defined by the GORM models in `internal/domain/entity` and applied with `AutoMigrate`; the
 migration SQL files are gone. `cmd/migrate` applies the models (`go run ./cmd/migrate/`), and
@@ -209,7 +248,7 @@ it is explicitly.
 Raw SQL is still used where a single statement is the point — the atomic verification-code consume,
 the idempotent click insert, bulk insert-selects — and each of those sites is commented as such.
 
-### 4.5 Error mapping
+#### 4.5 Error mapping
 
 | Situation | HTTP |
 |---|---|
@@ -225,7 +264,7 @@ Services return sentinel errors for the cases a handler must distinguish (for ex
 `domain.ErrLinkNotFound`), and wrap everything else with context so the log explains the failure while
 the response does not.
 
-## 5. Data model
+### 5. Data model
 
 ```text
 users ──┬── links ──┬── click_logs
@@ -276,7 +315,7 @@ Design rules:
   stops a link created last year (see [7.6](#76-a-blocked-target-is-refused-and-the-refusal-is-not-cached)).
 - **Timestamps are UTC** (`timestamptz`); the frontend formats for display.
 
-## 6. Frontend
+### 6. Frontend
 
 A Vite single-page app built to static files, with React Router for the routes. The dashboard is highly
 interactive, so there was never a server-rendered page to gain from; removing the Node process removed a
@@ -323,7 +362,7 @@ arrangement, and the filing order is about the bottom of the site rather than th
 annual review objects, the answer is to put a single line back under the link list - the page every
 visitor lands on - and not to move it around again.
 
-### 6.1 Internationalisation
+#### 6.1 Internationalisation
 
 The UI ships in Chinese and English. The dictionary is keyed by the **Chinese source string**:
 
@@ -342,7 +381,7 @@ return <button>{t("创建链接")}</button>;
 When adding UI text: write the Chinese string, wrap it in `t()`, and add the English entry to
 `dictionary.ts`. The dictionary is the only place English copy lives.
 
-### 6.2 Theme
+#### 6.2 Theme
 
 The app follows the browser's `prefers-color-scheme` by default and lets the user override it from
 用户 → 外观, with a third option that hands control back to the system.
@@ -390,7 +429,7 @@ Client components that read `localStorage` gate on `useHydrated()` (`src/lib/use
 token or a stored preference straight into render output makes the server's HTML and the client's first
 render disagree, and React discards the tree as a hydration mismatch.
 
-### 6.3 A restrained visual language
+#### 6.3 A restrained visual language
 
 There was no rule about how the interface should look, so every page decided for itself: the landing
 page had a three.js starfield behind a glowing wordmark, the dashboard was a card grid with four tinted
@@ -443,7 +482,7 @@ stat tiles, and the two shared nothing but a colour. What the pages are held to 
 The dashboard pages are being moved onto these primitives one at a time; until a page is moved it still
 carries its own markup, which is the drift the list above exists to end.
 
-### 6.4 There is no sign-in page
+#### 6.4 There is no sign-in page
 
 Opening the app is enough to use it. The first page load calls `POST /api/auth/guest`, which writes an
 ordinary `users` row with every identity column NULL and returns the same kind of JWT a sign-in would have.
@@ -472,9 +511,9 @@ loses it, another device is another account, and an expiring token starts a new 
 not asking for a phone number first, and there is no form that turns the account into one that survives -
 [7.1](#71-the-sign-in-that-used-to-be) is what that would have been.
 
-## 7. Key flows
+### 7. Key flows
 
-### 7.1 The sign-in that used to be
+#### 7.1 The sign-in that used to be
 
 An account was a phone number and a password. The number was verified once, at registration, with an SMS
 code; from then on the password signed in. The split existed for one reason: an SMS costs money, and an
@@ -495,7 +534,7 @@ what removing it left behind:
   the question of which of the two is the schema, and the models are the answer.
 - **`last_login_at` still moves**, because opening a session is the event it names.
 
-### 7.2 Opening a session
+#### 7.2 Opening a session
 
 ```text
 POST /api/auth/guest
@@ -522,7 +561,7 @@ Three properties of that are deliberate:
 A browser that cannot reach `POST /api/auth/guest` gets no session at all, and the shell says so instead of
 rendering an empty page - see [6.4](#64-there-is-no-sign-in-page).
 
-### 7.3 Recording a click
+#### 7.3 Recording a click
 
 ```text
 GET /r/:code
@@ -554,7 +593,7 @@ compose stack could exercise. It was removed (see [7.5](#75-what-the-numbers-tur
 numbers actually showed). The comment that used to explain how a nil publisher took the API down is gone with
 the interface it was about.
 
-#### What counts as a visit
+##### What counts as a visit
 
 A request to a short link is not evidence that a person opened it. WeChat and QQ fetch a link to build
 the preview card before anyone taps it, and that fetcher sends the in-app browser's own User-Agent - so
@@ -602,7 +641,7 @@ The column was added with a default of `visit` because of the rows that already 
 recorded before it did, and they are already counted in `click_count` and in every chart, so `visit` is
 the value that leaves that history alone.
 
-### 7.4 What the redirect path reports
+#### 7.4 What the redirect path reports
 
 `GET /metrics` serves the Prometheus text format: the redirect handler's outcomes and latency, what the
 short-code cache did with every lookup, what happened to every click on its way to the store, and the Go
@@ -635,7 +674,7 @@ The cost is a dependency: `prometheus/client_golang` and its tree, which also mo
 interface other software parses, and because the runtime series (goroutines, GC, resident memory) come
 with it and are half of what a baseline is.
 
-### 7.5 What the numbers turned out to be
+#### 7.5 What the numbers turned out to be
 
 `cmd/loadgen` seeds its own links, drives the two scenarios, and reads the counters above before and after
 each one: a hit cannot be inferred from the client - a 302 looks the same either way - and the issue asked
@@ -656,7 +695,7 @@ request path, and 1,700 clicks a second is not a volume this product has ever se
 second write path, a second binary and a broker in the compose stack. It was removed in favour of the
 direct write, which is what the measurement above was actually made against.
 
-### 7.6 A blocked target is refused, and the refusal is not cached
+#### 7.6 A blocked target is refused, and the refusal is not cached
 
 A short link is a promise that the URL behind it is safe to open, and that URL is chosen by whoever created
 the link. The categories that break the promise - 色情, 赌博, 毒品, 诈骗, 钓鱼 - are not something a code
@@ -690,7 +729,7 @@ INSERT INTO blocked_hosts (host, category, note, created_at)
 VALUES ('casino.example', 'gambling', 'reported 2026-10-22', now());
 ```
 
-### 7.7 A takedown is a column and a history row
+#### 7.7 A takedown is a column and a history row
 
 The host list stops whole domains. It cannot stop *one* link on a legitimate host, which is what most
 reports are about - a shared blog, a file host, a page that turned. That decision belongs to a person, so it
@@ -722,7 +761,7 @@ thing that grows), no automatic category detection (that is a third-party URL-sa
 verdict from one is a link pulled for no reason), and the 24-hour response time the report page states is a
 promise made by whoever runs the deployment, not a job that runs by itself.
 
-### 7.8 What one account may create
+#### 7.8 What one account may create
 
 `auth/guest` writes a real account row on every call, so minting an identity costs one request and minting
 links after that costs nothing - which used to mean one address could turn itself into 120 accounts a minute
@@ -748,7 +787,7 @@ Every limiter counts in a key of its own, `ratelimit:<name>:<ip>`. That is not c
 request the address made, and a visitor who read the dashboard for a minute could not then sign in. The name
 in the key is the whole fix.
 
-### 7.9 A link can have a pool of destinations
+#### 7.9 A link can have a pool of destinations
 
 `links.original_url` answers "where does this go" for every link that has one place to go, which is most of
 them. A link may instead carry a pool in `link_targets`, and a visitor is sent to one of them:
@@ -780,7 +819,7 @@ makes it exact, and several would make it approximate - bounded by the day's quo
 Which target took a click is on the click row (`click_logs.target_id`), and the owner's target listing is a
 group-by over it, which is why the counts are a request of their own rather than part of the link.
 
-### 7.10 A short link can be a file
+#### 7.10 A short link can be a file
 
 A file link is an ordinary link whose target happens to be a file this service stores. `POST /api/uploads`
 takes the file and answers a URL on this domain (`/f/<id>`), and creating a link with that upload's id makes
@@ -806,7 +845,7 @@ refers to once they are a day old. Sweeping rather than deleting at the point of
 code out of the file business, and the grace period is what stops a link being created right now from losing
 its file to a sweep that ran in between.
 
-### 7.11 A group code is a target that expires
+#### 7.11 A group code is a target that expires
 
 A WeChat group's QR code dies seven days after it is generated and stops admitting people once the group is
 full. That is the product behind `kind` and `expires_at` on a target: the short link and the printed poster
@@ -828,9 +867,9 @@ was usable, so it is broken. Here "every group filled up" is a state the owner a
 visitor their link is broken would be a lie they cannot act on - so the metric counts `group_empty` apart
 from `not_found`.
 
-## 8. Cross-cutting decisions
+### 8. Cross-cutting decisions
 
-### 8.1 Configuration
+#### 8.1 Configuration
 
 One `Config` struct in `config` is parsed once from the environment; nothing else reads
 `os.Getenv`. Missing values fall back to development defaults, except in release mode where weak JWT
@@ -838,13 +877,13 @@ secrets are rejected outright. `.env.example` at the repository root documents e
 process and for `docker compose` alike: the module used to carry a second copy of it, which meant a
 setting could be documented in the half nobody was reading.
 
-### 8.2 Caching and degradation
+#### 8.2 Caching and degradation
 
 Redis is used for the short-code cache and for rate-limit counters, and both **fail open**: if Redis
 is unreachable the API keeps serving, caching is skipped, and rate limiting stops rejecting requests
 until the client reconnects. Availability of the product is ranked above strictness of the limiter.
 
-### 8.3 Rate limiting
+#### 8.3 Rate limiting
 
 Sliding-window counters in Redis, in five tiers: a global limit for normal API traffic, a strict limit for
 auth endpoints, a higher-throughput limit for redirection, a tighter one for the guide page's action reports,
@@ -859,7 +898,7 @@ activity on somebody else's link. The visit confirmation stays under the redirec
 POST - it is what makes a click count, so dropping one loses a real visit - and its volume can only ever be
 a fraction of the redirects that served the page it reports from.
 
-### 8.4 Security posture
+#### 8.4 Security posture
 
 - JWT: HS256 only, expiry required, secret strength enforced in release mode.
 - Link targets: only `http` and `https` are accepted, which also blocks `javascript:` and `data:`
@@ -869,7 +908,7 @@ a fraction of the redirects that served the page it reports from.
 - Error responses never echo internal errors.
 - Containers run as a non-root user; nginx sets the usual response security headers.
 
-## 9. Configuration
+### 9. Configuration
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -907,7 +946,7 @@ every unrelated fix hostage to an operator feature.
 `SITE_ORIGIN` (`vars.SITE_URL`, default `https://kada.click`) is not a service setting: the deploy uses it
 to ask this host's nginx for the site without depending on DNS.
 
-## 10. Deployment
+### 10. Deployment
 
 Three supported shapes:
 
@@ -1021,7 +1060,7 @@ different name. It is a variable rather than a secret because the name is alread
 certificate transparency logs, the DNS records and `deploy/nginx/nginx-prod.conf` - and because a deployment
 step that requires manual setup is a failure mode of its own.
 
-### 10.1 The certificate the site serves
+#### 10.1 The certificate the site serves
 
 The certificate is Let's Encrypt's, issued from this host into certbot's store rather than into this
 repository: `/etc/letsencrypt/live/kada.click/{fullchain.pem,privkey.pem}`, named `kada.click`, covering
@@ -1083,7 +1122,7 @@ certificate, because a check that checks nothing must not look like a check that
 `scripts/verify-certificate-check.test.js` runs both of its steps against a stubbed `ssh` and `gh` to keep
 those rules honest.
 
-## 11. Testing
+### 11. Testing
 
 | Layer | Style |
 |---|---|
@@ -1097,7 +1136,7 @@ Run everything with `go test ./... -count=1 -race` and `cd web && npm test`; CI
 additionally runs `go vet`, `golangci-lint`,
 `tsc --noEmit` and the production build on every pull request.
 
-## 12. Known limitations
+### 12. Known limitations
 
 These are deliberate trade-offs, not oversights:
 
@@ -1124,3 +1163,695 @@ These are deliberate trade-offs, not oversights:
   identifier to look them up by, and nothing to claim them with. Anonymous creation is also an open write
   path - `POST /api/auth/guest` sits behind the strict limiter and the guest tier, and the quota in
   [7.8](#78-what-one-account-may-create) bounds what one of those accounts can then create.
+
+## Part 2: Contributing
+
+Thanks for taking the time to contribute. This document covers how to set the project up, how work
+is expected to flow, and what a good pull request looks like.
+
+Read [Part 1](#part-1-design) first for how the system fits together, and
+[Part 3](#part-3-code-style) for the conventions used in the code itself.
+
+### 1. Requirements
+
+| Tool | Version | Why |
+|---|---|---|
+| Go | 1.26+ | Backend; the module declares `go 1.26.10` |
+| Node.js | 22+ | Frontend |
+| Docker + Compose | recent | PostgreSQL, Redis, and the full stack |
+| `make` | any | Task shortcuts (optional, the commands work standalone) |
+
+You do not need Docker for backend work if PostgreSQL and Redis are already reachable.
+
+### 2. Local setup
+
+```bash
+git clone git@github.com:booondenz/kada.git
+cd kada
+
+# Environment for the API and for Docker Compose: one file, read from the repository root
+# (JWT_SECRET and POSTGRES_PASSWORD are required)
+cp .env.example .env
+
+# Web dependencies
+cd web && npm ci && cd ..
+```
+
+Fill in `.env` before starting anything:
+
+- `JWT_SECRET` — a strong random value: `openssl rand -hex 32`.
+- `POSTGRES_PASSWORD` — anything non-default.
+- `ADMIN_SECRET` — optional, and empty is a valid local choice: it refuses every operator route, which
+  only costs you the takedown console. In production the deploy job writes it from the repository secret
+  with `deploy/upsert-env.sh`, as the first step of the deploy.
+
+#### Line endings
+
+The repository pins LF through `.gitattributes`. Keep that as is: `core.autocrlf=true` on Windows
+will otherwise check Go files out as CRLF, and every Go formatter will then report the whole tree as
+unformatted while CI sees it as clean.
+
+### 3. Running the stack
+
+#### Everything in Docker
+
+```bash
+docker compose up -d      # nginx :80, PostgreSQL :5432, Redis :6379 (internal)
+docker compose logs -f
+docker compose down
+```
+
+The API applies the schema on startup (`DB_AUTO_MIGRATE=true` in Compose), so a fresh volume comes up
+ready to use. Nginx serves the app at `http://localhost`.
+
+#### The API and the web app on the host
+
+```bash
+docker compose up -d postgres redis
+go run ./cmd/migrate/   # apply the schema
+go run ./cmd/server/main.go   # API on :8080
+cd web && npm run dev         # web app on :3000
+```
+
+When the web app runs on the host, keep `VITE_API_URL` pointing at the API
+(`http://localhost:8080`) in `web/.env.local`.
+
+### 4. Everyday commands
+
+There is no Makefile: these are the commands CI runs, and a wrapper would only be one more place for the
+two to drift apart.
+
+| Task | Command |
+|---|---|
+| Run the API | `go run ./cmd/server/main.go` |
+| Run the web app | `cd web && npm run dev` |
+| Go tests | `go test ./... -v` |
+| Web tests | `cd web && npm test` |
+| Go tests with the race detector (what CI runs) | `go test ./... -v -count=1 -race -coverprofile=coverage.out` |
+| `go vet` / ESLint | `go vet ./...` / `cd web && npm run lint` |
+| `golangci-lint` (what CI runs) | `golangci-lint run --timeout=5m ./...` |
+| Apply the schema | `go run ./cmd/migrate/` |
+| Destroy the database volume and start over | `docker compose down -v && docker compose up -d postgres redis && go run ./cmd/migrate/` |
+| Production builds | `CGO_ENABLED=0 go build -o bin/server ./cmd/server/main.go` / `cd web && npm run build` |
+| Compose lifecycle | `docker compose up -d` / `docker compose down` / `docker compose logs -f` |
+
+Before opening a pull request, these should all pass:
+
+```bash
+go vet ./... && go test ./... -count=1 -race
+cd web && npm run lint && npx tsc --noEmit && npm run build
+```
+
+### 5. Making a change
+
+1. **Open the issue first.** Before the branch, before the code, before deciding the change is small
+   enough not to need one. [§7](#7-issues) says what goes in it; the point of writing it first is that it
+   is the only step that has to decide what "done" means *before* there is an implementation to argue
+   with. A fix whose issue was written afterwards is a fix nobody can find later: the tracker is the only
+   list of what was wrong with this project, and the commit log is not searchable by symptom.
+2. **Branch off `main`.** Use a short descriptive name: `feat/ai-support`, `fix/sms-signature-error`.
+3. **Keep the change focused.** One topic per branch and per pull request. Unrelated cleanups make a
+   change hard to review and hard to revert.
+4. **Follow the existing layering.** New behaviour belongs in a service; the handler stays thin. See
+   [Part 1, section 4](#4-backend).
+5. **Keep the layers honest.** Handlers do not run SQL, services do not touch `*gin.Context`,
+   ownership is enforced in the `WHERE` clause.
+6. **Write the tests that would have caught the bug** or that pin the new behaviour.
+7. **Update the documentation** in the same pull request: `CONTRIBUTING.md` when a decision or a flow
+   changes, `README.md` when setup or commands change.
+
+#### Adding a backend resource
+
+The pattern is the same for every resource:
+
+```text
+internal/domain/models.go         request/response structs (JSON + binding tags)
+internal/domain/entity/models.go  the table (only if the schema changes)
+internal/service/<res>_service.go business logic
+internal/handler/<res>/handler.go thin HTTP layer + RegisterRoutes
+cmd/server/main.go                build the service and register the routes
+```
+
+Add the rows to `entity.Models()` if you added a table, then run `go run ./cmd/migrate/`.
+
+#### Adding UI text
+
+The UI is bilingual and keyed by the Chinese source string:
+
+```tsx
+const t = useT();
+<button>{t("创建链接")}</button>
+```
+
+Add the English entry to `web/src/lib/i18n/dictionary.ts` in the same change. Never hardcode
+display text in a component, and never leave a key untranslated.
+
+### 6. Commit messages
+
+Every commit message is **in English**, **one line long**, and starts with a conventional-commit
+prefix:
+
+```text
+<type>: <short imperative summary>
+```
+
+There is no body and no second paragraph. The summary says what changed; the reason belongs where a
+reader meets it next to the thing it explains - a comment at the decision, the issue that asked for
+the change, or `CONTRIBUTING.md` when it is a design choice. A message that needs a paragraph to be
+understood is a sign the paragraph should live somewhere a reader will find it.
+
+Allowed types:
+
+| Type | Use for |
+|---|---|
+| `feat` | A new user-visible capability |
+| `fix` | A bug fix |
+| `refactor` | Behaviour-preserving restructuring |
+| `perf` | Performance work |
+| `docs` | Documentation only |
+| `test` | Tests only |
+| `style` | Formatting, no behaviour change |
+| `chore` | Tooling, dependencies, maintenance |
+| `ci` | CI/CD configuration |
+| `build` | Build system or container changes |
+
+Rules:
+
+- **One line.** No body, no bullet list, no second paragraph. `git log --oneline` is the view this
+  convention is written for.
+- **A closing reference is joined to the summary with a conjunction**, never parked in parentheses:
+  `fix: drop the retry that never retried and close #12`. GitHub reads the keyword anywhere in the
+  message, and a footer would break the rule above. A parenthesised tail reads as an aside - the
+  closing is part of what the commit does, so it is written as part of the sentence.
+- **Imperative mood in the summary**: "add link expiry validation", not "added" or "adds".
+- **Lower case after the colon**, no trailing period, no emoji.
+- **No scope.** `fix: verify the deployment over HTTPS`, not `fix(ci): verify the deployment over
+  HTTPS`. The prefix already says what kind of change it is, and the summary names the area, so a scope
+  repeats one of them. Every commit in this repository follows that shape.
+- **No attribution trailers.** Do not add `Co-Authored-By` for tooling, and do not credit an
+  assistant in the message.
+
+Examples taken from the project's own history:
+
+```text
+fix: hash SMS codes and fix broken attempt limit
+refactor: move the backend from pgx to GORM with AutoMigrate
+docs: add README and interview prep doc
+ci: make security gates effective (gosec + frontend lint/tsc)
+```
+
+### 7. Issues
+
+An issue is a report that a problem exists, not a place to think out loud. Three fields, then stop:
+
+```markdown
+## Where
+
+`path/to/file.go` `Symbol` (line N), or the endpoint and the request that triggers it.
+
+## Problem
+
+Two to four sentences. What happens, and why it matters - with the evidence that makes it a fact
+rather than an impression: the line number, the query that runs on every request, the count that is
+wrong.
+
+## Done when
+
+- The observable condition that says the problem is gone.
+- The test that will hold it there.
+```
+
+**It is written before the work, not after it.** The reason is not bookkeeping: the issue is the only
+document that says what "done" means while the implementation is still an opinion, and the only one written
+in terms of the symptom rather than the fix - which is what makes it findable six months later by somebody
+who has the symptom and not the commit. An incident found in production gets one too, with the log line in
+`## Problem`: that is the evidence, and it is the part that is impossible to reconstruct afterwards.
+
+What does not belong: background, alternatives considered, trade-off analysis, and plans for work that
+is not being done now. A design choice that needs that much room belongs in [Part 1](#part-1-design); a
+rejected option belongs in the pull request that chose the other one.
+
+Write the title in the same shape as a commit subject (`type: imperative summary`), and close the issue
+from the commit that fixes it (`... and close #12`, see [§6](#6-commit-messages)) rather than leaving it
+open - a long list of open issues reads as an abandoned project.
+
+### 8. Pull requests
+
+A pull request should contain a short summary, and then:
+
+- **What changed and why.** Link the issue it closes, if one exists.
+- **How it was verified.** Name the commands you ran.
+- **Risk.** Say what could break and what you did about it - for example a schema change, a cache
+  invalidation, or a change to an authorization check.
+- **Screenshots** for anything visual.
+
+Keep the diff reviewable. If a change needs a large mechanical commit (a rename, a reformat), put it
+in its own commit so the meaningful part stays readable.
+
+The CI pipeline must be green before merge: `go vet`, `golangci-lint`, Go tests, ESLint,
+`tsc --noEmit`, and the frontend production build.
+
+That green pipeline is also the deploy. The same jobs run again on the push to `main`, and the `deploy`
+job they gate - which a pull request never starts - writes the runtime env files from repository
+secrets, applies the schema with the uploaded `cmd/migrate` binary, and only then restarts the API and
+the frontend. A required secret that is missing stops the deployment before any service on the host is
+touched, so the build already running keeps serving.
+
+#### Reporting a bug
+
+Include what you did, what you expected, what happened, and the relevant log lines. For backend
+issues, the API logs the underlying cause of a failure; paste it rather than only the message the UI
+showed.
+
+### 9. Testing expectations
+
+| You changed | Add |
+|---|---|
+| Business logic or validation | A table-driven unit test in `internal/service` |
+| An HTTP handler | A test with a fake service implementation (`internal/handler/*/handler_test.go`) |
+| The schema | An assertion in `internal/domain/entity/models_test.go` |
+| A dynamic or bulk SQL statement | A dry-run test in `internal/service/db_dryrun_test.go` |
+| A pure frontend helper | A Vitest test next to it |
+| A shell step in `.github/workflows/ci.yml` | A case in `scripts/verify-deploy-step.test.js` |
+
+The last one exists because a workflow step cannot be run locally, so its mistakes only surface in CI on
+a real deploy. `node scripts/verify-deploy-step.test.js` extracts the deploy job's verification steps
+straight out of the workflow, runs them against a stubbed `curl`, and checks each outcome - reachable,
+connection refused, DNS failure, unhealthy payload. It extracts the bundle-upload step the same way and
+drives it against a stubbed `ssh`: one good transfer, two failures then success, a short stream that the
+size check has to catch, and a host that refuses. It needs a real `bash`; on Windows that means Git
+Bash, which the default sandbox cannot start (it needs a signal pipe), so run it from a normal terminal.
+
+A bug fix without a test that fails before the fix is usually incomplete. Tests must not require a
+database: services take `*gorm.DB`, so a `DryRun` session is enough to assert on generated SQL, and
+handlers take interfaces so they can be tested with fakes.
+
+#### Web scripts
+
+A few checks cannot be expressed as a unit test, so they live in `web/scripts/` and are run from `web/`:
+
+| Command | Checks |
+|---|---|
+| `node scripts/check-theme-css.mjs` | The theme tokens compile, and brand/status colours are still fixed |
+| `node scripts/check-theme-timing.mjs` | The theme is applied before the first frame, so there is no flash |
+| `node scripts/capture-theme.mjs` | Screenshots every route in both themes into `web/.theme-shots/` |
+
+The last two drive a running dev server through Edge, so they need both, and on Windows they must run
+outside the default sandbox. Run `check-theme-timing.mjs` after touching anything that injects the theme
+script: a theme applied after the first frame is a visible flash, and it is not obvious from reading the
+code.
+
+### 10. Changing the database schema
+
+The schema is the GORM models in `internal/domain/entity`. There are no SQL migration files.
+
+1. Edit or add the model, with explicit `gorm:"type:..."` tags so column types do not drift.
+2. Add the model to `entity.Models()` if it is a new table, in dependency order (referenced tables
+   first).
+3. Update `internal/domain/entity/models_test.go`: expected table name, expected columns, and any new
+   unique index or `ON DELETE` rule.
+4. Run `go run ./cmd/migrate/` and verify against a real database. The entity tests assert the model's
+   intent; only a database proves the DDL is accepted.
+
+AutoMigrate is additive, so an existing installation picks up new tables, columns, indexes and
+constraints without data loss - and anything it cannot express stays in place rather than being
+dropped. Constraints worth respecting when you edit a model:
+
+- Declare `ON DELETE` behaviour explicitly. It is real data-safety logic, not decoration: deleting a
+  user cascades to their own rows but only detaches links.
+- Put `constraint:` on the **association** field (for example `Link.User`), not on the foreign-key
+  field, or the generated DDL will disagree with the tag you wrote.
+- Set `type:` for anything where the Go type would pick the wrong column type.
+- Give every unique rule the repository depends on an explicit unique index.
+
+Things AutoMigrate does **not** do, and that therefore need a hand-written statement in a release
+procedure: renaming a column, narrowing a type, dropping a column, and backfilling data. Treat these
+as deliberate operations with a backup, not as part of a normal change.
+
+### 11. Documentation
+
+| Document | Owns |
+|---|---|
+| `README.md` | What the project is, how to run it |
+| `README.zh.md` | The same README in Chinese; `README.md` is the source, so the two change together |
+| `CONTRIBUTING.md` | This file: the architecture and the decisions behind it (Part 1), the workflow that ships a change (Part 2), and the conventions the code follows (Part 3) |
+
+Documentation is part of the change, not a follow-up. If you make a decision a future reader would
+question, write the reason next to the code (`why`, not `what`) and mention it in Part 1 if it
+affects the architecture.
+
+## Part 3: Code style
+
+Conventions used in this repository. They follow what the code already does, so the goal is
+consistency rather than reform. When something here contradicts the code, the code wins - and the
+document should be fixed in the same pull request.
+
+Tooling already enforces most of this: `gofmt` and `goimports` through `golangci-lint`, ESLint and
+Prettier-style formatting on the frontend. What tooling cannot check is naming, structure and the
+quality of a comment, which is what the rest of this document is about.
+
+### 1. General principles
+
+- **Optimise for the next reader.** Code is read far more often than it is written. A slightly longer
+  name or an extra comment costs nothing; an unexplained decision costs hours.
+- **Match the neighbours.** A new file should be indistinguishable in style from the file next to it.
+- **Prefer boring, explicit code.** No clever indirection, no reflection, no generics where a loop
+  would read better. This codebase is a straightforward layered application and should stay that way.
+- **One reason to change per file.** A service handles one resource; a handler exposes one resource.
+- **Delete rather than comment out.** Git remembers.
+- **No dead code, no unused exports, no "just in case" parameters.**
+
+### 2. Comments
+
+A comment explains **why**, never **what**. The code already says what it does.
+
+```go
+// Good: the reader cannot guess this rule from the statement.
+// A custom short code gets a friendly error, but a random one is regenerated and retried,
+// so a check-then-insert race resolves itself instead of failing the request.
+if isDuplicateKey(err) { ... }
+```
+
+```go
+// Bad: restates the code, and the next edit makes it a lie.
+// Check if duplicate key error.
+if isDuplicateKey(err) { ... }
+```
+
+Write a comment when:
+
+- The reason for a choice is not obvious (a workaround for a third-party bug, a deliberate
+  security trade-off, an ordering constraint).
+- A rule was tightened because of a specific past bug. Say what the old behaviour was, briefly.
+- A number is a decision: `// bcrypt caps at 72 bytes` beats a mystery `72`.
+
+Do not write a comment when:
+
+- It restates a signature or a well-named function.
+- It is a changelog ("added X", "removed Y"), or a reference to a ticket number that means nothing
+  outside that ticket.
+- It documents behaviour the function does not have. Fix the code or the comment, never leave the
+  contradiction.
+
+Exported identifiers in Go carry a real doc comment (a full sentence starting with the name) because
+linters require it and because `go doc` shows it.
+
+Section banners are used sparingly in longer files:
+
+```go
+// ==================== Auth ====================
+```
+
+### 3. Go
+
+#### Naming
+
+- `camelCase` locals, `PascalCase` exported, `snake_case` only in JSON and database tags.
+- Initialisms keep their case: `userID`, `shortURL`, `apiToken`, but never `Url`/`Id`.
+- Interfaces that a consumer declares are named for the behaviour, not the implementation:
+  `AuthService`, `ClickWriter`, `ClickPublisher`.
+- Booleans read as a statement: `isActive`, `hasPassword`, `slugTaken`.
+- Package names are short, lower case, no underscores: `auth`, `link`, `folder`, `utm`.
+
+#### Declarations
+
+- Group imports into two blocks separated by a blank line: standard library and third party first,
+  then this module's packages (`github.com/booondenz/kada/...`). `goimports` with
+  `local-prefixes` enforces the split.
+- Declare the zero value as the useful default when you can: `var total int64` over an arbitrary
+  initialiser.
+- Prefer a table (a slice of structs) over a chain of `if` when validating a set of cases.
+- Keep functions short enough to hold in your head. If a function needs section comments, it is
+  usually two functions.
+- Return early instead of nesting: guard clauses first, happy path last.
+
+#### Types and pointers
+
+- Use a pointer field when "absent" is meaningfully different from the zero value, and say so in the
+  struct tag (`*string` for a nullable column, `*bool` for a tri-state update).
+- Never take an address of a loop variable, and never return a pointer to a local that a caller might
+  mutate by accident.
+- Convert between layers with an explicit mapper (`toUserInfo`, `linkInfoFromEntity`) rather than
+  sharing a struct across layers with tags for both.
+
+#### Concurrency and context
+
+- Every function that talks to the network or the database takes `ctx context.Context` as its first
+  parameter and uses `db.WithContext(ctx)`.
+- Do not start a goroutine without a way for it to stop.
+- Sharing a value across goroutines means it is immutable or guarded; there is no third option.
+
+#### Security-shaped style
+
+- Never build SQL by string concatenation of user input; pass values as parameters.
+- Never trust a header or an ID from the client for an ownership decision - check `user_id` in the
+  query.
+- When an error leaves the system, log the cause and return a generic message.
+
+### 4. Go: errors
+
+- Wrap with context and `%w` so the chain survives:
+  `fmt.Errorf("failed to send SMS: %w", err)`.
+- Return a sentinel only when a caller must branch on it, and put it where both layers can import it
+  without a cycle (`domain.ErrEmailTaken`).
+- Messages are lower case, no trailing punctuation, no "oops", and safe to show a user.
+- Handle every error, or discard it explicitly with `_ =` and a comment saying why it is safe. Silent
+  discards are the one thing reviewers consistently reject.
+- Do not log and return the same error at every level; log once, where the context is richest
+  (usually the service), and add context on the way up.
+
+```go
+// Good
+if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
+    log.Printf("create folder %q for user %d failed: %v", row.Name, row.UserID, err)
+    if isDuplicateKey(err) {
+        return nil, ErrFolderNameTaken
+    }
+    return nil, fmt.Errorf("failed to create folder: %w", err)
+}
+```
+
+### 5. Go: layering
+
+The rule that keeps the codebase testable:
+
+| Layer | May | Must not |
+|---|---|---|
+| `handler` | Bind and validate JSON, map errors to status codes, call one service | Run SQL, contain business rules, import another handler |
+| `service` | Business rules, ownership checks, transactions, cache invalidation | Touch `*gin.Context`, format HTTP responses |
+| `infra` | Talk to an external system | Know about a specific handler or route |
+| `domain` | Structs, sentinels, pure helpers | Import a service, a handler or `infra` |
+
+A handler declares the slice of the service it needs as its own interface. That is what allows
+handler tests to run without a database:
+
+```go
+type AuthService interface {
+    SendSMSCode(ctx context.Context, phone string) error
+    // ...
+}
+```
+
+Ownership is enforced in the service, in the query:
+
+```go
+// Good: a row belonging to somebody else simply does not match.
+tx.Where("id = ? AND user_id = ?", folderID, userID).First(&row)
+```
+
+```go
+// Bad: fetch first, compare later - and one forgotten comparison is an authorization bug.
+tx.Where("id = ?", folderID).First(&row)
+if row.UserID != userID { ... }
+```
+
+### 6. Database (GORM)
+
+- Models live in `internal/domain/entity` and are the schema. Transport structs live in
+  `internal/domain/models.go` and are not the schema. Keep the two apart.
+- Declare `type:` explicitly when the Go type would pick the wrong column type, and name every index,
+  unique constraint and `ON DELETE` rule you rely on.
+- Put `constraint:` on the **association** field, not on the foreign-key field.
+- A pointer column means nullable; a non-pointer column means `NOT NULL`.
+- Prefer the query builder for anything a reader can follow:
+
+```go
+var rows []entity.Link
+err := s.db.WithContext(ctx).
+    Where("user_id = ?", userID).
+    Order("created_at DESC").
+    Limit(pageSize).Offset((page - 1) * pageSize).
+    Find(&rows).Error
+```
+
+- Reach for raw SQL only when a single statement is genuinely the point, and say so in a comment:
+  atomic consume-and-return, `ON CONFLICT DO NOTHING` idempotency, bulk `INSERT ... SELECT`. The
+  existing examples are in `auth_service.go`, `click_store.go` and `link_service.go`.
+- Bound parameters only. Never concatenate a value into SQL, including an `ORDER BY` - map a sort key
+  to a fixed string instead:
+
+```go
+orderBy := "l.created_at DESC"
+switch sort {
+case "clicks_desc":
+    orderBy = "l.click_count DESC"
+}
+```
+
+- GORM drops a field from an `UPDATE` when it is nil, and also when it points at a zero value. When
+  the difference matters (`is_active = false`, `folder_id = NULL`), build an explicit `map[string]any`
+  and pass real values, using `gorm.Expr("NULL")` to clear a column.
+- An update that must report "no such row" needs its own check, because `Updates` does not error on
+  zero rows:
+
+```go
+res := tx.Model(&entity.Folder{}).Where("id = ? AND user_id = ?", id, userID).Update("name", name)
+if res.RowsAffected == 0 {
+    return gorm.ErrRecordNotFound
+}
+```
+
+- Read back a row after updating it inside the same transaction, so the caller never receives a
+  half-updated value.
+
+### 7. TypeScript / React
+
+- TypeScript strict everywhere; no `any`. Use `unknown` and narrow it, as the existing `catch`
+  blocks do.
+- Components are function components. `"use client"` only where interactivity or browser APIs
+  require it.
+- Server state comes from SWR hooks; all HTTP goes through `src/lib/api.ts`, which is the only place
+  that knows the endpoint shapes and attaches the bearer token. Do not call `fetch` in a component.
+- Local UI state stays in the component; anything shared goes in a context provider
+  (`I18nProvider`).
+- Keep components small and named exports for helpers. Presentational pieces live in
+  `src/components`, route entries in `src/app`.
+- Tailwind utility classes inline, with `className` composition kept readable; prefer the existing
+  helpers (`inputBase`, `fieldState`) over repeating long class strings.
+- Effects need a cleanup path when they hold a resource - dispose WebGL textures, clear intervals and
+  cancel listeners.
+- Anything read from `localStorage` during render must be behind `useHydrated()`. A Client Component is
+  still prerendered on the server, where storage does not exist, so rendering it directly makes the two
+  renders disagree and React discards the tree.
+- Frontend tests use Vitest and cover pure logic (geometry, parsers, utilities), not rendered layout.
+
+#### Colours
+
+Write the role, not the shade:
+
+| Use | Not |
+|---|---|
+| `bg-canvas`, `bg-subtle`, `bg-muted-surface` | `bg-white`, `bg-gray-50`, `bg-gray-100` |
+| `text-strong`, `text-body`, `text-muted`, `text-faint` | `text-gray-900`, `text-gray-700`, `text-gray-500`, `text-gray-400` |
+| `border-line`, `border-line-strong` | `border-gray-200`, `border-gray-300` |
+
+Both resolve to the same colour in the light theme, so the change is invisible - and in the dark theme
+the role is what makes it correct. Brand and status colours (`bg-indigo-600`, `text-red-600`) are left
+alone on purpose: they are fixed in both themes, so a pair like `bg-indigo-600 text-white` cannot break.
+
+Two traps this convention exists to avoid, both of which shipped once and were caught in review:
+
+- **A themed surface on a permanently dark screen.** The sign-in screens are dark in both themes, so the
+  selected segment must be literal `bg-white` with dark type. Given `bg-canvas` it turned black in dark
+  mode and the label - whose colour is fixed - went with it.
+- **A colour whose partner did not move.** Redefining a whole palette for dark mode breaks every
+  `bg-X text-white` pair whose `X` got brighter. Redefine roles, not ramps.
+
+### 8. Frontend copy and i18n
+
+The UI is bilingual and the dictionary is keyed by the Chinese source string:
+
+```tsx
+const t = useT();
+<label>{t("手机号")}</label>
+```
+
+- Every user-facing string goes through `t()`.
+- Add the English entry to `web/src/lib/i18n/dictionary.ts` in the same change.
+- Never build a sentence by concatenating translated fragments; translate the whole sentence.
+- `zh` is the identity map, so a missing key degrades to Chinese instead of breaking the page. That
+  is a safety net, not a licence to skip a translation.
+- Dates and numbers are formatted for the active locale, not with a hardcoded locale.
+
+### 9. Tests
+
+- Table-driven tests with a `reason` field, so a failure names the case:
+
+```go
+tests := []struct {
+    code    string
+    isValid bool
+    reason  string
+}{
+    {"abc123", true, "alphanumeric"},
+    {"", false, "empty string"},
+}
+```
+
+- Test the behaviour, not the implementation: assert on a returned value or a generated SQL string,
+  not on private state.
+- A test name says what is guaranteed: `TestUserHidesPasswordHash`, not `TestUserStruct`.
+- No database in unit tests. Use a `DryRun` GORM session to assert generated SQL, and fakes for
+  service interfaces.
+- A bug fix should come with the test that fails without it.
+- Do not skip or comment out a failing test; fix it or delete it.
+
+### 10. Configuration and secrets
+
+- `config.Load()` in `config` is the only place that reads the environment. Adding a setting
+  means: a field on `Config`, a default (or a comment saying why there is none), a row in
+  `.env.example`, and a row in the README table.
+- Never commit a real secret, and never log one. Log a masked value when you must identify it
+  (`maskPhone`).
+- A placeholder value in an example file is a trap: it looks configured and fails at runtime. Leave
+  optional credentials empty, and detect the placeholder case explicitly where it is cheap.
+- Weak defaults are refused in release mode rather than trusted.
+
+#### Empty means something different from unset
+
+`??` accepts an empty string, `||` does not. Pick deliberately and write down which one you mean,
+because the difference is invisible until it breaks:
+
+```ts
+// unset -> development default, "" -> the empty string, a value -> that value
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
+```
+
+A hardcoded default in the framework config used to supply that empty string, which applied to local
+development too, where it silently beat the fallback and sent every request to the dev server - an HTML
+404 instead of JSON.
+
+The follow-up is worse than the original bug: **the bundler replaces a build-time variable, and "unset"
+and "" are not the same thing.** A source that reads an empty string as "use relative requests" and an
+undefined value as "use the development default" produces two different behaviours from one build. An
+empty value therefore cannot carry meaning across a build.
+
+The rule in this repository: **use an explicit sentinel, not an empty string**, when a build-time
+setting needs to mean something:
+
+```ts
+const SAME_ORIGIN = "same-origin";   // inlined reliably, unlike ""
+```
+
+And remember that `VITE_API_URL` is fixed at build time: set it as a build argument
+(`web/Dockerfile`, `docker-compose.yml`) or in the build step (`ci.yml`), never as a container
+runtime environment variable, where it does nothing at all.
+
+### 11. Formatting quick reference
+
+| Concern | Rule |
+|---|---|
+| Indentation | Tabs in Go (`gofmt`), 2 spaces in TS/CSS/JSON/Markdown |
+| Line length | ~100 columns in Go, ~100 in TS; comments wrapped at ~80 |
+| Trailing commas | Required in multiline TS literals (Prettier) |
+| Blank line | Between logical blocks, not after `{` or before `}` |
+| Import order | stdlib, third-party, then `github.com/booondenz/kada/...` |
+| File endings | LF, one trailing newline (enforced by `.gitattributes`) |
+| Commit messages | English, one line, `type: imperative summary` - see [Part 2, section 6](#6-commit-messages) |
+
+Run before pushing:
+
+```bash
+golangci-lint run --timeout=5m   # gofmt, goimports, govet, staticcheck, gosec, misspell
+cd web && npx tsc --noEmit && npm run lint
+```

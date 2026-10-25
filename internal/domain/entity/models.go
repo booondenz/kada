@@ -149,9 +149,10 @@ type ClickLog struct {
 
 // User is an account.
 //
-// Accounts are created and signed in by phone number plus an SMS code, and nothing else: email/password
-// and WeChat sign-in were both removed (see docs/design.md - an individual cannot register a WeChat Open
-// Platform application, and an email+password path nobody could be bothered to verify was a liability).
+// An account is a row minted by POST /api/auth/guest and nothing else: there is no sign-in, and every
+// identity column below is NULL for every account this build can create. Phone plus SMS and WeChat
+// sign-in were both removed (see CONTRIBUTING.md, Part 1 section 7.1) - an individual cannot register a WeChat
+// Open Platform application, and the phone number only ever existed to claim a guest account with.
 //
 // The email, name, avatar, password_hash, wechat_openid and wechat_unionid columns are kept so that
 // accounts created before that decision keep their data. Nothing reads them any more: the API publishes the

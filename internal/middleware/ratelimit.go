@@ -140,7 +140,7 @@ func (rl *RateLimiter) Redirect() gin.HandlerFunc {
 // Action - guide page interactions, the one endpoint here that only writes analytics.
 //
 // Tighter than Redirect on purpose, and the damage of getting it wrong is bounded in the safe direction:
-// these rows are recorded but never counted (see docs/design.md 7.3), so a limit that drops a report costs
+// these rows are recorded but never counted (see CONTRIBUTING.md, Part 1 section 7.3), so a limit that drops a report costs
 // a line of engagement detail, while what it stops is a script manufacturing activity on somebody else's
 // link. It is still far above what one visitor generates, which is one to three reports per page.
 func (rl *RateLimiter) Action() gin.HandlerFunc {

@@ -104,7 +104,7 @@ Two things in that table are not about the cache:
 | ADMIN_SECRET | The operator password for the takedown console; empty refuses everybody |
 
 In production these come from GitHub repository secrets and are written into `/opt/kada/backend/.env` by
-the deploy job; the deployment section of [docs/design.md](docs/design.md) explains what that job does.
+the deploy job; the deployment section of [CONTRIBUTING.md](CONTRIBUTING.md) explains what that job does.
 
 ## Layout
 
@@ -113,7 +113,7 @@ cmd/       entry points: the API, the migration and the load generator
 config/    environment parsing (the single source of configuration)
 internal/  the application: domain, handler, service, infra, middleware, metrics
 web/       Vite single-page app, built to static files and served by nginx
-docs/      Design, contributing and code-style documentation
+CONTRIBUTING.md  The documentation: design, workflow and code style, in one file
 deploy/    Deployment scripts, and deploy/nginx/ with the reverse proxy configuration
 scripts/   Maintenance scripts and the deploy-step test harness
 go.mod     the module is the repository root: there is no backend/ directory to cd into

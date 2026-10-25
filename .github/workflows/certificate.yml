@@ -3,7 +3,7 @@
 # The certificate reached a day from expiry before anyone noticed. `certbot.timer` had been failing every
 # twelve hours - its authenticator cannot bind port 80, which the nginx container holds - and both TLS
 # checks in ci.yml stay green through an expired certificate: the on-host one passes `-k` deliberately,
-# and the runner-side one is advisory. See `docs/design.md` section 10.1.
+# and the runner-side one is advisory. See `CONTRIBUTING.md` section 10.1.
 #
 # The expiry is read from the HOST over the same SSH connection the deploy job uses, rather than from the
 # runner with `openssl s_client`. The runner's view of this site is not trusted (the edge has refused a
@@ -165,7 +165,7 @@ jobs:
           Nothing renews it on its own: the authenticator recorded for this lineage is \`standalone\`, which
           cannot bind port 80 because the \`kada-nginx\` container holds it under \`--network host\`. What the
           authenticator should be, why DNS-01 is the only one that works while the domain carries no
-          records, and the commands to renew by hand are in \`docs/design.md\` section 10.1.
+          records, and the commands to renew by hand are in \`CONTRIBUTING.md\` section 10.1.
 
           A renewed certificate is not served until the container reloads, so a renewal is two steps:
 
