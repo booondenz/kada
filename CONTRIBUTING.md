@@ -1244,7 +1244,7 @@ two to drift apart.
 | Run the web app | `cd web && npm run dev` |
 | Go tests | `go test ./... -v` |
 | Web tests | `cd web && npm test` |
-| Go tests with the race detector (what CI runs) | `go test ./... -v -count=1 -race -coverprofile=coverage.out` |
+| Go tests with the race detector (what CI runs) | `go test ./... -count=1 -race -coverprofile=coverage.out` |
 | `go vet` / ESLint | `go vet ./...` / `cd web && npm run lint` |
 | `golangci-lint` (what CI runs) | `golangci-lint run --timeout=5m ./...` |
 | Apply the schema | `go run ./cmd/migrate/` |
@@ -1406,7 +1406,7 @@ Keep the diff reviewable. If a change needs a large mechanical commit (a rename,
 in its own commit so the meaningful part stays readable.
 
 The CI pipeline must be green before merge: `go vet`, `golangci-lint`, Go tests, ESLint,
-`tsc --noEmit`, and the frontend production build.
+`tsc --noEmit`, the frontend tests, and the production build.
 
 That green pipeline is also the deploy. The same jobs run again on the push to `main`, and the `deploy`
 job they gate - which a pull request never starts - writes the runtime env files from repository
