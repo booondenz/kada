@@ -1,5 +1,5 @@
-// Runs the two steps of .github/workflows/certificate.yml against a stubbed `ssh` and `gh`, so the
-// reporting rules are observed instead of assumed.
+// Runs the two steps of the certificate job in .github/workflows/ci.yml against a stubbed `ssh` and `gh`,
+// so the reporting rules are observed instead of assumed.
 //
 //   node scripts/verify-certificate-check.test.js
 //
@@ -29,14 +29,14 @@ const toPosix = (p) => p.replace(/\\/g, "/");
 fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(outDir, { recursive: true });
 
-const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "certificate.yml"), "utf8");
+const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8");
 
 // --- the wiring, which is not visible from inside either step -------------------------------------------
 // Both steps are extracted and run on their own, so nothing here would notice a mistyped `steps.read`
 // reference or a missing permission: the workflow would simply not do what its steps do.
 const wiring = [
   ["the schedule exists", /^\s{2}schedule:/m],
-  ["the workflow may open an issue", /^\s{2}issues: write$/m],
+  ["the workflow may open an issue", /^\s+issues: write$/m],
   ["the read step is addressable", /^\s+id: read$/m],
   ["the status is handed over", /\$\{\{\s*steps\.read\.outputs\.status\s*\}\}/],
   ["the date is handed over", /\$\{\{\s*steps\.read\.outputs\.not_after\s*\}\}/],

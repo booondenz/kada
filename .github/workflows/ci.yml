@@ -1,14 +1,27 @@
 name: CI Pipeline
 
+# One workflow for everything that runs on a schedule or on a push: the build and the deploy on a push to
+# main, and the certificate expiry check daily. They are one file because they act on the same host with the
+# same secrets; each job's `if:` is what keeps them out of each other's runs.
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # Off the hour on purpose: everything else in this repository runs at :00.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # The event is part of the group, so the daily certificate check can neither cancel nor be cancelled by a
+  # deploy: they share a branch but not a purpose.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  # Read is all the build and deploy jobs need. The certificate job asks for more, for itself only.
+  contents: read
 
 env:
   # Pin the patch release, not the minor line. The go directive in go.mod is a patch-level floor
@@ -19,10 +32,12 @@ env:
   NODE_VERSION: "22"
 
 jobs:
+
   # ----- Go lint -----
   go-lint:
     name: Go Lint
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v7
 
@@ -42,6 +57,7 @@ jobs:
   go-test:
     name: Go Tests
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
     services:
       postgres:
         image: postgres:16-alpine
@@ -85,9 +101,13 @@ jobs:
           path: coverage.out
           retention-days: 7
 
-  # ----- Web lint -----
-  web-lint:
-    name: Web Lint
+  # ----- Web: lint, types, tests, build -----
+  # One job rather than two: the steps share one `npm ci` and one node_modules cache, and splitting them
+  # bought a second install to save a few seconds of parallel lint. The tests run here too - this is the
+  # only place they run at all.
+  web:
+    name: Web
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -111,31 +131,13 @@ jobs:
         working-directory: web
         run: npm run lint
 
-  # ----- Web build -----
-  web-build:
-    name: Web Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Cache node_modules
-        uses: actions/cache@v6
-        with:
-          path: web/node_modules
-          key: ${{ runner.os }}-npm-${{ hashFiles('web/package-lock.json') }}
-          restore-keys: ${{ runner.os }}-npm-
-
-      - name: Install dependencies
-        working-directory: web
-        run: npm ci
-
       - name: Type check
         working-directory: web
         run: npx tsc --noEmit
+
+      - name: Run tests
+        working-directory: web
+        run: npm test
 
       - name: Build
         working-directory: web
@@ -165,7 +167,7 @@ jobs:
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: [go-lint, go-test, web-lint, web-build]
+    needs: [go-lint, go-test, web]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v7
@@ -181,7 +183,7 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/server ./cmd/server/
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/migrate ./cmd/migrate/
 
-      # Built by the web-build job - same commit, same VITE_API_URL - and handed over as one
+      # Built by the web job - same commit, same VITE_API_URL - and handed over as one
       # artifact. Setting up Node and running `npm ci && npm run build` here again cost ~35s of the deploy
       # for a bundle that was already sitting in the workspace next door.
       - name: Fetch the web build
@@ -681,30 +683,185 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::warning title=Public smoke test did not pass::$ORIGIN was not reachable from the runner. The deployment itself succeeded (checked on the host)."
 
-  # ----- Summary -----
-  pipeline-summary:
-    name: Pipeline Summary
+  # ----- Certificate expiry, daily -----
+  #
+  # Reports how long the certificate the site serves has left, because nothing else does: it once reached a
+  # day from expiry while both TLS checks in the deploy stayed green - the on-host one passes -k on purpose,
+  # and the runner-side one is advisory.
+  #
+  # The expiry is read from the HOST over the same SSH connection the deploy job uses, rather than from the
+  # runner: the runner's view of the site is not trusted, and while the domain carries no records - as it
+  # did during an ICP filing - there is nothing for it to connect to at all.
+  #
+  # A certificate close to expiry does not fail the run: the issue it opens is the durable channel, and a
+  # scheduled job that stays red for weeks is the alarm people stop reading. One that cannot be read does
+  # fail the run, because that is the check itself being wrong.
+  #
+  # GitHub disables a scheduled workflow after 60 days without repository activity, which is what
+  # workflow_dispatch above is for, and why the two live in one file.
+  certificate:
+    name: Certificate expiry
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    needs: [go-lint, go-test, web-lint, web-build, deploy]
-    if: always()
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Opening the issue. If a run reports "Resource not accessible by integration", the repository is set
+      # to Settings -> Actions -> General -> Workflow permissions -> read-only and refuses this request.
+      issues: write
+    env:
+      CERT_PATH: /etc/letsencrypt/live/kada.click/fullchain.pem
+      WARN_DAYS: "14"
+      EXPIRY_TITLE: The certificate the site serves is close to expiry
+      UNREADABLE_TITLE: The certificate check cannot read the certificate
+
     steps:
-      - name: Report status
+      # `gh` works out which repository it is talking about through git, so a job without a checkout fails
+      # with "failed to run git: fatal: not a git repository" - which is how the first version of this
+      # workflow failed, at 08:40 on 2026-10-14, after it had already read the certificate correctly. The
+      # check does not need the files; `gh` needs the repository.
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Read the certificate from the host
+        id: read
+        env:
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
         run: |
+          set -euo pipefail
+
+          # The key arrives as a secret, so it is written to a file with the permissions ssh insists on.
+          KEY="$RUNNER_TEMP/kada_cert_key"
+          printf '%s\n' "$SSH_KEY" > "$KEY"
+          chmod 600 "$KEY"
+
+          # LogLevel=ERROR silences the "Permanently added ... to the list of known hosts" notice, which
+          # otherwise arrives before anything else and - for a certificate that cannot be read - becomes
+          # the reason quoted into the issue.
+          SSH=(ssh -i "$KEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR
+               -o UserKnownHostsFile="$RUNNER_TEMP/kada_cert_known_hosts" -o ConnectTimeout=15
+               -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
+
+          # One round trip, and a protocol rather than exit statuses: what the step needs is the date and
+          # whether the certificate is inside the warning window. `-checkend` answers the second without
+          # parsing the date, so no date format or timezone assumption is baked in here.
+          #
+          # `live/` holds symlinks into an archive only root can read, so the read is attempted directly and
+          # then with `sudo -n`: whether the deploy user is root or a sudoer, one of the two works.
+          remote="p='$CERT_PATH'
+          if [ -r \"\$p\" ]; then RUN=\"\"; else RUN=\"sudo -n\"; fi
+          if ! \$RUN openssl x509 -enddate -noout -in \"\$p\" 2>/dev/null; then echo 'status=unreadable'; exit 0; fi
+          if \$RUN openssl x509 -checkend $((WARN_DAYS * 86400)) -noout -in \"\$p\" >/dev/null 2>&1; then
+            echo 'status=ok'
+          else
+            echo 'status=expiring'
+          fi"
+
+          # `|| true`: a refused or dropped connection is a result to report, not a failure to raise here -
+          # the next step decides, and it is the one that has to be loud about it.
+          out=$("${SSH[@]}" "$SERVER_USER@$SERVER_HOST" "$remote" 2>&1) || true
+
+          status=$(printf '%s\n' "$out" | sed -n 's/^status=//p' | tail -1)
+          not_after=$(printf '%s\n' "$out" | sed -n 's/^notAfter=//p' | tail -1)
+          reason=$(printf '%s\n' "$out" | head -1)
+
+          if [ -z "$status" ]; then
+            status=unreadable
+          fi
+
+          # The file is line-based, so each value is one line - hence `reason` being the first line only.
           {
-            echo "## CI Pipeline Results"
-            echo ""
-            echo "| Job | Result |"
-            echo "|-----|--------|"
-            for job in go-lint go-test web-lint web-build deploy; do
-              case "$job" in
-                go-lint) result="${{ needs.go-lint.result }}" ;;
-                go-test) result="${{ needs.go-test.result }}" ;;
-                web-lint) result="${{ needs.web-lint.result }}" ;;
-                web-build) result="${{ needs.web-build.result }}" ;;
-                deploy) result="${{ needs.deploy.result }}" ;;
-              esac
-              echo "| $job | $result |"
-            done
-            echo ""
-            echo "[View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-          } >> "$GITHUB_STEP_SUMMARY"
+            echo "status=$status"
+            echo "not_after=$not_after"
+            echo "reason=$reason"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "status=$status"
+          echo "not_after=${not_after:-unknown}"
+
+      - name: Report the remaining validity
+        env:
+          STATUS: ${{ steps.read.outputs.status }}
+          NOT_AFTER: ${{ steps.read.outputs.not_after }}
+          REASON: ${{ steps.read.outputs.reason }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Every gh call goes through this. `set -e` alone turns a refused API call into "Process completed
+          # with exit code 1" and nothing else, and a check that cannot report looks exactly like a check
+          # that had nothing to report - which is the failure this workflow exists to prevent, one level up.
+          #
+          # The message goes to stderr because the callers use this in a command substitution: on stdout it
+          # would be captured into the variable it was meant to fill, and the reason would vanish - which is
+          # what "The certificate check could not report:" printing nothing looked like the first time.
+          gh_or_fail() {
+            if ! out=$(gh "$@" 2>&1); then
+              echo "::error title=The certificate check could not report::$out" >&2
+              exit 1
+            fi
+            printf '%s\n' "$out"
+          }
+
+          # One issue per condition, found by a marker in the body rather than by its title: the title has
+          # to stay fixed for a reader, the body carries the date, and a search index lags a new issue.
+          # Commenting on the issue that exists is what keeps a daily job from opening a daily issue.
+          report() {
+            title="$1"; marker="$2"; body="$3"
+            expr=".[] | select((.body // \"\") | contains(\"$marker\")) | .number"
+            existing=$(gh_or_fail issue list --state open --limit 200 --json number,body --jq "$expr" | head -1)
+            if [ -n "$existing" ]; then
+              echo "reporting on the open issue #$existing"
+              gh_or_fail issue comment "$existing" --body "$body" > /dev/null
+            else
+              echo "opening an issue"
+              gh_or_fail issue create --title "$title" --body "$body" > /dev/null
+            fi
+          }
+
+          case "$STATUS" in
+            ok)
+              echo "the certificate is valid for more than $WARN_DAYS days (expires ${NOT_AFTER:-unknown})"
+              ;;
+
+            expiring)
+              report "$EXPIRY_TITLE" "kada:certificate-expiry" "$(cat <<EOF
+          The certificate the site serves is inside its last $WARN_DAYS days.
+
+              $CERT_PATH
+              notAfter: ${NOT_AFTER:-unknown}
+
+          Nothing renews it on its own: the authenticator recorded for this lineage is \`standalone\`, which
+          cannot bind port 80 because the \`kada-nginx\` container holds it under \`--network host\`. What the
+          authenticator should be, why DNS-01 is the only one that works while the domain carries no
+          records, and the commands to renew by hand are in \`CONTRIBUTING.md\` section 10.1.
+
+          A renewed certificate is not served until the container reloads, so a renewal is two steps:
+
+              sudo docker exec kada-nginx nginx -t && sudo docker exec kada-nginx nginx -s reload
+
+          <!-- kada:certificate-expiry -->
+          EOF
+          )"
+              echo "::warning title=The certificate is close to expiry::notAfter ${NOT_AFTER:-unknown}"
+              ;;
+
+            *)
+              report "$UNREADABLE_TITLE" "kada:certificate-unreadable" "$(cat <<EOF
+          The scheduled check cannot read the certificate it exists to watch.
+
+              $REASON
+
+          It reads \`$CERT_PATH\` on the host over SSH. A moved path, a rotated key or a host that is down
+          turns this step into something that checks nothing while looking exactly like a check that
+          passes, so it fails the run as well as opening this issue.
+
+          <!-- kada:certificate-unreadable -->
+          EOF
+          )"
+              echo "::error title=The certificate check cannot read the certificate::$REASON"
+              exit 1
+              ;;
+          esac

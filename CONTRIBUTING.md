@@ -1109,12 +1109,13 @@ SNI to the loopback address:
 **Nothing else watches the expiry**, which is how it reached a day from it. The deploy's own TLS check
 passes an expired certificate by design (it passes `-k`, because it asserts which files are being served,
 not that they are trusted), and the runner-side smoke test is advisory and cannot reach the site at all
-while the name does not resolve. `.github/workflows/certificate.yml` fills that gap: daily, it reads the
-expiry **from the host** over the same SSH connection the deploy uses - authoritative, and independent of
-DNS and the edge - and opens an issue when less than 14 days remain, commenting on the one that is open
-instead of opening a second. It deliberately does not fail the run: a scheduled job that stays red for weeks
-is the alarm people stop reading, and the issue is the durable channel. It does fail when it cannot read the
-certificate, because a check that checks nothing must not look like a check that passes.
+while the name does not resolve. The `certificate` job in `.github/workflows/ci.yml` fills that gap:
+daily, it reads the expiry **from the host** over the same SSH connection the deploy uses - authoritative,
+and independent of DNS and the edge - and opens an issue when less than 14 days remain, commenting on the
+one that is open instead of opening a second. It deliberately does not fail the run: a scheduled job that
+stays red for weeks is the alarm people stop reading, and the issue is the durable channel. It does fail
+when it cannot read the certificate, because a check that checks nothing must not look like a check that
+passes.
 `scripts/verify-certificate-check.test.js` runs both of its steps against a stubbed `ssh` and `gh` to keep
 those rules honest.
 
