@@ -83,8 +83,10 @@ export function FilingCredits() {
           <ShieldCheck className="size-3.5" />
           {t("备案与隐私")}
         </span>
+        {/* The panel opens upwards, so the chevron points that way while it is closed and turns over once
+            the panel is out. */}
         <ChevronUp
-          className={cn("size-3.5 transition-transform", !open && "rotate-180")}
+          className={cn("size-3.5 transition-transform", open && "rotate-180")}
           aria-hidden="true"
         />
       </button>
