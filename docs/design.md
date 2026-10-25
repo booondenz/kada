@@ -222,7 +222,7 @@ the idempotent click insert, bulk insert-selects — and each of those sites is 
 | Anything unexpected | 500, with a generic message |
 
 Services return sentinel errors for the cases a handler must distinguish (for example
-`domain.ErrEmailTaken`), and wrap everything else with context so the log explains the failure while
+`domain.ErrLinkNotFound`), and wrap everything else with context so the log explains the failure while
 the response does not.
 
 ## 5. Data model
@@ -250,7 +250,7 @@ blocked_hosts   (standalone, keyed by host)
 | `utm_templates` | Reusable UTM sets | `utm_*` columns |
 | `api_tokens` | Programmatic access | `token_hash` (unique); the raw token is shown once |
 | `blocked_hosts` | Targets that are not served | `host` (unique; matched by suffix, so one row covers every subdomain), `category` (why), `note` |
-| `link_blocks` | One takedown of one link | `short_code` (copied, so the row outlives the link), `reason`, `evidence`, `operator` (the phone number that decided), `lifted_at`, `lift_reason`, `lifted_by` |
+| `link_blocks` | One takedown of one link | `short_code` (copied, so the row outlives the link), `reason`, `evidence`, `operator` (the literal `operator`: there is no account to attribute a decision to), `lifted_at`, `lift_reason`, `lifted_by` |
 | `abuse_reports` | Complaints from visitors | `short_code`, `link_id` (nullable - a report about a deleted link is still evidence), `reason`, `detail`, `contact`, `ip` (not published) |
 | `link_targets` | One destination of a link's pool | `url`, `weight` (share of the draw; 0 means never), `daily_quota` (0 means unlimited), `enabled`, `label`, `kind` (`url` or `wechat_group`), `expires_at` |
 | `link_target_audits` | One replacement of a pool | `operator`, `before` and `after` as JSON arrays |
@@ -299,7 +299,7 @@ Data fetching uses SWR against `src/lib/api.ts`, which is the single place where
 declared and where the bearer token is attached. Components never call `fetch` directly.
 
 The operator console is the one page whose entry the sidebar does not decide on its own: whether an account
-is an operator is a deployment setting (`ADMIN_PHONES`), so the shell asks the cheapest operator route once
+is an operator is a deployment setting (`ADMIN_SECRET`), so the shell asks the cheapest operator route once
 and shows the entry only if the answer is not a 403. The page itself still says so if it is opened directly -
 being added to or removed from that list should be visible, not guessed at. The entry has a group of its
 own at the bottom of the sidebar, because it is not a resource the product offers.
@@ -712,11 +712,10 @@ returns each report with whether its link is stopped now, which answers "has thi
 second status column that could disagree with it.
 
 The operator routes are `POST /api/admin/links/:code/block`, `.../unblock`, `GET .../blocks` and
-`GET /api/admin/reports`, mounted behind `ADMIN_PHONES` (comma separated). The list holds phone numbers
-rather than user ids because that is what the operator signs in with, and it is checked against the phone
-claim rather than by looking the account up - so a `kada_` API token cannot moderate anything, because it
-carries no number. An empty list refuses everybody: a missing environment variable must not be the thing
-that hands out the takedown routes.
+`GET /api/admin/reports`, mounted behind `ADMIN_SECRET`. The secret travels in `X-Admin-Secret` and is
+compared in constant time against the value the deployment was started with - there is no account to look
+up, so a `kada_` API token cannot moderate anything, because it carries no secret. An empty value refuses
+everybody: a missing environment variable must not be the thing that hands out the takedown routes.
 
 What this deliberately does not do: there is no admin page (four curl commands, and a console is the sort of
 thing that grows), no automatic category detection (that is a third-party URL-safety API, and a wrong
@@ -1111,7 +1110,9 @@ These are deliberate trade-offs, not oversights:
   batching the writes, not a broker.
 - **AutoMigrate cannot express every future change.** Renames, type narrowing and data backfills need
   a hand-written statement; there is no down-migration path.
-- **No background job scheduler.** Expiry is evaluated at read time rather than by a sweeper.
+- **No general job scheduler.** Two `go` loops in `main.go` are the only things on a timer: the
+  blocked-host list reloading every 30 seconds, and the orphaned-upload sweep running hourly. Link expiry
+  is evaluated at read time rather than by a sweeper.
 - **Single-tenant deployment.** There is no organisation or role model: an account owns its folders, tags
   and links and shares them with nobody. The `workspaces` table was the place a team model would have gone,
   and it was removed rather than kept warm - it grouped links without granting access, which is a filter
