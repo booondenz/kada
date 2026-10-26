@@ -1,0 +1,17 @@
+# Kada is a single-page app: the public pages are the front page, the privacy policy and the complaint form,
+# and `sitemap.xml` lists them. Everything else is either a session-scoped shell or not a page at all.
+User-agent: *
+Allow: /
+
+# The dashboard renders inside a guest session; a crawler that follows it indexes an empty shell.
+Disallow: /dashboard
+
+# A short link is a redirect and an uploaded file is content. Neither is a page, and crawling them spends
+# this deployment's rate-limit budget rather than anybody's attention.
+Disallow: /r/
+Disallow: /f/
+
+# The API is not a document.
+Disallow: /api/
+
+Sitemap: https://kada.click/sitemap.xml

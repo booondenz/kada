@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 export type Locale = "zh" | "en";
 
@@ -22,18 +22,31 @@ export function readStoredLocale(): Locale {
   }
 }
 
+/**
+ * What the document says about itself in the chosen language.
+ *
+ * The title in `index.html` is the Chinese one, because that is what a crawler reads before any JavaScript
+ * runs; this only keeps a visitor who chose English from sitting under a Chinese tab.
+ */
+const TITLES: Record<Locale, string> = {
+  zh: "Kada 短链接 · 免费短网址生成与点击统计",
+  en: "Kada · Free short links with click analytics",
+};
+
 function applyDocumentLang(locale: Locale) {
-  if (typeof document !== "undefined") {
-    document.documentElement.lang = locale === "en" ? "en" : "zh-CN";
-  }
+  if (typeof document === "undefined") return;
+  document.documentElement.lang = locale === "en" ? "en" : "zh-CN";
+  document.title = TITLES[locale];
 }
 
 /**
  * Holds the active UI language.
  *
  * The value is initialised straight from the persisted preference via a lazy
- * state initialiser, so the first client render is already correct and no
- * effect is needed to sync it.
+ * state initialiser, so the first render is already in the right language. The
+ * document, though, is not state: `lang` and the tab title are synced from an
+ * effect, which also covers the first load - otherwise a visitor who chose
+ * English would get an English UI under a `lang="zh-CN"` document.
  */
 export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(readStoredLocale);
@@ -45,7 +58,6 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // Storage can be unavailable (private mode); the in-memory value still applies.
     }
-    applyDocumentLang(next);
   }, []);
 
   const toggleLocale = useCallback(() => {
@@ -56,10 +68,13 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
       } catch {
         // See above.
       }
-      applyDocumentLang(next);
       return next;
     });
   }, []);
+
+  useEffect(() => {
+    applyDocumentLang(locale);
+  }, [locale]);
 
   const value = useMemo<I18nValue>(
     () => ({ locale, setLocale, toggleLocale }),

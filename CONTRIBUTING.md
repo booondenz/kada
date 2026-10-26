@@ -507,7 +507,20 @@ loses it, another device is another account, and an expiring token starts a new 
 not asking for a phone number first, and there is no form that turns the account into one that survives -
 [7.1](#71-the-sign-in-that-used-to-be) is what that would have been.
 
-### 7. Key flows
+#### 6.5 What a crawler sees
+
+The app renders in the browser, so the only HTML a crawler that does not run JavaScript (百度) receives is
+`web/index.html`: a Chinese title and description, the canonical URL, Open Graph tags, `WebApplication`
+structured data, and a `<noscript>` block that describes the product. Everything the app renders replaces
+`<div id="root">` on mount.
+
+Two files in `web/public/` complete it. `robots.txt` allows the front page, the privacy policy and the
+complaint form, and disallows the dashboard, short links, files and the API; `sitemap.xml` lists the same
+three. nginx serves both from the bundle and answers **404** for any path that is not one of the app's
+routes, because an app that answers 200 with the same shell for every URL teaches a crawler that every URL
+is a page.
+
+## 7. Key flows
 
 #### 7.1 The sign-in that used to be
 
@@ -659,9 +672,10 @@ The hit ratio this exposes is `(hit + negative_hit) / (hit + negative_hit + miss
 are answers served without PostgreSQL, and `miss` is a lookup that reached it. `negative_stored` is the
 write that turns a stream of requests for an absent code into requests the database never sees.
 
-`/metrics` is deliberately not reachable from the internet. nginx proxies `/api/`, `/r/` and `/assets/`
-and serves everything else from the frontend build, so a request for `/metrics` from outside gets
-`index.html`; reaching it means being on the host or holding a tunnel. These series describe traffic and
+`/metrics` is deliberately not reachable from the internet. nginx proxies `/api/`, `/r/` and `/f/` and
+serves the rest from the frontend build, and a path that is not one of the app's routes is a 404 - so a
+request for `/metrics` from outside gets nothing at all. Reaching it means being on the host or holding a
+tunnel. These series describe traffic and
 cache behaviour, so publishing them is a decision that wants a token or an allowlist in front of it
 rather than a wider bind.
 

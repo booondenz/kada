@@ -1,18 +1,75 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-    <title>Kada - Short link management platform</title>
+
+    <!--
+      This file is the whole of what a crawler that does not run JavaScript sees: 百度 does not run it, and
+      Google renders the app but still takes the title and description from here. The Chinese title and
+      description therefore name what the product does, in the words somebody would search for, and the
+      canonical points at the one address this site has.
+    -->
+    <title>Kada 短链接 · 免费短网址生成与点击统计</title>
     <meta
       name="description"
-      content="Smart short link management and analytics platform, compatible with WeChat/QQ/Xiaohongshu/SMS"
+      content="Kada 是一个免费短链接平台：长链接一键生成短网址，微信群二维码过期自动换新，一条链接可分流到多个目标，并提供点击量、平台分布与每日趋势统计。支持自定义域名、访问密码、UTM 与开放 API。"
     />
+    <link rel="canonical" href="https://kada.click/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Kada" />
+    <meta property="og:title" content="Kada 短链接 · 免费短网址生成与点击统计" />
+    <meta
+      property="og:description"
+      content="免费短链接：微信群二维码过期自动换新，一键分流到多个目标，带点击、平台分布与每日趋势统计。"
+    />
+    <meta property="og:url" content="https://kada.click/" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta name="twitter:card" content="summary" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Kada",
+        "url": "https://kada.click/",
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": "Web",
+        "inLanguage": "zh-CN",
+        "description": "免费短链接平台：长链接生成短网址，微信群二维码过期自动换新，一条链接可分流到多个目标，并提供点击统计。",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "CNY" }
+      }
+    </script>
+
     <!--theme-->
   </head>
   <body class="min-h-screen bg-subtle text-strong">
     <div id="root"></div>
+    <!--
+      The app needs JavaScript to render. 百度 does not run it, so without this block the only Chinese text
+      on the page is the title above; with it, a crawler that reads HTML only still finds a description of
+      the product. It says what the app does, because it is the same page.
+    -->
+    <noscript>
+      <div
+        style="
+          max-width: 40rem;
+          margin: 4rem auto;
+          padding: 0 1.5rem;
+          font: 16px/1.8 system-ui, -apple-system, 'Segoe UI', sans-serif;
+        "
+      >
+        <h1 style="font-size: 1.5rem; margin-bottom: 1rem">Kada 短链接</h1>
+        <p>
+          免费的短网址服务：把长链接变成短链；在微信、QQ 或小红书内置浏览器里打开时，先给出「在浏览器中打开」
+          的引导页；微信群二维码过期后可以自动换新；一条链接还能按权重把流量分到多个目标，并统计点击量、
+          平台分布和每日趋势。
+        </p>
+        <p>本站的应用需要 JavaScript 才能使用，请换用支持 JavaScript 的浏览器访问。</p>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
