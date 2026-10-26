@@ -70,7 +70,7 @@ allowed to lag by a second. The architecture is split along that line.
 ### 2. System overview
 
 ```text
-Browser → nginx :80 ─┬→ /api/, /r/ → backend :8080 ─┬→ PostgreSQL (source of truth)
+Browser → nginx :80 ─┬→ /api/, /r/, /f/ → backend :8080 ─┬→ PostgreSQL (source of truth)
                      │                              └→ Redis (cache + rate limit)
                      └→ other → frontend :3000
 ```
@@ -84,7 +84,7 @@ Components:
 | `web/` | `web` | Vite single-page app, served as static files; talks to the API over HTTP only |
 | `postgres` | `postgres` | Source of truth; also the analytics store |
 | `redis` | `redis` | Short-code cache and rate-limit counters |
-| `nginx` | `nginx` | Single entry point, routes `/api/` and `/r/` to the API |
+| `nginx` | `nginx` | Single entry point: `/api/`, `/r/` and `/f/` to the API, the rest from the static build |
 
 There is exactly one writer of the database schema (see
 [4.4 Schema ownership](#44-schema-ownership)) and no service talks to another service's database.
